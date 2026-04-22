@@ -12,14 +12,36 @@ export default function branchLoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    // Hardcoded validation
-    if (email === 'admin@example.com' && password === 'password123') {
-      setError('');
-      router.push('/branch'); // Redirect to dashboard
-    } else {
-      setError('Invalid email or password. Try admin@example.com / password123');
+    setError('');
+
+    try {
+      const res = await fetch('http://localhost:5000/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.message || 'Invalid credentials');
+        return;
+      }
+
+      if (data.data.role !== 'branch') {
+        setError('This portal is for branch users only');
+        return;
+      }
+
+      // Store token for API calls (cookie may not work cross-origin in dev)
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('role', data.data.role);
+      router.push('/branch');
+    } catch {
+      setError('Server se connect nahi ho pa raha. Backend chalu hai?');
     }
   };
 
@@ -31,7 +53,7 @@ export default function branchLoginPage() {
         <div className="flex items-center gap-1 mb-8">
           <Image 
             src="/images/logo/logo.svg" 
-            alt="FTC Logo" 
+            alt="FTC Log" 
             width={100} 
             height={50} 
             className="object-contain"
@@ -86,7 +108,7 @@ export default function branchLoginPage() {
               <label className="block text-sm font-medium text-gray-800">
                 Password
               </label>
-              <Link href="#" className="text-sm font-bold text-[#2B3B8A] hover:underline">
+              <Link href="/forgot-password" className="text-sm font-bold text-[#2B3B8A] hover:underline">
                 Forgot password?
               </Link>
             </div>

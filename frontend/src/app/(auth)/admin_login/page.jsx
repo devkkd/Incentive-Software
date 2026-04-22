@@ -8,19 +8,39 @@ import { useRouter } from 'next/navigation';
 export default function AdminLoginPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
-  const [email, setEmail] = useState('johndoe@gmail.com');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail] = useState('mehravivek2001@gmail.com');
+  const [password, setPassword] = useState('Admin@1234');
   const [keepSignedIn, setKeepSignedIn] = useState(true);
   const [error, setError] = useState('');
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    // Dummy validation - redirects regardless for testing purposes
-    if (email && password) {
-      setError('');
-      router.push('/admin'); // Redirect to admin dashboard
-    } else {
-      setError('Please enter your email and password.');
+    setError('');
+
+    try {
+      const res = await fetch('http://localhost:5000/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.message || 'Invalid credentials');
+        return;
+      }
+
+      if (data.data.role !== 'admin') {
+        setError('This portal is for admin users only');
+        return;
+      }
+
+      localStorage.setItem('token', data.token);
+      router.push('/admin');
+    } catch {
+      setError('Server se connect nahi ho pa raha. Backend chalu hai?');
     }
   };
 
@@ -84,7 +104,7 @@ export default function AdminLoginPage() {
               <label className="block text-[14px] text-gray-800">
                 Password
               </label>
-              <Link href="#" className="text-[14px] font-bold text-[#2B3B8A] hover:underline">
+              <Link href="/admin-forgot-password" className="text-[14px] font-bold text-[#2B3B8A] hover:underline">
                 Forgot password?
               </Link>
             </div>

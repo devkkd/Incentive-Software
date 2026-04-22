@@ -1,195 +1,396 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+const authHeaders = () => {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+const downloadTemplate = () => {
+  const csvContent = ['part_code,amount,remark', 'JDH-7792811100,5000,March incentive'].join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'incentive_upload_template.csv';
+  link.click();
+  URL.revokeObjectURL(url);
+};
 
 export default function UploadIncentivesPage() {
-  // States: 'idle', 'otp', 'success'
   const [uploadState, setUploadState] = useState('idle');
   const [selectedFile, setSelectedFile] = useState(null);
-  
-  // OTP States
+  const [uploadResult, setUploadResult] = useState(null);
+  const [uploadError, setUploadError] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [otpEmail, setOtpEmail] = useState('');
+  const [sendingOtp, setSendingOtp] = useState(false);
+
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [otpError, setOtpError] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
   const otpInputRefs = useRef([]);
   const fileInputRef = useRef(null);
 
-  // Handlers
+  const [history, setHistory] = useState([]);
+
+  useEffect(() => { fetchHistory(); }, []);
+
+  const fetchHistory = async () => {
+    try {
+      const res = await fetch(`${API}/api/incentives/history`, { headers: authHeaders(), credentials: 'include' });
+      const data = await res.json();
+      if (res.ok) setHistory(data.data);
+    } catch { /* silent */ }
+  };
+
   const handleFileChange = (e) => {
-    if (e.target.files && e.target.files.length > 0) {
+    if (e.target.files?.[0]) {
       setSelectedFile(e.target.files[0]);
-      setUploadState('idle'); 
+      setUploadState('idle');
+      setUploadError('');
+      setUploadResult(null);
     }
   };
 
-  const handleUploadClick = () => {
-    if (!selectedFile) {
-      alert("Please select a file first.");
-      return;
-    }
-    setUploadState('otp');
-    setOtp(['', '', '', '', '', '']);
+  const handleUploadClick = async () => {
+    if (!selectedFile) { alert('Please select a file first'); return; }
+    setSendingOtp(true);
     setOtpError('');
+    try {
+      const res = await fetch(`${API}/api/incentives/send-otp`, {
+        method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) { setUploadError(data.message || 'OTP send failed'); setUploadState('error'); return; }
+      setOtpEmail(data.email);
+      setUploadState('otp');
+      setOtp(['', '', '', '', '', '']);
+    } catch { setUploadError('Server error'); setUploadState('error'); }
+    finally { setSendingOtp(false); }
   };
 
   const handleOtpChange = (index, value) => {
     if (isNaN(value)) return;
-    
     const newOtp = [...otp];
     newOtp[index] = value.substring(value.length - 1);
     setOtp(newOtp);
-
-    if (value && index < 5) {
-      otpInputRefs.current[index + 1].focus();
-    }
+    if (value && index < 5) otpInputRefs.current[index + 1]?.focus();
   };
 
   const handleOtpKeyDown = (index, e) => {
-    if (e.key === 'Backspace' && !otp[index] && index > 0) {
-      otpInputRefs.current[index - 1].focus();
-    }
+    if (e.key === 'Backspace' && !otp[index] && index > 0) otpInputRefs.current[index - 1]?.focus();
   };
 
-  const handleVerifyOTP = () => {
-    const enteredOtp = otp.join('');
-    // Dummy OTP validation
-    if (enteredOtp === '888888') {
-      setOtpError('');
-      setIsVerifying(true);
-      
-      setTimeout(() => {
-        setIsVerifying(false);
-        setUploadState('success');
-        setSelectedFile(null); 
-      }, 800);
-    } else {
-      setOtpError('Invalid OTP. Please use 888888.');
-    }
+  const handleVerifyOTP = async () => {
+    if (otp.join('').length < 6) { setOtpError('Enter 6-digit OTP'); return; }
+    setIsVerifying(true);
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('otp', otp.join(''));
+      formData.append('frequency', 'monthly');
+      const res = await fetch(`${API}/api/incentives/upload`, {
+        method: 'POST', headers: authHeaders(), credentials: 'include', body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) { setOtpError(data.message || 'Upload failed'); setIsVerifying(false); setIsUploading(false); return; }
+      setUploadResult(data.data);
+      setUploadState('success');
+      setSelectedFile(null);
+      fetchHistory();
+    } catch { setUploadError('Server error. Is backend running?'); setUploadState('error'); }
+    finally { setIsVerifying(false); setIsUploading(false); }
+  };
+
+  // --- Download PDF ---
+  const downloadPDF = async () => {
+    const { default: jsPDF } = await import('jspdf');
+    const { default: autoTable } = await import('jspdf-autotable');
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text('Upload Incentives History', 14, 18);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 26);
+    autoTable(doc, {
+      startY: 32,
+      head: [['#', 'Upload Date', 'File Name', 'Total Amount', 'Frequency', 'Status']],
+      body: history.map((row, i) => [
+        String(i + 1).padStart(2, '0'),
+        new Date(row.createdAt).toLocaleDateString('en-IN'),
+        row.fileName,
+        `Rs. ${row.totalAmount?.toFixed(2)}`,
+        row.frequency,
+        row.status,
+      ]),
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [43, 59, 138] },
+    });
+    doc.save('incentive_upload_history.pdf');
+  };
+
+  // --- Download Excel ---
+  const downloadExcel = async () => {
+    const XLSX = await import('xlsx');
+    const wsData = [
+      ['#', 'Upload Date', 'File Name', 'Total Amount (Rs.)', 'Frequency', 'Status'],
+      ...history.map((row, i) => [
+        i + 1,
+        new Date(row.createdAt).toLocaleDateString('en-IN'),
+        row.fileName,
+        row.totalAmount?.toFixed(2),
+        row.frequency,
+        row.status,
+      ]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'History');
+    XLSX.writeFile(wb, 'incentive_upload_history.xlsx');
   };
 
   return (
-    <div className="p-8 md:p-10">
-      <div className="max-w-6xl mx-auto">
-        <h2 className="text-[15px] text-gray-700 mb-1">
-          Welcome to Faith Trust Commitment - Incentive Management
-        </h2>
-        <h1 className="text-[28px] font-bold text-black mb-8 tracking-tight">
-          Jodhpur Division
-        </h1>
+    <div className="p-8 md:p-10 space-y-6">
+      <div className="max-w-6xl mx-auto space-y-6">
+        <h2 className="text-[15px] text-gray-700 mb-1">Welcome to Faith Trust Commitment - Incentive Management</h2>
+        <h1 className="text-[28px] font-bold text-black tracking-tight">Jodhpur Division</h1>
 
-        {/* Content Container */}
+        {/* Upload Card */}
         <div className="bg-white border border-gray-100 rounded-2xl shadow-sm flex flex-col md:flex-row min-h-[350px] overflow-hidden">
-          
-          {/* Left Side: Upload Form */}
+
+          {/* Left: Upload Form */}
           <div className="w-full md:w-1/2 p-10 border-r border-gray-100 flex flex-col justify-center">
-            <h3 className="text-[22px] font-bold text-gray-900 mb-6 tracking-tight">
-              Upload Incentives
-            </h3>
-            
-            <div className="space-y-3">
-              <label className="block text-[15px] text-gray-800">
-                Upload Party Incentives Amount (Excel/CSV)
-              </label>
-              
-              <div className="flex gap-4">
-                <div 
+            <h3 className="text-[22px] font-bold text-gray-900 mb-6 tracking-tight">Upload Incentives</h3>
+
+            <div className="space-y-4">
+              <label className="block text-[15px] text-gray-800">Upload Party Incentives Amount (Excel/CSV)</label>
+
+              <div className="flex gap-3">
+                <div
                   className="flex-1 px-4 py-3 rounded-xl border border-gray-200 flex items-center gap-3 cursor-pointer hover:bg-gray-50 transition-colors"
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-gray-400">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-gray-400 shrink-0">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                   </svg>
-                  <span className={`text-sm ${selectedFile ? 'text-gray-900 font-medium' : 'text-[#A0ABC0]'}`}>
-                    {selectedFile ? selectedFile.name : 'Upload Incentives'}
+                  <span className={`text-sm truncate ${selectedFile ? 'text-gray-900 font-medium' : 'text-[#A0ABC0]'}`}>
+                    {selectedFile ? selectedFile.name : 'Choose file...'}
                   </span>
                 </div>
-                
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  onChange={handleFileChange}
-                  accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
-                  className="hidden" 
-                />
-
-                <button 
+                <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv,.xlsx,.xls" className="hidden" />
+                <button
                   onClick={handleUploadClick}
-                  disabled={uploadState === 'otp' || uploadState === 'success'}
-                  className={`font-semibold px-6 py-3 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 whitespace-nowrap
-                    ${selectedFile && uploadState !== 'otp' && uploadState !== 'success'
-                      ? 'bg-[#2B3B8A] text-white hover:bg-[#1a2d6b] shadow-md' 
-                      : 'bg-[#CBD5E1] text-[#64748B] cursor-not-allowed'}`}
+                  disabled={!selectedFile || uploadState === 'otp' || isUploading}
+                  className={`font-semibold px-6 py-3 rounded-xl transition-all flex items-center gap-2 whitespace-nowrap ${
+                    selectedFile && uploadState !== 'otp' && !isUploading
+                      ? 'bg-[#2B3B8A] text-white hover:bg-[#1a2d6b]'
+                      : 'bg-[#CBD5E1] text-[#64748B] cursor-not-allowed'
+                  }`}
                 >
-                  Upload Incentives <span>→</span>
+                  Upload →
                 </button>
+              </div>
+
+              {/* Template Download — improved UI */}
+              <div className="border border-dashed border-[#2B3B8A]/30 rounded-xl p-4 bg-[#F8FAFF]">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-[13px] font-semibold text-gray-800 mb-1">Required CSV Format</p>
+                    <p className="text-[12px] text-gray-500 font-mono bg-white border border-gray-200 rounded-lg px-3 py-1.5 inline-block">
+                      part_code &nbsp;|&nbsp; amount &nbsp;|&nbsp; remark
+                    </p>
+                  </div>
+                  <button
+                    onClick={downloadTemplate}
+                    className="shrink-0 flex flex-col items-center gap-1.5 bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white px-4 py-3 rounded-xl transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                    </svg>
+                    <span className="text-[11px] font-semibold whitespace-nowrap">Download Template</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Right Side: Dynamic Content (Idle / OTP / Success) */}
-          <div className="w-full md:w-1/2 p-10 bg-white flex flex-col justify-center">
-            
-            {uploadState === 'idle' && (
-              <div className="h-full w-full"></div>
-            )}
+          {/* Right: Dynamic State */}
+          <div className="w-full md:w-1/2 p-10 flex flex-col justify-center">
+
+            {uploadState === 'idle' && <div />}
 
             {uploadState === 'otp' && (
               <div className="animate-in fade-in duration-300">
-                <h3 className="text-[22px] font-bold text-gray-900 mb-4 tracking-tight">
-                  Enter the 6-digit code
-                </h3>
+                <h3 className="text-[22px] font-bold text-gray-900 mb-4 tracking-tight">Enter the 6-digit code</h3>
                 <p className="text-[14px] text-gray-800 font-medium mb-6">
-                  Enter the 6-digit code Sent To Your email address <span className="font-bold">xyz@gmail.com</span>
+                  Enter the OTP sent to <span className="font-bold text-[#2B3B8A]">{otpEmail}</span>
                 </p>
-                
-                <div className="flex items-center gap-4 mb-2">
-                  <div className="flex gap-3">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-2">
+                  <div className="flex gap-2">
                     {otp.map((digit, index) => (
                       <input
                         key={index}
                         ref={(el) => (otpInputRefs.current[index] = el)}
-                        type="text"
-                        maxLength={1}
-                        value={digit}
+                        type="text" maxLength={1} value={digit} placeholder="-"
                         onChange={(e) => handleOtpChange(index, e.target.value)}
                         onKeyDown={(e) => handleOtpKeyDown(index, e)}
-                        className="w-[50px] h-[52px] text-center text-lg font-medium border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] focus:border-transparent transition-all bg-white"
+                        className="w-[45px] h-[50px] text-center text-lg font-medium border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] bg-white placeholder:text-gray-300"
                       />
                     ))}
                   </div>
-                  
-                  <button 
+                  <button
                     onClick={handleVerifyOTP}
-                    className={`font-semibold px-6 py-3.5 rounded-xl whitespace-nowrap flex items-center justify-center gap-2 transition-colors
-                      ${isVerifying ? 'bg-[#00B65E] text-white' : 'bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white'}`}
+                    disabled={isVerifying || otp.join('').length < 6}
+                    className={`font-semibold px-6 py-3 rounded-xl whitespace-nowrap flex items-center gap-2 transition-colors ${
+                      isVerifying ? 'bg-[#00B65E] text-white'
+                      : otp.join('').length === 6 ? 'bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white'
+                      : 'bg-[#CBD5E1] text-[#64748B] cursor-not-allowed'
+                    }`}
                   >
-                    {isVerifying ? <>✓ Verified</> : <>Verify OTP →</>}
+                    {isVerifying ? '✓ Verifying...' : 'Verify OTP →'}
                   </button>
                 </div>
                 {otpError && <p className="text-red-500 text-xs mt-2">{otpError}</p>}
-                <p className="text-xs text-gray-500 mt-4">
-                  Enter all 6 digits. Each box takes one digit.
-                </p>
+                <p className="text-xs text-gray-500 mt-3">Use <strong>888888</strong> for testing.</p>
               </div>
             )}
 
-            {uploadState === 'success' && (
-              <div className="animate-in fade-in slide-in-from-right-4 duration-500 flex items-start gap-4">
-                <div className="w-10 h-10 bg-[#00B65E] rounded-full flex items-center justify-center shrink-0 mt-1 shadow-sm">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-5 h-5 text-white">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+            {uploadState === 'success' && uploadResult && (
+              <div className="animate-in fade-in slide-in-from-right-4 duration-500 space-y-4">
+                <div className="flex items-start gap-4">
+                  <div className="w-10 h-10 bg-[#00B65E] rounded-full flex items-center justify-center shrink-0 shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-5 h-5 text-white">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-[20px] font-bold text-gray-900 tracking-tight">Upload Successful</h3>
+                    <p className="text-[14px] text-gray-600 mt-1">
+                      Total credited: <span className="font-bold text-black">₹{uploadResult.totalAmount.toFixed(2)}</span>
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-[#E4F8ED] rounded-xl p-4 text-center">
+                    <p className="text-[28px] font-bold text-[#00B65E]">{uploadResult.successCount}</p>
+                    <p className="text-[12px] text-gray-600 font-medium">Vendors Credited</p>
+                  </div>
+                  <div className={`rounded-xl p-4 text-center ${uploadResult.failedCount > 0 ? 'bg-[#FDEDEC]' : 'bg-gray-50'}`}>
+                    <p className={`text-[28px] font-bold ${uploadResult.failedCount > 0 ? 'text-[#E74C3C]' : 'text-gray-400'}`}>
+                      {uploadResult.failedCount}
+                    </p>
+                    <p className="text-[12px] text-gray-600 font-medium">Failed</p>
+                  </div>
+                </div>
+                {uploadResult.failedList?.length > 0 && (
+                  <div className="bg-[#FDEDEC] rounded-xl p-4">
+                    <p className="text-[13px] font-bold text-[#E74C3C] mb-2">Failed Records:</p>
+                    <div className="space-y-1 max-h-[120px] overflow-y-auto">
+                      {uploadResult.failedList.map((f, i) => (
+                        <p key={i} className="text-[12px] text-gray-700">
+                          <span className="font-semibold">{f.partCode}</span> — {f.reason}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <button onClick={() => { setUploadState('idle'); setUploadResult(null); }} className="text-[13px] text-[#2B3B8A] font-semibold hover:underline">
+                  Upload another file →
+                </button>
+              </div>
+            )}
+
+            {uploadState === 'error' && (
+              <div className="flex items-start gap-4 animate-in fade-in duration-300">
+                <div className="w-10 h-10 bg-[#E74C3C] rounded-full flex items-center justify-center shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5 text-white">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </div>
                 <div>
-                  <h3 className="text-[22px] font-bold text-gray-900 mb-3 tracking-tight">
-                    Upload Successful
-                  </h3>
-                  <p className="text-[15px] text-gray-800 leading-relaxed max-w-[400px]">
-                    Your invoices have been uploaded successfully. Vendor incentive amounts have been retrieved.
-                  </p>
+                  <h3 className="text-[20px] font-bold text-gray-900">Upload Failed</h3>
+                  <p className="text-[14px] text-red-600 mt-1">{uploadError}</p>
+                  <button onClick={() => setUploadState('idle')} className="mt-3 text-[13px] text-[#2B3B8A] font-semibold hover:underline">
+                    Try again →
+                  </button>
                 </div>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* History Table */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 md:p-10">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+            <h2 className="text-[22px] font-bold text-gray-900 tracking-tight">Upload Incentives History</h2>
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-gray-700">Download In</span>
+              <button
+                onClick={downloadPDF}
+                disabled={history.length === 0}
+                className="bg-[#E74C3C] hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[10px] font-bold px-2.5 py-1.5 rounded transition-colors"
+              >
+                PDF
+              </button>
+              <button
+                onClick={downloadExcel}
+                disabled={history.length === 0}
+                className="bg-[#2ECC71] hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[10px] font-bold px-2.5 py-1.5 rounded transition-colors"
+              >
+                XLS
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm whitespace-nowrap">
+              <thead>
+                <tr className="border-b border-gray-200 text-gray-900">
+                  <th className="pb-4 pt-2 px-2 font-bold">#</th>
+                  <th className="pb-4 pt-2 px-2 font-bold">Upload Date</th>
+                  <th className="pb-4 pt-2 px-2 font-bold">File Name</th>
+                  <th className="pb-4 pt-2 px-2 font-bold">Total Amount</th>
+                  <th className="pb-4 pt-2 px-2 font-bold">Frequency</th>
+                  <th className="pb-4 pt-2 px-2 font-bold">Status</th>
+                </tr>
+              </thead>
+              <tbody className="text-gray-700 font-medium">
+                {history.length > 0 ? history.map((row, i) => (
+                  <tr key={row._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
+                    <td className="py-5 px-2">{String(i + 1).padStart(2, '0')}</td>
+                    <td className="py-5 px-2">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
+                    <td className="py-5 px-2">{row.fileName}</td>
+                    <td className="py-5 px-2">₹{row.totalAmount?.toFixed(2)}</td>
+                    <td className="py-5 px-2 capitalize">{row.frequency}</td>
+                    <td className="py-5 px-2">
+                      <span className={`px-3 py-1.5 rounded-lg border text-[13px] font-semibold ${
+                        row.status === 'processed'
+                          ? 'text-[#2ECC71] bg-[#E4F8ED] border-[#2ECC71]/20'
+                          : 'text-[#E74C3C] bg-[#FDEDEC] border-[#E74C3C]/20'
+                      }`}>
+                        {row.status}
+                      </span>
+                    </td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan="6" className="py-12 text-center">
+                      <div className="flex flex-col items-center gap-2 text-gray-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-10 h-10 opacity-40">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                        </svg>
+                        <p className="text-[14px] font-medium text-gray-500">No upload history found</p>
+                        <p className="text-[12px] text-gray-400">Upload a CSV or Excel file to get started</p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

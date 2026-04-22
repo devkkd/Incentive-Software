@@ -1,0 +1,61 @@
+const express = require('express');
+const Division = require('../models/Division');
+const { protect, authorize } = require('../middleware/auth');
+
+const router = express.Router();
+
+// @route   GET /api/divisions
+// @access  Admin, Branch
+router.get('/', protect, async (req, res) => {
+  try {
+    const divisions = await Division.find({ isActive: true }).sort({ name: 1 });
+    res.status(200).json({ success: true, data: divisions });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   POST /api/divisions
+// @access  Admin only
+router.post('/', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { name, location, locationCode } = req.body;
+    if (!name || !location || !locationCode) {
+      return res.status(400).json({ success: false, message: 'Name, location aur location code required hai' });
+    }
+
+    const existing = await Division.findOne({ locationCode: locationCode.toUpperCase() });
+    if (existing) {
+      return res.status(409).json({ success: false, message: 'Ye location code already exist karta hai' });
+    }
+
+    const division = await Division.create({
+      name,
+      location,
+      locationCode: locationCode.toUpperCase(),
+    });
+
+    res.status(201).json({ success: true, data: division });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   PUT /api/divisions/:id
+// @access  Admin only
+router.put('/:id', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { name, location, isActive } = req.body;
+    const division = await Division.findByIdAndUpdate(
+      req.params.id,
+      { name, location, isActive },
+      { new: true, runValidators: true }
+    );
+    if (!division) return res.status(404).json({ success: false, message: 'Division not found' });
+    res.status(200).json({ success: true, data: division });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+module.exports = router;
