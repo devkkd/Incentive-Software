@@ -22,17 +22,19 @@ connectDB();
 // Middleware
 app.use(cors({
   origin: (origin, callback) => {
-    const allowed = [
-      process.env.FRONTEND_URL,
-      'http://localhost:3000',
-      'https://incentive-software-gamma.vercel.app',
-    ].filter(Boolean).map(u => u.replace(/\/$/, '')); // remove trailing slash
+    // Allow all Vercel deployments + localhost
+    const isVercel = origin && (origin.includes('.vercel.app') || origin.includes('vercel.app'));
+    const isLocalhost = !origin || origin.includes('localhost');
+    const isExplicit = origin && process.env.FRONTEND_URL && origin.replace(/\/$/, '') === process.env.FRONTEND_URL.replace(/\/$/, '');
 
-    if (!origin || allowed.includes(origin.replace(/\/$/, ''))) {
+    if (isLocalhost || isVercel || isExplicit) {
       callback(null, true);
     } else {
       callback(new Error(`CORS blocked: ${origin}`));
     }
+  },
+  credentials: true,
+}));
   },
   credentials: true,
 }));
