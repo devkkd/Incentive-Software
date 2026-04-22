@@ -12,7 +12,7 @@ router.post('/', protect, authorize('branch', 'admin'), async (req, res) => {
     const { companyName, personName, accountNumber, mobileNumber, email, address } = req.body;
 
     if (!companyName || !personName || !accountNumber || !mobileNumber) {
-      return res.status(400).json({ success: false, message: 'Company name, person name, account number aur mobile required hai' });
+      return res.status(400).json({ success: false, message: 'Company name, person name, account number and mobile number are required' });
     }
 
     // Get division for location code prefix
@@ -37,8 +37,8 @@ router.post('/', protect, authorize('branch', 'admin'), async (req, res) => {
       return res.status(409).json({
         success: false,
         message: existing.accountNumber === prefixedAccountNumber
-          ? 'Ye account number already exist karta hai'
-          : 'Ye mobile number already registered hai',
+          ? 'This account number already exists'
+          : 'This mobile number is already registered',
       });
     }
 
@@ -125,7 +125,7 @@ router.put('/:id/block', protect, authorize('branch', 'admin'), async (req, res)
   try {
     const { blockReason } = req.body;
     if (!blockReason?.trim()) {
-      return res.status(400).json({ success: false, message: 'Block reason required hai' });
+      return res.status(400).json({ success: false, message: 'Block reason is required' });
     }
 
     const vendor = await Vendor.findByIdAndUpdate(

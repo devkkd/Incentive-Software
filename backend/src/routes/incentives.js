@@ -18,7 +18,7 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.originalname.match(/\.(csv|xlsx|xls)$/i)) cb(null, true);
-    else cb(new Error('Sirf CSV ya Excel file allowed hai'));
+    else cb(new Error('Only CSV or Excel files are allowed'));
   },
 });
 
@@ -72,8 +72,8 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
   try {
     const { otp, frequency } = req.body;
 
-    if (!req.file) return res.status(400).json({ success: false, message: 'File required hai' });
-    if (!otp) return res.status(400).json({ success: false, message: 'OTP required hai' });
+    if (!req.file) return res.status(400).json({ success: false, message: 'File is required' });
+    if (!otp) return res.status(400).json({ success: false, message: 'OTP is required' });
 
     // Verify OTP
     const otpRecord = await OtpToken.findOne({
@@ -98,7 +98,7 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
     const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
     if (!rows || rows.length === 0) {
-      return res.status(400).json({ success: false, message: 'File mein koi data nahi hai' });
+      return res.status(400).json({ success: false, message: 'No data found in the file' });
     }
 
     const normalize = (obj) => {

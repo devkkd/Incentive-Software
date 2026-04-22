@@ -23,7 +23,7 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
     if (vendor.status === 'blocked') return res.status(403).json({ success: false, message: 'Vendor is blocked' });
 
     if (!req.user.division) {
-      return res.status(400).json({ success: false, message: 'Branch user ka division set nahi hai. Re-login karo.' });
+      return res.status(400).json({ success: false, message: 'Branch user division is not set. Please re-login.' });
     }
 
     const division = req.user.division; // already populated from middleware
@@ -36,7 +36,7 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
     // Check duplicate invoice number
     const existing = await Invoice.findOne({ invoiceNumber: prefixedInvoiceNumber });
     if (existing) {
-      return res.status(409).json({ success: false, message: 'Ye invoice number already exist karta hai' });
+      return res.status(409).json({ success: false, message: 'This invoice number already exists' });
     }
 
     const invoice = await Invoice.create({
@@ -64,12 +64,12 @@ router.post('/redeem', protect, authorize('branch'), async (req, res) => {
     const { vendorId, redeemAmount, invoiceId } = req.body;
 
     if (!vendorId || !redeemAmount) {
-      return res.status(400).json({ success: false, message: 'Vendor ID aur redeem amount required hai' });
+      return res.status(400).json({ success: false, message: 'Vendor ID and redeem amount are required' });
     }
 
     const amount = parseFloat(redeemAmount);
     if (amount <= 0) {
-      return res.status(400).json({ success: false, message: 'Amount 0 se zyada hona chahiye' });
+      return res.status(400).json({ success: false, message: 'Amount must be greater than 0' });
     }
 
     const vendor = await Vendor.findById(vendorId);
@@ -81,7 +81,7 @@ router.post('/redeem', protect, authorize('branch'), async (req, res) => {
     if (amount > vendor.walletBalance) {
       return res.status(400).json({
         success: false,
-        message: `Insufficient balance! Wallet mein sirf ₹${vendor.walletBalance.toFixed(2)} available hai`,
+        message: `Insufficient balance! Only ₹${vendor.walletBalance.toFixed(2)} available in wallet`,
       });
     }
 

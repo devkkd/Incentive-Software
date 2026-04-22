@@ -21,8 +21,20 @@ connectDB();
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL,
-  credentials: true, // allow cookies
+  origin: (origin, callback) => {
+    const allowed = [
+      process.env.FRONTEND_URL,
+      'http://localhost:3000',
+      'https://incentive-software-gamma.vercel.app',
+    ].filter(Boolean).map(u => u.replace(/\/$/, '')); // remove trailing slash
+
+    if (!origin || allowed.includes(origin.replace(/\/$/, ''))) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS blocked: ${origin}`));
+    }
+  },
+  credentials: true,
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

@@ -117,7 +117,7 @@ export default function AdminReportsPage() {
       if (!res.ok) { setError(data.message || 'Failed to fetch reports'); return; }
       setReportData(data.data);
       setShowResults(true);
-    } catch { setError('Server error. Backend chalu hai?'); }
+    } catch { setError('Server error. Is the backend running?'); }
     finally { setLoading(false); }
   };
 

@@ -70,7 +70,7 @@ export default function AdminForgotPasswordPage() {
 
   const handleSendOtp = async (e) => {
     e?.preventDefault();
-    if (!email.trim()) { setError('Email address required hai'); return; }
+    if (!email.trim()) { setError('Email address is required'); return; }
     setLoading(true); setError('');
     try {
       const res = await fetch(`${API}/api/settings/forgot-password/send-otp`, {
@@ -81,7 +81,7 @@ export default function AdminForgotPasswordPage() {
       if (!res.ok) { setError(data.message); return; }
       setSentEmail(data.email); setStep(2); setAttemptsLeft(3);
       setOtp(['', '', '', '', '', '']); setOtpError(''); setOtpInvalid(false); startCountdown();
-    } catch { setError('Server error. Backend chalu hai?'); }
+    } catch { setError('Server error. Is the backend running?'); }
     finally { setLoading(false); }
   };
 
@@ -133,8 +133,8 @@ export default function AdminForgotPasswordPage() {
 
   const handleSetPassword = async (e) => {
     e.preventDefault();
-    if (newPassword.length < 8) { setError('Password kam se kam 8 characters ka hona chahiye'); return; }
-    if (newPassword !== confirmPassword) { setError('Passwords match nahi kar rahe'); return; }
+    if (newPassword.length < 8) { setError('Password must be at least 8 characters long'); return; }
+    if (newPassword !== confirmPassword) { setError('Passwords do not match'); return; }
     setLoading(true); setError('');
     try {
       const res = await fetch(`${API}/api/settings/forgot-password/reset`, {

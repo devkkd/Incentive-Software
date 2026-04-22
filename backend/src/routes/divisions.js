@@ -21,12 +21,12 @@ router.post('/', protect, authorize('admin'), async (req, res) => {
   try {
     const { name, location, locationCode } = req.body;
     if (!name || !location || !locationCode) {
-      return res.status(400).json({ success: false, message: 'Name, location aur location code required hai' });
+      return res.status(400).json({ success: false, message: 'Name, location and location code are required' });
     }
 
     const existing = await Division.findOne({ locationCode: locationCode.toUpperCase() });
     if (existing) {
-      return res.status(409).json({ success: false, message: 'Ye location code already exist karta hai' });
+      return res.status(409).json({ success: false, message: 'This location code already exists' });
     }
 
     const division = await Division.create({

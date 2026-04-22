@@ -72,7 +72,7 @@ export default function BranchDashboard() {
       setSelectedVendor(data.data);
       fetchWalletHistory(data.data._id);
     } catch {
-      setSearchError('Server se connect nahi ho pa raha');
+      setSearchError('Unable to connect to server');
     } finally {
       setSearchLoading(false);
     }
@@ -92,7 +92,7 @@ export default function BranchDashboard() {
   // --- Create Invoice (no wallet credit) ---
   const handleCreateInvoice = async () => {
     if (!invoiceForm.date || !invoiceForm.number || !invoiceForm.amount || !invoiceForm.location) {
-      setInvoiceError('Sabhi fields required hain');
+      setInvoiceError('All fields are required');
       return;
     }
     setInvoiceLoading(true);
@@ -112,7 +112,7 @@ export default function BranchDashboard() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) { setInvoiceError(data.message || 'Invoice create nahi hui'); return; }
+      if (!res.ok) { setInvoiceError(data.message || 'Failed to create invoice'); return; }
       setCreatedInvoice(data.data);
     } catch {
       setInvoiceError('Server error');
@@ -124,7 +124,7 @@ export default function BranchDashboard() {
   // --- OTP ---
   const handleSendOTP = () => {
     setRedeemError('');
-    if (!redeemAmount || redeemAmt <= 0) { setRedeemError('Valid amount enter karo'); return; }
+    if (!redeemAmount || redeemAmt <= 0) { setRedeemError('Please enter a valid amount'); return; }
     if (isInsufficientBalance) return; // blocked by UI
     setOtpSent(true);
     setOtpVerified(false);
@@ -207,7 +207,7 @@ export default function BranchDashboard() {
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-2 tracking-tight">Redemption Successful</h2>
             <p className="text-[15px] text-gray-600 mb-2">
-              ₹{redeemAmt.toFixed(2)} wallet se redeem ho gaya.
+              ₹{redeemAmt.toFixed(2)} redeemed from wallet.
             </p>
             <p className="text-[13px] text-gray-500 mb-8">
               New wallet balance: <span className="font-bold text-black">₹{Number(selectedVendor?.walletBalance).toFixed(2)}</span>
@@ -425,7 +425,7 @@ export default function BranchDashboard() {
                           <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
                         </svg>
                         <p className="text-[13px] text-[#E74C3C] font-semibold">
-                          Insufficient Balance! Wallet mein sirf ₹{walletBalance.toFixed(2)} available hai
+                          Insufficient Balance! Only ₹{walletBalance.toFixed(2)} available in wallet
                         </p>
                       </div>
                     )}

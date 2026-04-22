@@ -41,7 +41,7 @@ export default function branchLoginPage() {
       localStorage.setItem('role', data.data.role);
       router.push('/branch');
     } catch {
-      setError('Server se connect nahi ho pa raha. Backend chalu hai?');
+      setError('Unable to connect to server. Is the backend running?');
     }
   };
 

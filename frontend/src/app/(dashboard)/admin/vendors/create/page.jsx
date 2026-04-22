@@ -62,7 +62,7 @@ export default function AdminCreateVendorPage() {
     if (!form.mobileNumber.trim()) errors.mobileNumber = 'Mobile number required';
     else if (!/^\d{10}$/.test(form.mobileNumber.trim())) errors.mobileNumber = 'Enter valid 10-digit mobile number';
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errors.email = 'Enter valid email';
-    if (!form.divisionId) errors.divisionId = 'Division required hai';
+    if (!form.divisionId) errors.divisionId = 'Division is required';
     return errors;
   };
 
@@ -80,10 +80,10 @@ export default function AdminCreateVendorPage() {
         body: JSON.stringify(form),
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.message || 'Vendor create nahi hua'); return; }
+      if (!res.ok) { setError(data.message || 'Failed to create vendor'); return; }
       router.push('/admin/vendors');
     } catch {
-      setError('Server error. Backend chalu hai?');
+      setError('Server error. Is the backend running?');
     } finally {
       setLoading(false);
     }

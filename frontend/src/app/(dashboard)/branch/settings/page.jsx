@@ -48,15 +48,15 @@ export default function SettingsPage() {
 
   const handleSendOtp = async () => {
     if (!oldPassword || !newPassword || !confirmPassword) {
-      setPassError('Pehle saare password fields fill karo');
+      setPassError('Please fill in all password fields');
       return;
     }
     if (newPassword !== confirmPassword) {
-      setPassError('New password aur confirm password match nahi kar rahe');
+      setPassError('New password and confirm password do not match');
       return;
     }
     if (newPassword.length < 8) {
-      setPassError('Password kam se kam 8 characters ka hona chahiye');
+      setPassError('Password must be at least 8 characters long');
       return;
     }
 
@@ -98,7 +98,7 @@ export default function SettingsPage() {
 
   const handleChangePassword = async () => {
     const enteredOtp = otp.join('');
-    if (enteredOtp.length < 6) { setPassError('6-digit OTP enter karo'); return; }
+    if (enteredOtp.length < 6) { setPassError('Please enter the 6-digit OTP'); return; }
 
     setChangingPass(true);
     setPassError('');

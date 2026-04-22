@@ -16,10 +16,10 @@ const generateOtp = () => String(Math.floor(100000 + Math.random() * 900000));
 router.post('/forgot-password/send-otp', async (req, res) => {
   try {
     const { email } = req.body;
-    if (!email) return res.status(400).json({ success: false, message: 'Email required hai' });
+    if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
 
     const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) return res.status(404).json({ success: false, message: 'Is email se koi account nahi mila' });
+    if (!user) return res.status(404).json({ success: false, message: 'No account found with this email address' });
 
     const otp = generateOtp();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
@@ -40,7 +40,7 @@ router.post('/forgot-password/send-otp', async (req, res) => {
 router.post('/forgot-password/verify-otp', async (req, res) => {
   try {
     const { email, otp } = req.body;
-    if (!email || !otp) return res.status(400).json({ success: false, message: 'Email aur OTP required hai' });
+    if (!email || !otp) return res.status(400).json({ success: false, message: 'Email and OTP are required' });
 
     const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
@@ -65,8 +65,8 @@ router.post('/forgot-password/verify-otp', async (req, res) => {
 router.post('/forgot-password/reset', async (req, res) => {
   try {
     const { email, otp, newPassword } = req.body;
-    if (!email || !otp || !newPassword) return res.status(400).json({ success: false, message: 'Email, OTP aur new password required hai' });
-    if (newPassword.length < 8) return res.status(400).json({ success: false, message: 'Password kam se kam 8 characters ka hona chahiye' });
+    if (!email || !otp || !newPassword) return res.status(400).json({ success: false, message: 'Email, OTP and new password are required' });
+    if (newPassword.length < 8) return res.status(400).json({ success: false, message: 'Password must be at least 8 characters long' });
 
     const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
@@ -119,7 +119,7 @@ router.post('/password/send-otp', protect, async (req, res) => {
     if (error.message?.includes('DNS') || error.message?.includes('ENOTFOUND') || error.code === 'ECONNREFUSED') {
       return res.status(500).json({
         success: false,
-        message: 'Email send nahi hua. Check karo: 1) EMAIL_USER aur EMAIL_PASS .env mein sahi hain? 2) User ka email valid hai?',
+        message: 'Email send failed. Please check: 1) EMAIL_USER and EMAIL_PASS are correct in .env? 2) User email is valid?',
       });
     }
     res.status(500).json({ success: false, message: error.message });
@@ -134,11 +134,11 @@ router.post('/password/change', protect, async (req, res) => {
     const { otp, oldPassword, newPassword } = req.body;
 
     if (!otp || !oldPassword || !newPassword) {
-      return res.status(400).json({ success: false, message: 'OTP, old password aur new password required hai' });
+      return res.status(400).json({ success: false, message: 'OTP, old password and new password are required' });
     }
 
     if (newPassword.length < 8) {
-      return res.status(400).json({ success: false, message: 'Password kam se kam 8 characters ka hona chahiye' });
+      return res.status(400).json({ success: false, message: 'Password must be at least 8 characters long' });
     }
 
     const user = await User.findById(req.user._id).select('+password');
@@ -146,7 +146,7 @@ router.post('/password/change', protect, async (req, res) => {
     // Verify old password
     const isMatch = await bcrypt.compare(oldPassword, user.password);
     if (!isMatch) {
-      return res.status(400).json({ success: false, message: 'Old password incorrect hai' });
+      return res.status(400).json({ success: false, message: 'Old password is incorrect' });
     }
 
     // Verify OTP
