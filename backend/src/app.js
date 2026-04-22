@@ -35,9 +35,6 @@ app.use(cors({
   },
   credentials: true,
 }));
-  },
-  credentials: true,
-}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
