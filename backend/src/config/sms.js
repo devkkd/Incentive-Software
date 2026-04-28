@@ -1,158 +1,129 @@
 /**
  * SMS Service — FTC Incentive Management
  *
- * Supports two providers based on ENV:
- *   SMS_PROVIDER=msg91   → MSG91 (recommended for production)
- *   SMS_PROVIDER=fast2sms → Fast2SMS (dev/testing only)
- *
- * DEV MODE: If SMS_PROVIDER is not set, all SMS are logged to console only.
- *
- * ── MSG91 Setup ──────────────────────────────────────────────────────────────
- * 1. Sign up at https://msg91.com
- * 2. Get Auth Key from Dashboard → API
- * 3. Register on DLT (Airtel/Jio portal) — MSG91 helps with this
- * 4. Get Sender ID approved (e.g. FTCIND) — 3-5 days
- * 5. Create & approve two SMS templates:
- *    - OTP template:          "Dear ##NAME##, your FTC OTP is ##OTP##. Valid 5 mins. -FTCIND"
- *    - Confirmation template: "Dear ##NAME##, Rs.##AMOUNT## redeemed. Balance: Rs.##BALANCE##. -FTCIND"
- * 6. Add to .env:
- *    SMS_PROVIDER=msg91
- *    MSG91_AUTH_KEY=your_auth_key
- *    MSG91_SENDER_ID=FTCIND
- *    MSG91_OTP_TEMPLATE_ID=your_otp_template_id
- *    MSG91_CONFIRM_TEMPLATE_ID=your_confirm_template_id
- *
- * ── Fast2SMS Setup (dev/testing) ─────────────────────────────────────────────
- * 1. Sign up at https://www.fast2sms.com
- * 2. Get API key from Dashboard → Dev API
- * 3. Add to .env:
- *    SMS_PROVIDER=fast2sms
- *    SMS_API_KEY=your_api_key
+ * SMS_PROVIDER=msg91   → MSG91 OTP API (production)
+ * SMS_PROVIDER=        → Dev mode, OTP shown on screen
  */
 
-// ─── Internal: send via MSG91 ─────────────────────────────────────────────────
-const _sendMsg91 = async (mobileNumber, message, templateId) => {
+// ─── MSG91 OTP API ────────────────────────────────────────────────────────────
+const _sendMsg91Otp = async (mobileNumber, otp) => {
   const authKey = process.env.MSG91_AUTH_KEY;
-  const senderId = process.env.MSG91_SENDER_ID || 'FTCIND';
+  const templateId = process.env.MSG91_OTP_TEMPLATE_ID;
 
-  const payload = {
-    sender: senderId,
-    route: '4',          // Transactional route
-    country: '91',
-    sms: [
-      {
-        message,
-        to: [mobileNumber],
-      },
-    ],
-  };
-
-  const response = await fetch('https://api.msg91.com/api/sendhttp.php', {
+  // MSG91 Send OTP API v5
+  const response = await fetch('https://api.msg91.com/api/v5/otp', {
     method: 'POST',
     headers: {
-      authkey: authKey,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
-
-  const text = await response.text();
-  if (!text.includes('success') && !text.startsWith('2')) {
-    throw new Error(`MSG91 error: ${text}`);
-  }
-
-  return { success: true };
-};
-
-// ─── Internal: send via Fast2SMS ─────────────────────────────────────────────
-const _sendFast2Sms = async (mobileNumber, message) => {
-  const apiKey = process.env.SMS_API_KEY;
-
-  const response = await fetch('https://www.fast2sms.com/dev/bulkV2', {
-    method: 'POST',
-    headers: {
-      authorization: apiKey,
+      'authkey': authKey,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      route: 'q',
-      message,
-      language: 'english',
-      flash: 0,
-      numbers: mobileNumber,
+      template_id: templateId,
+      mobile: `91${mobileNumber}`,
+      otp,
     }),
   });
 
   const data = await response.json();
-  if (!data.return) throw new Error(data.message?.[0] || 'Fast2SMS send failed');
+  console.log('[MSG91 OTP Response]', JSON.stringify(data));
+
+  if (data.type === 'error') {
+    throw new Error(`MSG91 error: ${data.message}`);
+  }
 
   return { success: true };
 };
 
-// ─── Internal: dev mode logger ────────────────────────────────────────────────
-const _logDev = (mobileNumber, type, message) => {
-  console.log('\n' + '━'.repeat(50));
-  console.log(`[SMS DEV] Type    : ${type}`);
-  console.log(`[SMS DEV] To      : ${mobileNumber}`);
-  console.log(`[SMS DEV] Message : ${message}`);
-  console.log('━'.repeat(50) + '\n');
+// ─── MSG91 Transactional SMS ──────────────────────────────────────────────────
+const _sendMsg91Sms = async (mobileNumber, message) => {
+  const authKey = process.env.MSG91_AUTH_KEY;
+  const senderId = process.env.MSG91_SENDER_ID || 'FTCIND';
+  const templateId = process.env.MSG91_CONFIRM_TEMPLATE_ID;
+
+  const params = new URLSearchParams({
+    authkey: authKey,
+    mobiles: `91${mobileNumber}`,
+    message,
+    sender: senderId,
+    route: '4',
+    country: '91',
+    ...(templateId ? { DLT_TE_ID: templateId } : {}),
+  });
+
+  const response = await fetch(
+    `https://api.msg91.com/api/sendhttp.php?${params.toString()}`,
+    { method: 'GET' }
+  );
+
+  const text = await response.text();
+  console.log('[MSG91 SMS Response]', text);
+
+  if (text.toLowerCase().includes('error') || text.toLowerCase().includes('invalid')) {
+    throw new Error(`MSG91 SMS error: ${text}`);
+  }
+
+  return { success: true };
 };
 
-// ─── Internal: route to correct provider ─────────────────────────────────────
-const _send = async (mobileNumber, message, templateId = null) => {
-  const provider = process.env.SMS_PROVIDER;
-
-  if (!provider || process.env.NODE_ENV === 'development') {
-    _logDev(mobileNumber, templateId ? 'TRANSACTIONAL' : 'OTP', message);
-    return { success: true, dev: true };
-  }
-
-  if (provider === 'msg91') {
-    return await _sendMsg91(mobileNumber, message, templateId);
-  }
-
-  if (provider === 'fast2sms') {
-    return await _sendFast2Sms(mobileNumber, message);
-  }
-
-  throw new Error(`Unknown SMS_PROVIDER: ${provider}`);
+// ─── Dev logger ───────────────────────────────────────────────────────────────
+const _logDev = (mobileNumber, type, extra) => {
+  console.log('\n' + '━'.repeat(50));
+  console.log(`[SMS DEV] Type : ${type}`);
+  console.log(`[SMS DEV] To   : ${mobileNumber}`);
+  console.log(`[SMS DEV] Data : ${extra}`);
+  console.log('━'.repeat(50) + '\n');
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PUBLIC: Send OTP SMS
-// Called before redemption — vendor gets OTP on their mobile
 // ─────────────────────────────────────────────────────────────────────────────
 const sendSmsOtp = async (mobileNumber, otp, vendorName = '') => {
-  const name = vendorName || 'Vendor';
-  const message = `Dear ${name}, your FTC Incentive wallet redemption OTP is: ${otp}. Valid for 5 minutes. Do not share with anyone. - Faith Trust Commitment`;
+  const provider = process.env.SMS_PROVIDER;
 
-  try {
-    return await _send(mobileNumber, message, process.env.MSG91_OTP_TEMPLATE_ID);
-  } catch (error) {
-    console.error('[SMS OTP ERROR]', error.message);
-    // Always log OTP as fallback so operation doesn't break
-    console.log(`[SMS FALLBACK] OTP for ${mobileNumber}: ${otp}`);
-    throw error;
+  if (!provider) {
+    _logDev(mobileNumber, 'OTP', otp);
+    return { success: true, dev: true };
   }
+
+  if (provider === 'msg91') {
+    try {
+      return await _sendMsg91Otp(mobileNumber, otp);
+    } catch (error) {
+      console.error('[SMS OTP ERROR]', error.message);
+      console.log(`[SMS FALLBACK] OTP for ${mobileNumber}: ${otp}`);
+      throw error;
+    }
+  }
+
+  // fallback
+  _logDev(mobileNumber, 'OTP', otp);
+  return { success: true, dev: true };
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PUBLIC: Send Redemption Confirmation SMS
-// Called after successful redemption — vendor gets balance update
-// Message: "Rs.500 redeemed. Remaining balance: Rs.1200"
 // ─────────────────────────────────────────────────────────────────────────────
 const sendRedemptionConfirmation = async (mobileNumber, vendorName, redeemedAmount, remainingBalance) => {
+  const provider = process.env.SMS_PROVIDER;
   const name = vendorName || 'Vendor';
-  const message = `Dear ${name}, Rs.${redeemedAmount} has been redeemed from your FTC Incentive wallet. Remaining balance: Rs.${remainingBalance}. For queries contact your FTC representative. - Faith Trust Commitment`;
+  const message = `Dear ${name}, Rs.${redeemedAmount} redeemed from FTC Incentive wallet. Remaining balance: Rs.${remainingBalance}. -FTCIND`;
 
-  try {
-    const result = await _send(mobileNumber, message, process.env.MSG91_CONFIRM_TEMPLATE_ID);
-    return result;
-  } catch (error) {
-    // Non-blocking — redemption already done, just log the error
-    console.error('[SMS CONFIRM ERROR]', error.message);
-    return { success: false, error: error.message };
+  if (!provider) {
+    _logDev(mobileNumber, 'CONFIRMATION', message);
+    return { success: true, dev: true };
   }
+
+  if (provider === 'msg91') {
+    try {
+      return await _sendMsg91Sms(mobileNumber, message);
+    } catch (error) {
+      console.error('[SMS CONFIRM ERROR]', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  _logDev(mobileNumber, 'CONFIRMATION', message);
+  return { success: true, dev: true };
 };
 
 module.exports = { sendSmsOtp, sendRedemptionConfirmation };
