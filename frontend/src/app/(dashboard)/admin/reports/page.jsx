@@ -238,6 +238,7 @@ export default function AdminReportsPage() {
             <p className="text-[15px] text-gray-800 mb-6">Select A Reports Timeline</p>
             <div className="space-y-4">
               {[
+                { id: 'today', label: 'Today' },
                 { id: 'this_month', label: 'This Month' },
                 { id: 'last_month', label: 'Last Month' },
                 { id: 'last_3_months', label: 'Last 3 Months' },

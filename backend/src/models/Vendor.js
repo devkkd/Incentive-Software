@@ -61,6 +61,11 @@ const vendorSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    salesPerson: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',

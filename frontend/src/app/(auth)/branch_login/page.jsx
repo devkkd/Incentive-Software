@@ -4,11 +4,14 @@ import { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useLang } from '@/context/LanguageContext';
+import GoogleTranslateButton from '@/components/GoogleTranslateButton';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 export default function branchLoginPage() {
   const router = useRouter();
+  const { t } = useLang();
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -38,7 +41,6 @@ export default function branchLoginPage() {
         return;
       }
 
-      // Store token for API calls (cookie may not work cross-origin in dev)
       localStorage.setItem('token', data.token);
       localStorage.setItem('role', data.data.role);
       router.push('/branch');
@@ -50,7 +52,9 @@ export default function branchLoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#D6E8FB] p-4 font-sans">
       <div className="bg-white rounded-[2rem] p-8 sm:p-10 w-full text-gray-900 max-w-[480px] shadow-lg">
-        
+        <div className="flex justify-end mb-2">
+          <GoogleTranslateButton />
+        </div>
         {/* Logo Section */}
         <div className="flex items-center gap-1 mb-8">
           <Image 
@@ -71,10 +75,10 @@ export default function branchLoginPage() {
 
         {/* Heading Section */}
         <h1 className="text-[20px] font-bold text-gray-900 mb-2 tracking-tight">
-          Welcome back
+          {t('welcomeBack')}
         </h1>
         <p className="text-xs text-gray-600 mb-4">
-          Sign in to view your wallet, track incentives, and manage your account.
+          {t('signInSubtitle')}
         </p>
 
         {/* Error Message */}
@@ -90,7 +94,7 @@ export default function branchLoginPage() {
           {/* Email Field */}
           <div className="space-y-1.5">
             <label className="block text-sm font-medium text-gray-800">
-              Email address
+              {t('email')}
             </label>
             <input 
               type="email" 
@@ -100,7 +104,7 @@ export default function branchLoginPage() {
               className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] focus:border-transparent transition-colors placeholder:text-gray-400 text-sm"
             />
             <p className="text-xs text-gray-400 font-medium">
-              Enter your email linked to your account.
+              {t('enterEmailLinked')}
             </p>
           </div>
 
@@ -108,10 +112,10 @@ export default function branchLoginPage() {
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <label className="block text-sm font-medium text-gray-800">
-                Password
+                {t('password')}
               </label>
               <Link href="/forgot-password" className="text-sm font-bold text-[#2B3B8A] hover:underline">
-                Forgot password?
+                {t('forgotPasswordQ')}
               </Link>
             </div>
             <div className="relative">
@@ -156,7 +160,7 @@ export default function branchLoginPage() {
               </div>
             </div>
             <label htmlFor="keep-signed-in" className="ml-2 text-[13px] text-gray-700 cursor-pointer select-none">
-              Keep me signed in on this device for 30 days.
+              {t('keepSignedIn')}
             </label>
           </div>
 
@@ -165,14 +169,14 @@ export default function branchLoginPage() {
             type="submit"
             className="w-[60%] mx-auto block bg-[#2B3B8A] text-white font-semibold py-3 rounded-xl mt-3 transition-colors hover:bg-[#1f2b66] flex items-center justify-center gap-2"
           >
-            Sign In <span>→</span>
+            {t('signIn')} <span>→</span>
           </button>
         </form>
 
         {/* Footer text */}
         <div className="mt-8 text-[13px] text-gray-800 leading-relaxed text-center sm:text-left">
-          <span className="font-bold text-black">Don't have an account? </span>
-          Contact your Maruti Suzuki Vendor representative to get registered.
+          <span className="font-bold text-black">{t('dontHaveAccount')} </span>
+          {t('contactRepresentative')}
         </div>
       </div>
     </div>

@@ -5,19 +5,21 @@ const divisionSchema = new mongoose.Schema(
     name: {
       type: String,
       required: true,
+      unique: true,
+      uppercase: true,
       trim: true,
+      // Location code e.g. AJM, JOH, BEW
     },
     location: {
       type: String,
       required: true,
       trim: true,
     },
-    // Admin sets this once — used as prefix for vendor & invoice numbers
+    // Serial number used as invoice prefix: 1/, 2/, 3/
     locationCode: {
       type: String,
       required: true,
       unique: true,
-      uppercase: true,
       trim: true,
       maxlength: 5,
     },

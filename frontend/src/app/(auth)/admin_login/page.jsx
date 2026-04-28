@@ -4,11 +4,14 @@ import React, { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useLang } from '@/context/LanguageContext';
+import GoogleTranslateButton from '@/components/GoogleTranslateButton';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 export default function AdminLoginPage() {
   const router = useRouter();
+  const { t } = useLang();
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('mehravivek2001@gmail.com');
   const [password, setPassword] = useState('Admin@1234');
@@ -49,7 +52,9 @@ export default function AdminLoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#EAF2F9] p-4 font-sans">
       <div className="bg-white rounded-[2rem] p-8 sm:p-10 w-full max-w-[480px] shadow-lg">
-        
+        <div className="flex justify-end mb-2">
+          <GoogleTranslateButton />
+        </div>
         {/* Logo Section */}
         <div className="flex items-center gap-1 mb-10">
           <Image 
@@ -70,10 +75,10 @@ export default function AdminLoginPage() {
 
         {/* Heading Section */}
         <h1 className="text-[28px] font-bold text-gray-900 mb-2 tracking-tight">
-          Sign In Admin
+          {t('signInAdmin')}
         </h1>
         <p className="text-[14px] text-gray-600 mb-8">
-          Access the admin portal by entering your email and password.
+          {t('accessAdminPortal')}
         </p>
 
         {/* Error Message */}
@@ -89,7 +94,7 @@ export default function AdminLoginPage() {
           {/* Email Field */}
           <div className="space-y-1.5">
             <label className="block text-[14px] text-gray-800">
-              Email address
+              {t('email')}
             </label>
             <input 
               type="email" 
@@ -104,10 +109,10 @@ export default function AdminLoginPage() {
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <label className="block text-[14px] text-gray-800">
-                Password
+                {t('password')}
               </label>
               <Link href="/admin-forgot-password" className="text-[14px] font-bold text-[#2B3B8A] hover:underline">
-                Forgot password?
+                {t('forgotPasswordQ')}
               </Link>
             </div>
             <div className="relative">
@@ -160,7 +165,7 @@ export default function AdminLoginPage() {
                 </svg>
               </div>
               <span className="ml-3 text-[13px] text-gray-700 select-none">
-                Keep me signed in on this device for 30 days.
+                {t('keepSignedIn')}
               </span>
             </label>
           </div>
@@ -171,7 +176,7 @@ export default function AdminLoginPage() {
               type="submit"
               className="w-full sm:w-[60%] bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white font-semibold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm"
             >
-              Sign In <span>→</span>
+              {t('signIn')} <span>→</span>
             </button>
           </div>
         </form>

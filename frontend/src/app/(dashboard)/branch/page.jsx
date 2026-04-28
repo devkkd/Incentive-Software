@@ -122,14 +122,32 @@ export default function BranchDashboard() {
   };
 
   // --- OTP ---
-  const handleSendOTP = () => {
+  const handleSendOTP = async () => {
     setRedeemError('');
     if (!redeemAmount || redeemAmt <= 0) { setRedeemError('Please enter a valid amount'); return; }
-    if (isInsufficientBalance) return; // blocked by UI
-    setOtpSent(true);
-    setOtpVerified(false);
-    setOtpError('');
-    setOtp(['', '', '', '', '', '']);
+    if (isInsufficientBalance) return;
+
+    setSubmitLoading(true);
+    try {
+      const res = await fetch(`${API}/api/invoices/redeem/send-otp`, {
+        method: 'POST',
+        headers: authHeaders(),
+        credentials: 'include',
+        body: JSON.stringify({ vendorId: selectedVendor._id, redeemAmount: redeemAmt }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setRedeemError(data.message || 'Failed to send OTP'); return; }
+      setOtpSent(true);
+      setOtpVerified(false);
+      setOtp(['', '', '', '', '', '']);
+      // Dev mode — show OTP on screen
+      if (data.devOtp) {
+        setOtpError(`🔧 DEV MODE — OTP: ${data.devOtp}`);
+      } else {
+        setOtpError('');
+      }
+    } catch { setRedeemError('Server error. Please try again.'); }
+    finally { setSubmitLoading(false); }
   };
 
   const handleOtpChange = (index, value) => {
@@ -138,6 +156,14 @@ export default function BranchDashboard() {
     newOtp[index] = value.substring(value.length - 1);
     setOtp(newOtp);
     if (value && index < 5) otpInputRefs.current[index + 1]?.focus();
+    // Auto-mark ready when all 6 digits filled
+    const filled = newOtp.join('');
+    if (filled.length === 6 && !newOtp.includes('')) {
+      setOtpVerified(true);
+      setOtpError('');
+    } else {
+      setOtpVerified(false);
+    }
   };
 
   const handleOtpKeyDown = (index, e) => {
@@ -145,13 +171,17 @@ export default function BranchDashboard() {
   };
 
   const handleVerifyOTP = () => {
-    if (otp.join('') === '888888') { setOtpVerified(true); setOtpError(''); }
-    else setOtpError('Invalid OTP. Use 888888 for testing.');
+    const enteredOtp = otp.join('');
+    if (enteredOtp.length !== 6) { setOtpError('Please enter all 6 digits'); return; }
+    setOtpVerified(true);
+    setOtpError('');
   };
 
   // --- Submit: debit wallet ---
   const handleSubmit = async () => {
     if (!otpVerified) return;
+    const enteredOtp = otp.join('');
+    if (enteredOtp.length !== 6) { setOtpError('Please enter all 6 digits'); return; }
     setSubmitLoading(true);
 
     try {
@@ -163,16 +193,18 @@ export default function BranchDashboard() {
           vendorId: selectedVendor._id,
           redeemAmount: redeemAmt,
           invoiceId: createdInvoice?._id || null,
+          otp: otp.join(''),
         }),
       });
       const data = await res.json();
 
       if (!res.ok) {
         setRedeemError(data.message);
+        setOtpVerified(false);
+        setOtp(['', '', '', '', '', '']);
         return;
       }
 
-      // Update wallet balance in UI
       setSelectedVendor(prev => ({ ...prev, walletBalance: data.data.newWalletBalance }));
       fetchWalletHistory(selectedVendor._id);
       setShowSuccessModal(true);
@@ -278,15 +310,9 @@ export default function BranchDashboard() {
               {searchError && !selectedVendor && (
                 <div className="animate-in fade-in duration-300">
                   <h3 className="text-[18px] font-bold text-gray-900 mb-2">Account Not Found</h3>
-                  <p className="text-[13px] text-gray-600 mb-5 leading-relaxed">
-                    The Vendor Account Number or Mobile Number could not be found. You can create a new account to continue.
+                  <p className="text-[13px] text-gray-600 leading-relaxed">
+                    The Vendor Account Number or Mobile Number could not be found. Please contact your administrator to register a new vendor.
                   </p>
-                  <Link
-                    href="/branch/vendors/create"
-                    className="inline-flex items-center gap-2 bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white font-semibold px-6 py-3 rounded-xl transition-colors text-[14px]"
-                  >
-                    Create An Account →
-                  </Link>
                 </div>
               )}
             </div>
@@ -407,14 +433,14 @@ export default function BranchDashboard() {
                       />
                       <button
                         onClick={handleSendOTP}
-                        disabled={isInsufficientBalance || !redeemAmount}
+                        disabled={isInsufficientBalance || !redeemAmount || submitLoading}
                         className={`font-semibold px-6 py-2.5 rounded-xl whitespace-nowrap flex items-center gap-2 transition-colors ${
-                          isInsufficientBalance || !redeemAmount
+                          isInsufficientBalance || !redeemAmount || submitLoading
                             ? 'bg-[#CBD5E1] text-[#64748B] cursor-not-allowed'
                             : 'bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white'
                         }`}
                       >
-                        Send OTP →
+                        {submitLoading ? 'Sending...' : 'Send OTP →'}
                       </button>
                     </div>
 
@@ -440,33 +466,38 @@ export default function BranchDashboard() {
                     <div className="mb-6 animate-in fade-in duration-300">
                       <div className="border-t border-dashed border-gray-300 pt-6 mb-4"></div>
                       <p className="text-[13px] text-gray-800 font-medium mb-3">
-                        Enter OTP sent to {selectedVendor.mobileNumber}
+                        Enter OTP sent to <span className="font-bold text-[#2B3B8A]">{selectedVendor.mobileNumber}</span>
                       </p>
-                      <div className="flex items-center gap-4 mb-2">
-                        <div className="flex gap-3">
-                          {otp.map((digit, index) => (
-                            <input
-                              key={index}
-                              ref={(el) => (otpInputRefs.current[index] = el)}
-                              type="text"
-                              maxLength={1}
-                              value={digit}
-                              onChange={(e) => handleOtpChange(index, e.target.value)}
-                              onKeyDown={(e) => handleOtpKeyDown(index, e)}
-                              className="w-[50px] h-[52px] text-center text-lg font-medium border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] bg-white"
-                            />
-                          ))}
-                        </div>
-                        <button
-                          onClick={handleVerifyOTP}
-                          className={`font-semibold px-6 py-3.5 rounded-xl whitespace-nowrap flex items-center gap-2 transition-colors ${
-                            otpVerified ? 'bg-[#00B65E] text-white' : 'bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white'
-                          }`}
-                        >
-                          {otpVerified ? 'Verified ✓' : 'Verify OTP →'}
-                        </button>
+                      <div className="flex gap-3 mb-3">
+                        {otp.map((digit, index) => (
+                          <input
+                            key={index}
+                            ref={(el) => (otpInputRefs.current[index] = el)}
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={1}
+                            value={digit}
+                            onChange={(e) => handleOtpChange(index, e.target.value)}
+                            onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                            className={`w-[50px] h-[52px] text-center text-lg font-bold border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] bg-white transition-colors ${
+                              otpVerified ? 'border-[#00B65E] text-[#00B65E]' : digit ? 'border-[#2B3B8A]' : 'border-gray-200'
+                            }`}
+                          />
+                        ))}
+                        {otpVerified && (
+                          <div className="flex items-center gap-1 text-[#00B65E] font-semibold text-[13px] ml-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                            </svg>
+                            Ready
+                          </div>
+                        )}
                       </div>
-                      {otpError && <p className="text-red-500 text-xs mt-1">{otpError}</p>}
+                      {otpError && (
+                        <p className={`text-xs mt-1 font-medium ${otpError.startsWith('DEV') ? 'text-orange-500' : 'text-red-500'}`}>
+                          {otpError}
+                        </p>
+                      )}
                     </div>
                   )}
 

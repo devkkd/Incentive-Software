@@ -1,15 +1,26 @@
 const express = require('express');
+const multer = require('multer');
+const XLSX = require('xlsx');
 const Vendor = require('../models/Vendor');
 const Division = require('../models/Division');
 const { protect, authorize } = require('../middleware/auth');
 
 const router = express.Router();
 
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.originalname.match(/\.(csv|xlsx|xls)$/i)) cb(null, true);
+    else cb(new Error('Only CSV or Excel files are allowed'));
+  },
+});
+
 // @route   POST /api/vendors
-// @access  Branch, Admin
-router.post('/', protect, authorize('branch', 'admin'), async (req, res) => {
+// @access  Admin only
+router.post('/', protect, authorize('admin'), async (req, res) => {
   try {
-    const { companyName, personName, accountNumber, mobileNumber, email, address } = req.body;
+    const { companyName, personName, accountNumber, mobileNumber, email, address, salesPerson } = req.body;
 
     if (!companyName || !personName || !accountNumber || !mobileNumber) {
       return res.status(400).json({ success: false, message: 'Company name, person name, account number and mobile number are required' });
@@ -25,8 +36,8 @@ router.post('/', protect, authorize('branch', 'admin'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Division not found' });
     }
 
-    // Prefix account number with location code: JDH-12345
-    const prefixedAccountNumber = `${division.locationCode}-${accountNumber}`;
+    // Prefix account number with branch code (name): AJM-12345
+    const prefixedAccountNumber = `${division.name}-${accountNumber}`;
 
     // Check duplicate
     const existing = await Vendor.findOne({
@@ -49,11 +60,107 @@ router.post('/', protect, authorize('branch', 'admin'), async (req, res) => {
       mobileNumber,
       email: email || null,
       address: address || '',
+      salesPerson: salesPerson || null,
       division: divisionId,
       createdBy: req.user._id,
     });
 
     res.status(201).json({ success: true, data: vendor });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   POST /api/vendors/bulk-import
+// @desc    Import vendors from Excel with format: Loc, Cons Party Code, Cons Party Name, Cons Party City Desc, Party Type, Net Retail Qty, Mobile No, Sales Person
+// @access  Admin only
+router.post('/bulk-import', protect, authorize('admin'), upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: 'File is required' });
+
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+    if (!rows || rows.length === 0) {
+      return res.status(400).json({ success: false, message: 'No data found in the file' });
+    }
+
+    const normalize = (obj) => {
+      const result = {};
+      for (const key of Object.keys(obj)) result[key.toLowerCase().replace(/\s+/g, ' ').trim()] = obj[key];
+      return result;
+    };
+
+    const results = { success: [], failed: [] };
+
+    for (const rawRow of rows) {
+      const row = normalize(rawRow);
+
+      const loc = String(row['loc'] || '').trim().toUpperCase();
+      const consPartyCode = String(row['cons party code'] || row['cons_party_code'] || '').trim();
+      const consPartyName = String(row['cons party name'] || row['cons_party_name'] || '').trim();
+      const city = String(row['cons party city desc'] || row['cons_party_city_desc'] || row['city'] || '').trim();
+      const partyType = String(row['party type'] || row['party_type'] || '').trim();
+      const mobileNumber = String(row['mobile no'] || row['mobile_no'] || row['mobile'] || '').trim();
+      const salesPerson = String(row['sales person'] || row['sales_person'] || '').trim();
+
+      if (!loc || !consPartyCode || !consPartyName) {
+        results.failed.push({ row: consPartyCode || 'N/A', reason: 'Missing required fields: Loc, Cons Party Code, Cons Party Name' });
+        continue;
+      }
+
+      if (!mobileNumber || !/^\d{10}$/.test(mobileNumber)) {
+        results.failed.push({ row: consPartyCode, reason: 'Invalid or missing 10-digit mobile number' });
+        continue;
+      }
+
+      // Find division by branch code (name field, e.g. AJM)
+      const division = await Division.findOne({ name: loc });
+      if (!division) {
+        results.failed.push({ row: consPartyCode, reason: `Division not found for location code: ${loc}` });
+        continue;
+      }
+
+      const prefixedAccountNumber = `${loc}-${consPartyCode}`;
+
+      // Check duplicate
+      const existing = await Vendor.findOne({
+        $or: [{ accountNumber: prefixedAccountNumber }, { mobileNumber }],
+      });
+
+      if (existing) {
+        results.failed.push({
+          row: consPartyCode,
+          reason: existing.accountNumber === prefixedAccountNumber
+            ? 'Account number already exists'
+            : 'Mobile number already registered',
+        });
+        continue;
+      }
+
+      try {
+        const vendor = await Vendor.create({
+          companyName: consPartyName,
+          personName: consPartyName,
+          accountNumber: prefixedAccountNumber,
+          mobileNumber,
+          address: city,
+          salesPerson: salesPerson || null,
+          division: division._id,
+          createdBy: req.user._id,
+        });
+        results.success.push({ accountNumber: prefixedAccountNumber, companyName: consPartyName });
+      } catch (err) {
+        results.failed.push({ row: consPartyCode, reason: err.message });
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `${results.success.length} vendors imported, ${results.failed.length} failed`,
+      data: { successCount: results.success.length, failedCount: results.failed.length, successList: results.success, failedList: results.failed },
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -66,11 +173,8 @@ router.get('/', protect, async (req, res) => {
     const { status, q, page = 1, limit = 10 } = req.query;
     const filter = {};
 
-    // Branch sees only their division's vendors
-    if (req.user.role === 'branch' && req.user.division) {
-      const divId = req.user.division._id || req.user.division;
-      if (divId) filter.division = divId;
-    }
+    // Branch sees ALL vendors (no division filter)
+    // Admin also sees all vendors
 
     if (status) filter.status = status;
 
@@ -103,11 +207,11 @@ router.get('/', protect, async (req, res) => {
 // @access  Admin only
 router.put('/:id', protect, authorize('admin'), async (req, res) => {
   try {
-    const { companyName, personName, mobileNumber, email, address, status } = req.body;
+    const { companyName, personName, mobileNumber, email, address, status, salesPerson } = req.body;
 
     const vendor = await Vendor.findByIdAndUpdate(
       req.params.id,
-      { companyName, personName, mobileNumber, email, address, status },
+      { companyName, personName, mobileNumber, email, address, status, salesPerson },
       { new: true, runValidators: true }
     );
 

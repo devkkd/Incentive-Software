@@ -34,6 +34,7 @@ export default function AdminCreateVendorPage() {
     mobileNumber: '',
     email: '',
     address: '',
+    salesPerson: '',
     divisionId: '',
   });
 
@@ -156,6 +157,8 @@ export default function AdminCreateVendorPage() {
                   required />
                 <InputField label="Full Address" id="address" placeholder="e.g. 100, MG Road, Jodhpur, Rajasthan"
                   value={form.address} onChange={(v) => set('address', v)} error={fieldErrors.address} />
+                <InputField label="Sales Person" id="salesPerson" placeholder="e.g. Rajesh Kumar"
+                  value={form.salesPerson} onChange={(v) => set('salesPerson', v)} error={fieldErrors.salesPerson} />
               </div>
             </div>
 

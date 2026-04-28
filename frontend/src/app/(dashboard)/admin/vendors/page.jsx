@@ -10,6 +10,11 @@ const authHeaders = () => {
   return { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 };
 
+const authHeadersMultipart = () => {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
 // Custom Dropdown
 const CustomDropdown = ({ label, options, value, onChange, activeDropdown, setActiveDropdown, id }) => {
   const isOpen = activeDropdown === id;
@@ -70,6 +75,14 @@ export default function AdminVendorsPage() {
   const [editForm, setEditForm] = useState({});
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState('');
+
+  // Import modal
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const [importError, setImportError] = useState('');
+  const importFileRef = useRef(null);
 
   const fetchVendors = useCallback(async (page = 1) => {
     setLoading(true);
@@ -141,7 +154,7 @@ export default function AdminVendorsPage() {
   // Edit
   const openEditModal = (vendor) => {
     setVendorToEdit(vendor);
-    setEditForm({ companyName: vendor.companyName, personName: vendor.personName, mobileNumber: vendor.mobileNumber, email: vendor.email || '', address: vendor.address || '', status: vendor.status });
+    setEditForm({ companyName: vendor.companyName, personName: vendor.personName, mobileNumber: vendor.mobileNumber, email: vendor.email || '', address: vendor.address || '', salesPerson: vendor.salesPerson || '', status: vendor.status });
     setEditError('');
     setIsEditModalOpen(true);
   };
@@ -159,6 +172,38 @@ export default function AdminVendorsPage() {
       setIsEditModalOpen(false); setVendorToEdit(null);
     } catch { setEditError('Server error'); }
     finally { setEditLoading(false); }
+  };
+
+  // Bulk import
+  const handleImportSubmit = async () => {
+    if (!importFile) return;
+    setImportLoading(true); setImportError(''); setImportResult(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', importFile);
+      const res = await fetch(`${API}/api/vendors/bulk-import`, {
+        method: 'POST', headers: authHeadersMultipart(), credentials: 'include', body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) { setImportError(data.message || 'Import failed'); return; }
+      setImportResult(data.data);
+      fetchVendors(1);
+    } catch { setImportError('Server error. Please try again.'); }
+    finally { setImportLoading(false); }
+  };
+
+  const downloadTemplate = async () => {
+    const XLSX = await import('xlsx');
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['Loc', 'Cons Party Code', 'Cons Party Name', 'Cons Party City Desc', 'Party Type', 'Net Retail Qty', 'Mobile No', 'Sales Person'],
+      ['AJM', 'TRJ028', 'MAHESHWARI MOTORS BEAWAR', 'BEAWAR', 'TRADER/RETAILER', '53253', '9876543210', 'Rajesh Kumar'],
+      ['AJM', '0454', 'GEHLOT MOTORS', 'MAKRANA', 'MASS', '47769', '9876543211', 'Suresh Sharma'],
+      ['JOH', '3340', 'P.D. MOTORS', 'JODHPUR', 'MASS', '40837', '9876543212', 'Amit Singh'],
+    ]);
+    ws['!cols'] = [{ wch: 8 }, { wch: 16 }, { wch: 30 }, { wch: 20 }, { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 20 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Vendors Template');
+    XLSX.writeFile(wb, 'vendor_import_template.xlsx');
   };
 
   return (
@@ -197,6 +242,7 @@ export default function AdminVendorsPage() {
                 { label: 'Person Name', key: 'personName' },
                 { label: 'Mobile Number', key: 'mobileNumber' },
                 { label: 'Email', key: 'email' },
+                { label: 'Sales Person', key: 'salesPerson' },
               ].map(({ label, key }) => (
                 <div key={key} className="space-y-1.5">
                   <label className="text-[13px] font-medium text-gray-800">{label}</label>
@@ -230,40 +276,150 @@ export default function AdminVendorsPage() {
         </div>
       )}
 
+      {/* Import Modal */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-[560px] shadow-2xl">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-[22px] font-bold text-gray-900 tracking-tight">Import Vendors via Excel</h2>
+              <button onClick={() => { setIsImportModalOpen(false); setImportFile(null); setImportResult(null); setImportError(''); }}
+                className="text-gray-400 hover:text-gray-600 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {!importResult ? (
+              <>
+                <div className="mb-5 p-4 bg-[#F4F7FB] border border-[#E2E8F0] rounded-xl text-[12px] text-gray-600 leading-relaxed">
+                  <p className="font-bold text-gray-800 mb-1">Required Excel Columns:</p>
+                  <p className="font-mono text-[11px] text-[#2B3B8A]">Loc · Cons Party Code · Cons Party Name · Cons Party City Desc · Party Type · Net Retail Qty · Mobile No · Sales Person</p>
+                  <p className="mt-2 text-gray-500">Mobile No must be a 10-digit number. Loc must match an existing division location code.</p>
+                </div>
+
+                {importError && <div className="mb-4 p-3 bg-[#FDEDEC] rounded-xl text-[13px] text-red-700">{importError}</div>}
+
+                <input ref={importFileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
+                  onChange={(e) => { setImportFile(e.target.files[0]); setImportError(''); }} />
+
+                <div onClick={() => importFileRef.current?.click()}
+                  className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center cursor-pointer hover:border-[#2B3B8A] hover:bg-[#F4F7FB] transition-all mb-6">
+                  {importFile ? (
+                    <div className="flex items-center justify-center gap-3">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-[#2ECC71]">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                      </svg>
+                      <div className="text-left">
+                        <p className="text-[14px] font-semibold text-gray-800">{importFile.name}</p>
+                        <p className="text-[12px] text-gray-400">{(importFile.size / 1024).toFixed(1)} KB</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-10 h-10 text-gray-300 mx-auto mb-3">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                      </svg>
+                      <p className="text-[14px] font-medium text-gray-500">Click to upload Excel / CSV file</p>
+                      <p className="text-[12px] text-gray-400 mt-1">.xlsx, .xls, .csv — max 5MB</p>
+                    </>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button onClick={() => { setIsImportModalOpen(false); setImportFile(null); setImportError(''); }}
+                    className="flex-1 bg-[#111111] hover:bg-black text-white font-bold py-3.5 rounded-xl text-[14px] transition-colors">Cancel</button>
+                  <button onClick={handleImportSubmit} disabled={!importFile || importLoading}
+                    className={`flex-1 font-bold py-3.5 rounded-xl text-[14px] transition-colors ${importFile && !importLoading ? 'bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white' : 'bg-[#8492A6] text-white cursor-not-allowed'}`}>
+                    {importLoading ? 'Importing...' : 'Import Vendors'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="space-y-4 mb-6">
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1 p-4 bg-[#E4F8ED] border border-[#2ECC71]/20 rounded-xl text-center">
+                      <p className="text-[28px] font-bold text-[#2ECC71]">{importResult.successCount}</p>
+                      <p className="text-[12px] text-green-700 font-medium mt-1">Vendors Imported</p>
+                    </div>
+                    <div className="flex-1 p-4 bg-[#FDEDEC] border border-[#E74C3C]/20 rounded-xl text-center">
+                      <p className="text-[28px] font-bold text-[#E74C3C]">{importResult.failedCount}</p>
+                      <p className="text-[12px] text-red-700 font-medium mt-1">Failed</p>
+                    </div>
+                  </div>
+                  {importResult.failedList?.length > 0 && (
+                    <div className="max-h-48 overflow-y-auto rounded-xl border border-gray-100">
+                      <table className="w-full text-[12px]">
+                        <thead><tr className="bg-gray-50 border-b border-gray-100"><th className="px-3 py-2 text-left font-semibold text-gray-700">Party Code</th><th className="px-3 py-2 text-left font-semibold text-gray-700">Reason</th></tr></thead>
+                        <tbody>{importResult.failedList.map((f, i) => (
+                          <tr key={i} className="border-b border-gray-50 last:border-0">
+                            <td className="px-3 py-2 font-mono text-gray-700">{f.row}</td>
+                            <td className="px-3 py-2 text-red-600">{f.reason}</td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => { setIsImportModalOpen(false); setImportFile(null); setImportResult(null); setImportError(''); }}
+                  className="w-full bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white font-bold py-3.5 rounded-xl text-[14px] transition-colors">Done</button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="p-8 md:p-10 max-w-[1600px] mx-auto">
         <div className="mb-6">
           <h2 className="text-[14px] text-gray-700 mb-1">Welcome to Faith Trust Commitment - Incentive Management</h2>
           <h1 className="text-[28px] font-bold text-black tracking-tight">Admin Portal</h1>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8">
-            <h2 className="text-[22px] font-bold text-gray-900 tracking-tight">All Vendors/Party</h2>
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Create Vendor Button */}
-              <Link
-                href="/admin/vendors/create"
-                className="flex items-center gap-2 bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white font-semibold px-5 py-2.5 rounded-xl text-sm transition-colors"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          {/* Header row 1: title + action buttons */}
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <h2 className="text-[20px] font-bold text-gray-900 tracking-tight whitespace-nowrap">All Vendors/Party</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link href="/admin/vendors/create"
+                className="flex items-center gap-1.5 bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white font-semibold px-4 py-2 rounded-xl text-[13px] transition-colors whitespace-nowrap">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                 </svg>
                 Create Vendor
               </Link>
-              <div className="flex items-center gap-2 text-sm font-medium text-gray-700 mr-2">
-                <span>Download In</span>
+              <button onClick={() => { setIsImportModalOpen(true); setImportResult(null); setImportError(''); setImportFile(null); }}
+                className="flex items-center gap-1.5 bg-[#2ECC71] hover:bg-green-600 text-white font-semibold px-4 py-2 rounded-xl text-[13px] transition-colors whitespace-nowrap">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+                Import Excel
+              </button>
+              <button onClick={downloadTemplate}
+                className="flex items-center gap-1.5 border border-gray-200 hover:border-[#2B3B8A] text-gray-700 hover:text-[#2B3B8A] font-semibold px-4 py-2 rounded-xl text-[13px] transition-colors whitespace-nowrap">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                </svg>
+                Template
+              </button>
+              <div className="flex items-center gap-1.5 text-[13px] font-medium text-gray-700">
+                <span className="whitespace-nowrap">Download In</span>
                 <button onClick={downloadPDF} className="bg-[#E74C3C] hover:bg-red-600 text-white text-[10px] font-bold px-1.5 py-1 rounded transition-colors">PDF</button>
                 <button onClick={downloadExcel} className="bg-[#2ECC71] hover:bg-green-600 text-white text-[10px] font-bold px-1.5 py-1 rounded transition-colors">XLS</button>
               </div>
-              <CustomDropdown id="status" label="Status" options={['Active', 'Inactive', 'Blocked']}
-                value={statusFilter} onChange={setStatusFilter} activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} />
-              <div className="relative w-64">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-                </svg>
-                <input type="text" placeholder="Search" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-[13px] focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
-              </div>
+            </div>
+          </div>
+
+          {/* Header row 2: filters */}
+          <div className="flex flex-wrap items-center gap-2 mb-6">
+            <CustomDropdown id="status" label="Status" options={['Active', 'Inactive', 'Blocked']}
+              value={statusFilter} onChange={setStatusFilter} activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} />
+            <div className="relative w-56">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+              </svg>
+              <input type="text" placeholder="Search vendors..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-[13px] focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
             </div>
           </div>
 
@@ -272,25 +428,27 @@ export default function AdminVendorsPage() {
               <thead>
                 <tr className="border-b-2 border-gray-100 text-gray-900 text-[13px]">
                   <th className="pb-4 pt-2 px-2 font-bold">#</th>
-                  <th className="pb-4 pt-2 px-2 font-bold">Vendor Company Name</th>
-                  <th className="pb-4 pt-2 px-2 font-bold">Vendor Mobile Number</th>
-                  <th className="pb-4 pt-2 px-2 font-bold">Vendor Account Number</th>
-                  <th className="pb-4 pt-2 px-2 font-bold">Wallet Available Amount</th>
+                  <th className="pb-4 pt-2 px-2 font-bold">Company Name</th>
+                  <th className="pb-4 pt-2 px-2 font-bold">Mobile</th>
+                  <th className="pb-4 pt-2 px-2 font-bold">Account No.</th>
+                  <th className="pb-4 pt-2 px-2 font-bold">Sales Person</th>
+                  <th className="pb-4 pt-2 px-2 font-bold">Wallet Balance</th>
                   <th className="pb-4 pt-2 px-2 font-bold">Last Redemption</th>
-                  <th className="pb-4 pt-2 px-2 font-bold">Account Created</th>
+                  <th className="pb-4 pt-2 px-2 font-bold">Division | Created</th>
                   <th className="pb-4 pt-2 px-2 font-bold">Status</th>
                   <th className="pb-4 pt-2 px-2 font-bold">Action</th>
                 </tr>
               </thead>
               <tbody className="text-gray-700 font-medium text-[13px]">
                 {loading ? (
-                  <tr><td colSpan="9" className="py-10 text-center text-gray-400">Loading...</td></tr>
+                  <tr><td colSpan="10" className="py-10 text-center text-gray-400">Loading...</td></tr>
                 ) : vendors.length > 0 ? vendors.map((vendor, i) => (
                   <tr key={vendor._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
                     <td className="py-5 px-2">{String((pagination.page - 1) * 10 + i + 1).padStart(2, '0')}</td>
                     <td className="py-5 px-2">{vendor.companyName}</td>
                     <td className="py-5 px-2">{vendor.mobileNumber}</td>
                     <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{vendor.accountNumber}</td>
+                    <td className="py-5 px-2">{vendor.salesPerson || '—'}</td>
                     <td className="py-5 px-2">₹{Number(vendor.walletBalance).toFixed(2)}</td>
                     <td className="py-5 px-2">
                       {vendor.lastRedemptionAmount > 0
@@ -322,7 +480,7 @@ export default function AdminVendorsPage() {
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan="9" className="py-12 text-center">
+                    <td colSpan="10" className="py-12 text-center">
                       <div className="flex flex-col items-center gap-2 text-gray-400">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-10 h-10 opacity-40">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />

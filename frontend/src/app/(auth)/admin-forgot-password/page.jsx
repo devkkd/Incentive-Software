@@ -4,6 +4,7 @@ import { useState, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useLang } from '@/context/LanguageContext';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -35,6 +36,7 @@ const StepIndicator = ({ currentStep }) => {
 
 export default function AdminForgotPasswordPage() {
   const router = useRouter();
+  const { t } = useLang();
   const [step, setStep] = useState(1);
 
   const [email, setEmail] = useState('');
@@ -174,25 +176,23 @@ export default function AdminForgotPasswordPage() {
         {/* STEP 1 */}
         {step === 1 && (
           <>
-            <h1 className="text-[22px] font-bold text-gray-900 mb-2 tracking-tight">Reset your Password</h1>
-            <p className="text-[13px] text-gray-600 mb-6 leading-relaxed">
-              Reset the admin password using your registered email address.
-            </p>
+            <h1 className="text-[22px] font-bold text-gray-900 mb-2 tracking-tight">{t('resetPassword')}</h1>
+            <p className="text-[13px] text-gray-600 mb-6 leading-relaxed">{t('resetAdminPasswordHint')}</p>
             {error && <div className="mb-4 text-xs text-red-600 bg-red-50 p-3 rounded-xl border border-red-100">{error}</div>}
             <form onSubmit={handleSendOtp} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="block text-sm font-medium text-gray-800">Email address</label>
+                <label className="block text-sm font-medium text-gray-800">{t('email')}</label>
                 <input type="email" value={email} onChange={(e) => { setEmail(e.target.value); setError(''); }}
                   placeholder="your@example.com"
                   className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] focus:border-transparent transition-colors placeholder:text-gray-400 text-sm" />
               </div>
               <button type="submit" disabled={loading || !email}
                 className={`w-[80%] mx-auto flex font-semibold py-3 rounded-xl transition-colors items-center justify-center gap-2 ${email && !loading ? 'bg-[#2B3B8A] hover:bg-[#1f2b66] text-white' : 'bg-[#CBD5E1] text-[#64748B] cursor-not-allowed'}`}>
-                {loading ? 'Sending...' : 'Send Verification Code →'}
+                {loading ? t('sending') : t('sendVerificationCode')}
               </button>
             </form>
             <div className="mt-6 text-center">
-              <Link href="/admin_login" className="text-[13px] font-bold text-[#2B3B8A] hover:underline">← Back to Sign In</Link>
+              <Link href="/admin_login" className="text-[13px] font-bold text-[#2B3B8A] hover:underline">{t('backToSignIn')}</Link>
             </div>
           </>
         )}
@@ -200,17 +200,17 @@ export default function AdminForgotPasswordPage() {
         {/* STEP 2 */}
         {step === 2 && (
           <>
-            <h1 className="text-[22px] font-bold text-gray-900 mb-2 tracking-tight">Enter the 6-digit code</h1>
+            <h1 className="text-[22px] font-bold text-gray-900 mb-2 tracking-tight">{t('enterSixDigitCodeTitle')}</h1>
             <p className="text-[13px] text-gray-600 mb-5 leading-relaxed">
-              We sent a verification code to <span className="font-semibold text-black">{sentEmail}</span>.<br />
-              Enter it below to continue. The code expires in 10 minutes.
+              {t('sentVerificationTo')} <span className="font-semibold text-black">{sentEmail}</span>.<br />
+              {t('enterBelowContinue')}
             </p>
             {otpInvalid && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 text-red-500 shrink-0 mt-0.5">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
                 </svg>
-                <p className="text-[12px] text-red-700">That code is incorrect or has expired. Please check the email and try again, or request a new code.</p>
+                <p className="text-[12px] text-red-700">{t('incorrectExpired')}</p>
               </div>
             )}
             <div className="flex gap-2 mb-2">
@@ -224,16 +224,16 @@ export default function AdminForgotPasswordPage() {
               ))}
             </div>
             {otpError && <p className="text-[12px] text-red-500 mb-3">{otpError}</p>}
-            <p className="text-[12px] text-gray-400 mb-5">Enter all 6 digits. Each box takes one digit.</p>
+            <p className="text-[12px] text-gray-400 mb-5">{t('enterAllSixDigits')}</p>
             <button onClick={handleVerifyOtp} disabled={loading || otp.join('').length < 6 || attemptsLeft === 0}
               className={`w-[80%] mx-auto flex font-semibold py-3 rounded-xl transition-colors items-center justify-center gap-2 ${otp.join('').length === 6 && !loading && attemptsLeft > 0 ? 'bg-[#2B3B8A] hover:bg-[#1f2b66] text-white' : 'bg-[#CBD5E1] text-[#64748B] cursor-not-allowed'}`}>
-              {loading ? 'Verifying...' : otpInvalid ? 'Try Again →' : 'Verify Code →'}
+              {loading ? t('verifying2') : otpInvalid ? t('tryAgainBtn') : t('verifyCode')}
             </button>
             <div className="mt-5 text-center text-[13px] text-gray-600">
-              Didn't receive the code?{' '}
+              {t('didntReceiveCode2')}{' '}
               {countdown > 0
-                ? <span className="text-[#2B3B8A] font-semibold">Resend code <span className="text-gray-500 font-normal">(available in {countdown} sec)</span></span>
-                : <button onClick={handleResendOtp} className="text-[#2B3B8A] font-bold hover:underline">Resend code.</button>}
+                ? <span className="text-[#2B3B8A] font-semibold">{t('resendCode')} <span className="text-gray-500 font-normal">(available in {countdown} sec)</span></span>
+                : <button onClick={handleResendOtp} className="text-[#2B3B8A] font-bold hover:underline">{t('resendCodeNow2')}</button>}
             </div>
           </>
         )}
@@ -241,37 +241,37 @@ export default function AdminForgotPasswordPage() {
         {/* STEP 3 */}
         {step === 3 && (
           <>
-            <h1 className="text-[22px] font-bold text-gray-900 mb-2 tracking-tight">Create a new password</h1>
+            <h1 className="text-[22px] font-bold text-gray-900 mb-2 tracking-tight">{t('createNewPassword')}</h1>
             <p className="text-[13px] text-gray-600 mb-5 leading-relaxed">
-              Choose a strong password you haven't used before.<br />You'll use this to sign in from now on.
+              Choose a strong password you haven&apos;t used before.<br />You&apos;ll use this to sign in from now on.
             </p>
             {error && <div className="mb-4 text-xs text-red-600 bg-red-50 p-3 rounded-xl border border-red-100">{error}</div>}
             <form onSubmit={handleSetPassword} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="block text-sm font-medium text-gray-800">New password</label>
+                <label className="block text-sm font-medium text-gray-800">{t('newPasswordField')}</label>
                 <div className="relative">
-                  <input type={showNew ? 'text' : 'password'} value={newPassword} onChange={(e) => { setNewPassword(e.target.value); setError(''); }} placeholder="Enter your password" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] text-sm" />
+                  <input type={showNew ? 'text' : 'password'} value={newPassword} onChange={(e) => { setNewPassword(e.target.value); setError(''); }} placeholder={t('enterYourPassword')} className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] text-sm" />
                   <EyeBtn show={showNew} toggle={() => setShowNew(!showNew)} />
                 </div>
                 {strength && <p className={`text-[12px] font-medium ${strength.color}`}>{strength.label}</p>}
               </div>
               <div className="space-y-1.5">
-                <label className="block text-sm font-medium text-gray-800">Confirm new password</label>
+                <label className="block text-sm font-medium text-gray-800">{t('confirmNewPasswordField')}</label>
                 <div className="relative">
-                  <input type={showConfirm ? 'text' : 'password'} value={confirmPassword} onChange={(e) => { setConfirmPassword(e.target.value); setError(''); }} placeholder="Enter your password" className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] text-sm" />
+                  <input type={showConfirm ? 'text' : 'password'} value={confirmPassword} onChange={(e) => { setConfirmPassword(e.target.value); setError(''); }} placeholder={t('enterYourPassword')} className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] text-sm" />
                   <EyeBtn show={showConfirm} toggle={() => setShowConfirm(!showConfirm)} />
                 </div>
-                {passwordsMatch && <p className="text-[12px] font-medium text-[#2ECC71]">Passwords match.</p>}
+                {passwordsMatch && <p className="text-[12px] font-medium text-[#2ECC71]">{t('passwordsMatch')}</p>}
               </div>
               <div className="bg-[#F4F7FB] border border-[#E2E8F0] rounded-xl p-3 flex gap-2 items-start">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 text-[#2B3B8A] shrink-0 mt-0.5">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
                 </svg>
-                <p className="text-[12px] text-gray-700 leading-relaxed"><span className="font-bold text-gray-900">Password must:</span><br />Be at least 8 characters · Include one number · Include one uppercase letter · Include one special character (e.g. @, #, !)</p>
+                <p className="text-[12px] text-gray-700 leading-relaxed"><span className="font-bold text-gray-900">{t('passwordMust')}</span><br />{t('passwordRules')}</p>
               </div>
               <button type="submit" disabled={loading || !newPassword || newPassword !== confirmPassword}
                 className={`w-[80%] mx-auto flex font-semibold py-3 rounded-xl transition-colors items-center justify-center gap-2 ${!loading && newPassword && newPassword === confirmPassword ? 'bg-[#2B3B8A] hover:bg-[#1f2b66] text-white' : 'bg-[#CBD5E1] text-[#64748B] cursor-not-allowed'}`}>
-                {loading ? 'Setting...' : 'Set New Password →'}
+                {loading ? t('setting') : t('setNewPassword')}
               </button>
             </form>
           </>
@@ -285,10 +285,12 @@ export default function AdminForgotPasswordPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
               </svg>
             </div>
-            <h1 className="text-[22px] font-bold text-gray-900 mb-2">Password Reset!</h1>
-            <p className="text-[13px] text-gray-600 mb-6 leading-relaxed">Your password has been successfully reset.<br />You can now sign in with your new password.</p>
+            <h1 className="text-[22px] font-bold text-gray-900 mb-2">{t('passwordReset')}</h1>
+            <p className="text-[13px] text-gray-600 mb-6 leading-relaxed">
+              Your password has been successfully reset.<br />You can now sign in with your new password.
+            </p>
             <button onClick={() => router.push('/admin_login')} className="w-[80%] bg-[#2B3B8A] hover:bg-[#1f2b66] text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2">
-              Sign In →
+              {t('signInBtn')}
             </button>
           </div>
         )}

@@ -19,6 +19,9 @@ const buildDateFilter = (timeline, startDate, endDate) => {
   end.setHours(23, 59, 59, 999);
 
   switch (timeline) {
+    case 'today':
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      break;
     case 'this_month': start = new Date(now.getFullYear(), now.getMonth(), 1); break;
     case 'last_month':
       start = new Date(now.getFullYear(), now.getMonth() - 1, 1);

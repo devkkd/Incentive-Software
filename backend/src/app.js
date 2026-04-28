@@ -13,6 +13,7 @@ const reportRoutes = require('./routes/reports');
 const settingsRoutes = require('./routes/settings');
 const divisionRoutes = require('./routes/divisions');
 const dashboardRoutes = require('./routes/dashboard');
+const userRoutes = require('./routes/users');
 
 const app = express();
 
@@ -48,6 +49,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/divisions', divisionRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/users', userRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

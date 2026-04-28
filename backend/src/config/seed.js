@@ -4,6 +4,29 @@ const User = require('../models/User');
 const Division = require('../models/Division');
 const Vendor = require('../models/Vendor');
 
+const BRANCHES = [
+  { name: 'AJM', location: 'Ajmer',      locationCode: '1'  },
+  { name: 'BEW', location: 'Beawer',     locationCode: '2'  },
+  { name: 'BKN', location: 'Bikaner',    locationCode: '3'  },
+  { name: 'BT8', location: 'Balotra',    locationCode: '21' },
+  { name: 'CER', location: 'Nagaur',     locationCode: '14' },
+  { name: 'CPS', location: 'Jodhpur',    locationCode: '4'  },
+  { name: 'ETY', location: 'Kishangarh', locationCode: '17' },
+  { name: 'GMR', location: 'Jodhpur',    locationCode: '12' },
+  { name: 'GYT', location: 'Pali',       locationCode: '10' },
+  { name: 'JNR', location: 'Sumerpur',   locationCode: '5'  },
+  { name: 'JOD', location: 'Jodhpur',    locationCode: '6'  },
+  { name: 'JOH', location: 'Jodhpur',    locationCode: '7'  },
+  { name: 'KHA', location: 'Ajmer',      locationCode: '9'  },
+  { name: 'MHX', location: 'Sirohi',     locationCode: '15' },
+  { name: 'PO4', location: 'Bikaner',    locationCode: '18' },
+  { name: 'SDY', location: 'Barmer',     locationCode: '13' },
+  { name: 'SG5', location: 'Merta',      locationCode: '23' },
+  { name: 'SYN', location: 'Bikaner',    locationCode: '20' },
+  { name: 'VPG', location: 'Jodhpur',    locationCode: '19' },
+  { name: 'WSG', location: 'Jodhpur',    locationCode: '22' },
+];
+
 const seed = async () => {
   await mongoose.connect(process.env.MONGODB_URI);
   console.log('Connected to MongoDB');
@@ -12,63 +35,64 @@ const seed = async () => {
   await Division.deleteMany({});
   await Vendor.deleteMany({});
 
-  // Create divisions with locationCode
-  const jodhpur = await Division.create({
-    name: 'Jodhpur Division',
-    location: 'Jodhpur',
-    locationCode: 'JDH',
-  });
-
-  const jaipur = await Division.create({
-    name: 'Jaipur Division',
-    location: 'Jaipur',
-    locationCode: 'JAI',
-  });
-
-  console.log('Divisions created');
+  // Create all divisions/branches
+  const divisionMap = {};
+  for (const b of BRANCHES) {
+    const div = await Division.create({
+      name: b.name,
+      location: b.location,
+      locationCode: b.locationCode,
+    });
+    divisionMap[b.locationCode] = div._id;
+    console.log(`Division created: ${b.name} (${b.locationCode})`);
+  }
 
   // Create admin user
   await User.create({
     name: 'Admin',
-    email: 'developmentkontentkraftdigital@gmail.com', // real email for OTP
+    email: 'developmentkontentkraftdigital@gmail.com',
     password: 'Admin@1234',
     role: 'admin',
     division: null,
   });
 
-  // Create branch user for Jodhpur
+  // Create branch user for HO (JOH)
   await User.create({
-    name: 'Incentive Management - Jodhpur Division',
-    email: 'mehravivek2001@gmail.com', 
+    name: 'HO Branch',
+    email: 'mehravivek2001@gmail.com',
     password: 'Branch@1234',
     role: 'branch',
-    division: jodhpur._id,
+    division: divisionMap['JOH'],
   });
 
-  // Create a sample vendor — account number manually set, prefix auto-added
-  const accountNumber = `${jodhpur.locationCode}-7792811100`;
+  // Sample vendors
+  const vendorData = [
+    { companyName: 'MAHESHWARI MOTORS BEAWAR', personName: 'Maheshwari', mobile: '9876543210', loc: 'AJM', code: 'TRJ028' },
+    { companyName: 'GEHLOT MOTORS',            personName: 'Gehlot',      mobile: '9876543211', loc: 'AJM', code: '0454'   },
+    { companyName: 'P.D. MOTORS',              personName: 'P.D.',        mobile: '9876543212', loc: 'JOH', code: '3340'   },
+    { companyName: 'GURJAR MOTORS',            personName: 'Gurjar',      mobile: '9876543213', loc: 'JNR', code: '5567'   },
+  ];
 
-  await Vendor.create({
-    companyName: 'Test Company Pvt Ltd',
-    personName: 'Ramesh Kumar',
-    accountNumber,
-    mobileNumber: '7792811100',
-    email: 'ramesh@test.com',
-    address: '100, MG Road, Jodhpur',
-    division: jodhpur._id,
-    status: 'active',
-    walletBalance: 10560.90,
-    lastRedemptionAmount: 1560.00,
-    lastRedemptionDate: new Date('2026-04-20'),
-    createdBy: null,
-  });
-
-  console.log('Sample vendor created:', accountNumber);
+  for (const v of vendorData) {
+    const divId = divisionMap[v.loc];
+    if (!divId) continue;
+    await Vendor.create({
+      companyName: v.companyName,
+      personName: v.personName,
+      accountNumber: `${v.loc}-${v.code}`,  // AJM-TRJ028
+      mobileNumber: v.mobile,
+      address: '',
+      division: divId,
+      status: 'active',
+      walletBalance: 0,
+      createdBy: null,
+    });
+    console.log(`Vendor created: ${v.loc}-${v.code}`);
+  }
 
   console.log('\n--- Seed Complete ---');
-  console.log('Admin    → developmentkontentkraftdigital@gmail.com        / Admin@1234');
-  console.log('Branch   → mehravivek2001@gmail.com / Branch@1234');
-  console.log('Vendor search test → mobile: 7792811100');
+  console.log('Admin  → developmentkontentkraftdigital@gmail.com / Admin@1234');
+  console.log('Branch → mehravivek2001@gmail.com / Branch@1234');
 
   await mongoose.disconnect();
   process.exit(0);
