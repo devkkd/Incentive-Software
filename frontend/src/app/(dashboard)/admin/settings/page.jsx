@@ -121,9 +121,9 @@ export default function AdminSettingsPage() {
               { label: 'Account Created', value: userInfo ? new Date(userInfo.createdAt).toLocaleDateString('en-IN') : '—' },
               { label: 'Last Login', value: userInfo?.lastLogin ? new Date(userInfo.lastLogin).toLocaleDateString('en-IN') : '—' },
             ].map(({ label, value }) => (
-              <div key={label} className="grid grid-cols-[130px_1fr] gap-4">
-                <span className="text-[14px] text-gray-600">{label}</span>
-                <span className="text-[14px] font-bold text-gray-900 capitalize">{value}</span>
+              <div key={label} className="flex flex-col gap-1">
+                <span className="text-[12px] text-gray-500 font-medium uppercase tracking-wide">{label}</span>
+                <span className="text-[14px] font-bold text-gray-900 break-all">{value}</span>
               </div>
             ))}
           </div>

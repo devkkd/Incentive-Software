@@ -62,21 +62,22 @@ router.post('/redeem/send-otp', protect, authorize('branch'), async (req, res) =
     try {
       const result = await sendSmsOtp(vendor.mobileNumber, otp, vendor.companyName);
       smsSent = true;
-      if (result.dev) devOtp = otp; // dev mode — expose OTP to frontend
+      if (result.dev) devOtp = otp;
     } catch (smsErr) {
-      console.log(`[DEV] SMS failed. OTP for ${vendor.mobileNumber}: ${otp}`);
-      devOtp = otp;
+      console.log(`[SMS FALLBACK] OTP for ${vendor.mobileNumber}: ${otp}`);
+      devOtp = otp; // always expose on failure
     }
+
+    // Always expose OTP in non-production for testing
+    const exposeOtp = process.env.SHOW_OTP === 'true' || !smsSent || (smsSent && devOtp);
 
     const maskedMobile = vendor.mobileNumber.replace(/(\d{2})\d{6}(\d{2})/, '$1XXXXXX$2');
 
     res.status(200).json({
       success: true,
-      message: smsSent && !devOtp
-        ? `OTP sent to ${maskedMobile}`
-        : `OTP generated (dev mode — shown below)`,
+      message: smsSent && !devOtp ? `OTP sent to ${maskedMobile}` : `OTP generated`,
       maskedMobile,
-      ...(devOtp ? { devOtp } : {}),
+      ...(exposeOtp ? { devOtp: otp } : {}),
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

@@ -71,6 +71,14 @@ export default function BranchDashboard() {
       if (!res.ok) { setSearchError(data.message || 'Vendor not found'); return; }
       setSelectedVendor(data.data);
       fetchWalletHistory(data.data._id);
+      
+      // Auto-fill invoice form with today's date and vendor location
+      const today = new Date().toISOString().split('T')[0];
+      setInvoiceForm(prev => ({
+        ...prev,
+        date: today,
+        location: data.data.division?.location || data.data.address || '',
+      }));
     } catch {
       setSearchError('Unable to connect to server');
     } finally {
@@ -140,9 +148,8 @@ export default function BranchDashboard() {
       setOtpSent(true);
       setOtpVerified(false);
       setOtp(['', '', '', '', '', '']);
-      // Dev mode — show OTP on screen
       if (data.devOtp) {
-        setOtpError(`🔧 DEV MODE — OTP: ${data.devOtp}`);
+        setOtpError(`🔧 TEST OTP: ${data.devOtp}`);
       } else {
         setOtpError('');
       }
@@ -370,13 +377,16 @@ export default function BranchDashboard() {
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[13px] font-medium text-gray-800">Location/City</label>
+                      <label className="text-[13px] font-medium text-gray-800">
+                        Location/City
+                        <span className="ml-1 text-[11px] text-gray-400 font-normal">(auto)</span>
+                      </label>
                       <input
                         type="text"
                         value={invoiceForm.location}
                         onChange={(e) => setInvoiceForm({ ...invoiceForm, location: e.target.value })}
-                        placeholder="Jodhpur"
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]"
+                        placeholder="Auto-filled from vendor"
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A] bg-gray-50"
                       />
                     </div>
                   </div>
@@ -494,9 +504,18 @@ export default function BranchDashboard() {
                         )}
                       </div>
                       {otpError && (
-                        <p className={`text-xs mt-1 font-medium ${otpError.startsWith('DEV') ? 'text-orange-500' : 'text-red-500'}`}>
+                        <div className={`text-xs mt-2 p-3 rounded-xl font-bold flex items-center gap-2 ${
+                          otpError.startsWith('🔧') 
+                            ? 'bg-yellow-50 border-2 border-yellow-400 text-yellow-900' 
+                            : 'bg-red-50 border border-red-200 text-red-600'
+                        }`}>
+                          {otpError.startsWith('🔧') && (
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 shrink-0">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+                            </svg>
+                          )}
                           {otpError}
-                        </p>
+                        </div>
                       )}
                     </div>
                   )}

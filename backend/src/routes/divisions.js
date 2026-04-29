@@ -56,4 +56,15 @@ router.put('/:id', protect, authorize('admin'), async (req, res) => {
   }
 });
 
+// @route   DELETE /api/divisions/:id
+router.delete('/:id', protect, authorize('admin'), async (req, res) => {
+  try {
+    const division = await Division.findByIdAndDelete(req.params.id);
+    if (!division) return res.status(404).json({ success: false, message: 'Division not found' });
+    res.status(200).json({ success: true, message: 'Division deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 module.exports = router;

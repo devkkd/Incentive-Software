@@ -14,12 +14,22 @@ export default function DivisionsPage() {
   const [divisions, setDivisions] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Form state
+  // Create form
   const [form, setForm] = useState({ name: '', location: '', locationCode: '' });
   const [fieldErrors, setFieldErrors] = useState({});
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
   const [formLoading, setFormLoading] = useState(false);
+
+  // Edit modal
+  const [editDiv, setEditDiv] = useState(null);
+  const [editForm, setEditForm] = useState({ name: '', location: '', locationCode: '' });
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState('');
+
+  // Delete confirm
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const fetchDivisions = async () => {
     setLoading(true);
@@ -69,8 +79,103 @@ export default function DivisionsPage() {
     finally { setFormLoading(false); }
   };
 
+  // Edit
+  const openEdit = (div) => {
+    setEditDiv(div);
+    setEditForm({ name: div.name, location: div.location, locationCode: div.locationCode });
+    setEditError('');
+  };
+
+  const handleEdit = async () => {
+    setEditLoading(true); setEditError('');
+    try {
+      const res = await fetch(`${API}/api/divisions/${editDiv._id}`, {
+        method: 'PUT', headers: authHeaders(), credentials: 'include',
+        body: JSON.stringify({ name: editForm.name.toUpperCase(), location: editForm.location }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setEditError(data.message || 'Update failed'); return; }
+      setDivisions(prev => prev.map(d => d._id === editDiv._id ? { ...d, name: editForm.name.toUpperCase(), location: editForm.location } : d));
+      setEditDiv(null);
+    } catch { setEditError('Server error'); }
+    finally { setEditLoading(false); }
+  };
+
+  // Delete
+  const handleDelete = async () => {
+    setDeleteLoading(true);
+    try {
+      const res = await fetch(`${API}/api/divisions/${deleteTarget._id}`, {
+        method: 'DELETE', headers: authHeaders(), credentials: 'include',
+      });
+      if (res.ok) {
+        setDivisions(prev => prev.filter(d => d._id !== deleteTarget._id));
+        setDeleteTarget(null);
+      }
+    } catch { /* silent */ }
+    finally { setDeleteLoading(false); }
+  };
+
   return (
     <div className="p-8 md:p-10 max-w-[1600px] mx-auto space-y-6">
+
+      {/* Edit Modal */}
+      {editDiv && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+          <div className="bg-white rounded-2xl p-8 w-full max-w-[480px] shadow-2xl">
+            <h2 className="text-[20px] font-bold text-gray-900 mb-6">Edit Division</h2>
+            {editError && <div className="mb-4 p-3 bg-[#FDEDEC] rounded-xl text-[13px] text-red-700">{editError}</div>}
+            <div className="space-y-4 mb-6">
+              <div className="space-y-1.5">
+                <label className="text-[13px] font-medium text-gray-700">Branch Code</label>
+                <input type="text" value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value.toUpperCase() }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-mono font-bold tracking-widest focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[13px] font-medium text-gray-700">Location / City</label>
+                <input type="text" value={editForm.location} onChange={e => setEditForm(p => ({ ...p, location: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[13px] font-medium text-gray-700">Serial No. <span className="text-gray-400 font-normal">(cannot change)</span></label>
+                <input type="text" value={editForm.locationCode} disabled
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-100 text-sm font-mono bg-gray-50 text-gray-400 cursor-not-allowed" />
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setEditDiv(null)} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-semibold text-sm hover:bg-gray-50">Cancel</button>
+              <button onClick={handleEdit} disabled={editLoading}
+                className={`flex-1 py-3 rounded-xl font-semibold text-sm text-white transition-colors ${editLoading ? 'bg-[#8492A6]' : 'bg-[#2B3B8A] hover:bg-[#1a2d6b]'}`}>
+                {editLoading ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirm Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+          <div className="bg-white rounded-2xl p-8 w-full max-w-[420px] shadow-2xl text-center">
+            <div className="w-14 h-14 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-7 h-7 text-[#E74C3C]">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+              </svg>
+            </div>
+            <h3 className="text-[18px] font-bold text-gray-900 mb-2">Delete Division?</h3>
+            <p className="text-[13px] text-gray-500 mb-6">
+              Are you sure you want to delete <span className="font-bold text-gray-800">"{deleteTarget.name}"</span>? This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteTarget(null)} className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-semibold text-sm hover:bg-gray-50">Cancel</button>
+              <button onClick={handleDelete} disabled={deleteLoading}
+                className={`flex-1 py-3 rounded-xl font-semibold text-sm text-white transition-colors ${deleteLoading ? 'bg-[#8492A6]' : 'bg-[#E74C3C] hover:bg-red-600'}`}>
+                {deleteLoading ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Page Header */}
       <div>
         <h2 className="text-[14px] text-gray-700 mb-1">Welcome to Faith Trust Commitment - Incentive Management</h2>
@@ -167,6 +272,7 @@ export default function DivisionsPage() {
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Vendor Prefix</th>
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Status</th>
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Created</th>
+                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Actions</th>
                 </tr>
               </thead>
               <tbody className="text-gray-700 font-medium">
@@ -196,6 +302,18 @@ export default function DivisionsPage() {
                       </span>
                     </td>
                     <td className="py-4 px-3 text-gray-400 text-[13px]">{new Date(div.createdAt).toLocaleDateString('en-IN')}</td>
+                    <td className="py-4 px-3">
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => openEdit(div)}
+                          className="font-semibold px-3 py-1.5 rounded-lg text-[12px] bg-[#007BFF] hover:bg-[#0056b3] text-white transition-colors">
+                          Edit
+                        </button>
+                        <button onClick={() => setDeleteTarget(div)}
+                          className="font-semibold px-3 py-1.5 rounded-lg text-[12px] bg-[#E74C3C] hover:bg-red-600 text-white transition-colors">
+                          Delete
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

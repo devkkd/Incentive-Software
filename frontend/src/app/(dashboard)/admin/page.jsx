@@ -52,39 +52,48 @@ export default function AdminDashboardPage() {
 
       {/* KPI Row 1 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-5">
-        <div className="bg-[#E4F8ED] border border-[#2ECC71]/30 rounded-2xl p-6 shadow-sm">
-          <p className="text-sm text-gray-700 mb-2 font-medium">Total Incentives Distributed</p>
-          <h3 className="text-2xl font-bold text-black">{loading ? '...' : fmt(kpi1.totalIncentives)}</h3>
+        <div className="bg-[#E4F8ED] border border-[#2ECC71]/30 rounded-2xl p-6 shadow-sm flex flex-col justify-between min-h-[110px]">
+          <p className="text-sm text-gray-700 font-medium">Total Incentives Distributed</p>
+          <h3 className="text-2xl font-bold text-black mt-2">{loading ? '...' : fmt(kpi1.totalIncentives)}</h3>
         </div>
 
-        <div className="bg-[#FDEDEC] border border-[#E74C3C]/30 rounded-2xl p-6 shadow-sm relative">
-          <p className="text-sm text-gray-700 mb-2 font-medium">Average Weekly Incentives Distributed</p>
-          <h3 className="text-2xl font-bold text-black">{loading ? '...' : fmt(kpi1.weeklyTotal)}</h3>
-          {!loading && kpi1.weeklyChange !== undefined && (
-            <p className={`text-[10px] font-bold absolute bottom-6 right-6 ${kpi1.weeklyChange >= 0 ? 'text-[#2ECC71]' : 'text-[#E74C3C]'}`}>
-              {kpi1.weeklyChange >= 0 ? '▲' : '▼'} {Math.abs(kpi1.weeklyChange)}% {kpi1.weeklyChange >= 0 ? 'Increase' : 'Decrease'} in<br/>Last Week
-            </p>
-          )}
+        <div className="bg-[#FDEDEC] border border-[#E74C3C]/30 rounded-2xl p-6 shadow-sm flex flex-col justify-between min-h-[110px]">
+          <p className="text-sm text-gray-700 font-medium">Average Weekly Incentives Distributed</p>
+          <div className="flex items-end justify-between mt-2 gap-2">
+            <h3 className="text-2xl font-bold text-black">{loading ? '...' : fmt(kpi1.weeklyTotal)}</h3>
+            {!loading && kpi1.weeklyChange !== undefined && (
+              <p className={`text-[11px] font-bold text-right leading-tight shrink-0 ${kpi1.weeklyChange >= 0 ? 'text-[#2ECC71]' : 'text-[#E74C3C]'}`}>
+                {kpi1.weeklyChange >= 0 ? '▲' : '▼'} {Math.abs(kpi1.weeklyChange)}%<br/>
+                <span className="text-gray-500 font-normal">Last Week</span>
+              </p>
+            )}
+          </div>
         </div>
 
-        <div className="bg-[#E4F8ED] border border-[#2ECC71]/30 rounded-2xl p-6 shadow-sm relative">
-          <p className="text-sm text-gray-700 mb-2 font-medium">Average Monthly Incentives Distributed</p>
-          <h3 className="text-2xl font-bold text-black">{loading ? '...' : fmt(kpi1.monthlyTotal)}</h3>
-          {!loading && kpi1.monthlyChange !== undefined && (
-            <p className={`text-[10px] font-bold absolute bottom-6 right-6 ${kpi1.monthlyChange >= 0 ? 'text-[#2ECC71]' : 'text-[#E74C3C]'}`}>
-              {kpi1.monthlyChange >= 0 ? '▲' : '▼'} {Math.abs(kpi1.monthlyChange)}% {kpi1.monthlyChange >= 0 ? 'Increase' : 'Decrease'} in<br/>Last Month
-            </p>
-          )}
+        <div className="bg-[#E4F8ED] border border-[#2ECC71]/30 rounded-2xl p-6 shadow-sm flex flex-col justify-between min-h-[110px]">
+          <p className="text-sm text-gray-700 font-medium">Average Monthly Incentives Distributed</p>
+          <div className="flex items-end justify-between mt-2 gap-2">
+            <h3 className="text-2xl font-bold text-black">{loading ? '...' : fmt(kpi1.monthlyTotal)}</h3>
+            {!loading && kpi1.monthlyChange !== undefined && (
+              <p className={`text-[11px] font-bold text-right leading-tight shrink-0 ${kpi1.monthlyChange >= 0 ? 'text-[#2ECC71]' : 'text-[#E74C3C]'}`}>
+                {kpi1.monthlyChange >= 0 ? '▲' : '▼'} {Math.abs(kpi1.monthlyChange)}%<br/>
+                <span className="text-gray-500 font-normal">Last Month</span>
+              </p>
+            )}
+          </div>
         </div>
 
-        <div className="bg-[#E4F8ED] border border-[#2ECC71]/30 rounded-2xl p-6 shadow-sm relative">
-          <p className="text-sm text-gray-700 mb-2 font-medium">Average Yearly Incentives Distributed</p>
-          <h3 className="text-2xl font-bold text-black">{loading ? '...' : fmt(kpi1.yearlyTotal)}</h3>
-          {!loading && kpi1.yearlyChange !== undefined && (
-            <p className={`text-[10px] font-bold absolute bottom-6 right-6 ${kpi1.yearlyChange >= 0 ? 'text-[#2ECC71]' : 'text-[#E74C3C]'}`}>
-              {kpi1.yearlyChange >= 0 ? '▲' : '▼'} {Math.abs(kpi1.yearlyChange)}% {kpi1.yearlyChange >= 0 ? 'Increase' : 'Decrease'} in<br/>Last Year
-            </p>
-          )}
+        <div className="bg-[#E4F8ED] border border-[#2ECC71]/30 rounded-2xl p-6 shadow-sm flex flex-col justify-between min-h-[110px]">
+          <p className="text-sm text-gray-700 font-medium">Average Yearly Incentives Distributed</p>
+          <div className="flex items-end justify-between mt-2 gap-2">
+            <h3 className="text-2xl font-bold text-black">{loading ? '...' : fmt(kpi1.yearlyTotal)}</h3>
+            {!loading && kpi1.yearlyChange !== undefined && (
+              <p className={`text-[11px] font-bold text-right leading-tight shrink-0 ${kpi1.yearlyChange >= 0 ? 'text-[#2ECC71]' : 'text-[#E74C3C]'}`}>
+                {kpi1.yearlyChange >= 0 ? '▲' : '▼'} {Math.abs(kpi1.yearlyChange)}%<br/>
+                <span className="text-gray-500 font-normal">Last Year</span>
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
