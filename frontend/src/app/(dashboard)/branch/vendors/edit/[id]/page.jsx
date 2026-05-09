@@ -87,7 +87,7 @@ export default function EditVendorPage() {
                   {/* Left Column */}
                   <div className="space-y-6 border-r-0 md:border-r border-gray-100 md:pr-10">
                     <div className="space-y-1.5">
-                      <label className="text-[13px] font-medium text-gray-800">Vendor Company Name</label>
+                      <label className="text-[13px] font-medium text-gray-800">Party Name</label>
                       <input 
                         type="text" 
                         name="companyName"

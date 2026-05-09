@@ -168,7 +168,7 @@ export default function AdminForgotPasswordPage() {
 
         <div className="flex items-center gap-1 mb-6">
           <Image src="/images/logo/logo.svg" alt="FTC Logo" width={80} height={40} className="object-contain" />
-          <Image src="/images/logo/logoname.svg" alt="Faith Trust Commitment" width={160} height={36} className="object-contain" />
+          <Image src="/images/logo/logoname.png" alt="Friends Trading Corporation" width={160} height={36} className="object-contain" />
         </div>
 
         {step < 4 && <StepIndicator currentStep={step} />}

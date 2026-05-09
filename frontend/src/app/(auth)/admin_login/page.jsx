@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLang } from '@/context/LanguageContext';
 import GoogleTranslateButton from '@/components/GoogleTranslateButton';
+import MarutiPartnerBadge from '@/components/MarutiPartnerBadge';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -65,8 +66,8 @@ export default function AdminLoginPage() {
             className="object-contain"
           />
           <Image 
-            src="/images/logo/logoname.svg" 
-            alt="Faith Trust Commitment Incentive Management" 
+            src="/images/logo/logoname.png" 
+            alt="Friends Trading Corporation Incentive Management" 
             width={180} 
             height={40} 
             className="object-contain"
@@ -180,6 +181,11 @@ export default function AdminLoginPage() {
             </button>
           </div>
         </form>
+
+        {/* Partner Badge */}
+        <div className="mt-8 pt-6 border-t border-gray-100 flex justify-center">
+          <MarutiPartnerBadge size="sm" />
+        </div>
 
       </div>
     </div>

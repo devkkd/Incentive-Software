@@ -123,16 +123,16 @@ export default function DivisionsPage() {
       {editDiv && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
           <div className="bg-white rounded-2xl p-8 w-full max-w-[480px] shadow-2xl">
-            <h2 className="text-[20px] font-bold text-gray-900 mb-6">Edit Division</h2>
+            <h2 className="text-[20px] font-bold text-gray-900 mb-6">Edit Location</h2>
             {editError && <div className="mb-4 p-3 bg-[#FDEDEC] rounded-xl text-[13px] text-red-700">{editError}</div>}
             <div className="space-y-4 mb-6">
               <div className="space-y-1.5">
-                <label className="text-[13px] font-medium text-gray-700">Branch Code</label>
+                <label className="text-[13px] font-medium text-gray-700">Location Code</label>
                 <input type="text" value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value.toUpperCase() }))}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-mono font-bold tracking-widest focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
               <div className="space-y-1.5">
-                <label className="text-[13px] font-medium text-gray-700">Location / City</label>
+                <label className="text-[13px] font-medium text-gray-700">Location Name</label>
                 <input type="text" value={editForm.location} onChange={e => setEditForm(p => ({ ...p, location: e.target.value }))}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
@@ -178,7 +178,7 @@ export default function DivisionsPage() {
       )}
       {/* Page Header */}
       <div>
-        <h2 className="text-[14px] text-gray-700 mb-1">Welcome to Faith Trust Commitment - Incentive Management</h2>
+        <h2 className="text-[14px] text-gray-700 mb-1">Welcome to Friends Trading Corporation - Incentive Management</h2>
         <h1 className="text-[28px] font-bold text-black tracking-tight">Admin Portal</h1>
       </div>
 
@@ -194,7 +194,7 @@ export default function DivisionsPage() {
 
       {/* ── Create Division Form ── */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-        <h2 className="text-[18px] font-bold text-gray-900 mb-6 tracking-tight">Create New Division</h2>
+        <h2 className="text-[18px] font-bold text-gray-900 mb-6 tracking-tight">Create New Location</h2>
 
         {formError && (
           <div className="mb-5 p-3 bg-[#FDEDEC] border border-[#E74C3C]/20 rounded-xl text-[13px] text-red-700">{formError}</div>
@@ -204,7 +204,7 @@ export default function DivisionsPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
             {/* Division Name = Location Code like AJM */}
             <div className="space-y-1.5">
-              <label className="block text-[13px] font-medium text-gray-700">Branch Code <span className="text-[#E74C3C]">*</span></label>
+              <label className="block text-[13px] font-medium text-gray-700">Location Code <span className="text-[#E74C3C]">*</span></label>
               <input
                 type="text" value={form.name} onChange={(e) => set('name', e.target.value.toUpperCase())}
                 placeholder="e.g. AJM"
@@ -215,7 +215,7 @@ export default function DivisionsPage() {
 
             {/* Location */}
             <div className="space-y-1.5">
-              <label className="block text-[13px] font-medium text-gray-700">Location / City <span className="text-[#E74C3C]">*</span></label>
+              <label className="block text-[13px] font-medium text-gray-700">Location Name<span className="text-[#E74C3C]">*</span></label>
               <input
                 type="text" value={form.location} onChange={(e) => set('location', e.target.value)}
                 placeholder="e.g. Ajmer"
@@ -244,7 +244,7 @@ export default function DivisionsPage() {
             className={`font-semibold px-8 py-2.5 rounded-xl text-sm flex items-center gap-2 transition-all ${formLoading ? 'bg-[#8492A6] text-white cursor-not-allowed' : 'bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white shadow-sm'}`}>
             {formLoading
               ? <><svg className="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>Creating...</>
-              : <>+ Create Division</>
+              : <>+ Create Location</>
             }
           </button>
         </form>
@@ -253,7 +253,7 @@ export default function DivisionsPage() {
       {/* ── Divisions Table ── */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-[18px] font-bold text-gray-900 tracking-tight">All Divisions</h2>
+          <h2 className="text-[18px] font-bold text-gray-900 tracking-tight">All Location</h2>
           <span className="text-[13px] text-gray-400 font-medium">{divisions.length} total</span>
         </div>
 
@@ -265,7 +265,7 @@ export default function DivisionsPage() {
               <thead>
                 <tr className="border-b-2 border-gray-100 text-gray-900">
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">#</th>
-                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Branch Code</th>
+                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Location Code</th>
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Location</th>
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Serial No.</th>
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Invoice Prefix</th>
@@ -324,8 +324,8 @@ export default function DivisionsPage() {
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-10 h-10 opacity-30 mx-auto mb-3">
               <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
             </svg>
-            <p className="text-[14px] font-medium text-gray-500">No divisions yet</p>
-            <p className="text-[12px] text-gray-400 mt-1">Use the form above to create your first division</p>
+            <p className="text-[14px] font-medium text-gray-500">No Location yet</p>
+            <p className="text-[12px] text-gray-400 mt-1">Use the form above to create your first Location</p>
           </div>
         )}
       </div>

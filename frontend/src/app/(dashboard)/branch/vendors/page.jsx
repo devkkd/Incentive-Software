@@ -84,7 +84,7 @@ export default function VendorsPage() {
             <thead>
               <tr className="border-b border-gray-200 text-gray-900">
                 <th className="pb-4 pt-2 px-2 font-bold">#</th>
-                <th className="pb-4 pt-2 px-2 font-bold">Vendor Company Name</th>
+                <th className="pb-4 pt-2 px-2 font-bold">Party Name</th>
                 <th className="pb-4 pt-2 px-2 font-bold">Mobile Number</th>
                 <th className="pb-4 pt-2 px-2 font-bold">Account Number</th>
                 <th className="pb-4 pt-2 px-2 font-bold">Wallet Balance</th>

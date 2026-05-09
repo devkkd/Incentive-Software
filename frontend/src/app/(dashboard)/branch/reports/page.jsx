@@ -134,8 +134,8 @@ export default function ReportsPage() {
           <div className="max-w-[1400px] mx-auto space-y-6">
 
             <div>
-              <h2 className="text-[15px] text-gray-700 mb-1">Welcome to Faith Trust Commitment - Incentive Management</h2>
-              <h1 className="text-[28px] font-bold text-black tracking-tight">Jodhpur Division</h1>
+              <h2 className="text-[15px] text-gray-700 mb-1">Welcome to Friends Trading Corporation - Incentive Management</h2>
+              <h1 className="text-[28px] font-bold text-black tracking-tight">Jodhpur Location</h1>
             </div>
 
             {/* TOP CARD: Filters */}
@@ -292,7 +292,7 @@ export default function ReportsPage() {
                       <tr className="border-b border-gray-200 text-gray-900">
                         <th className="pb-4 pt-2 px-2 font-bold">#</th>
                         {reportType === 'vendors' && <>
-                          <th className="pb-4 pt-2 px-2 font-bold">Company Name</th>
+                          <th className="pb-4 pt-2 px-2 font-bold">Party Name</th>
                           <th className="pb-4 pt-2 px-2 font-bold">Mobile Number</th>
                           <th className="pb-4 pt-2 px-2 font-bold">Account Number</th>
                           <th className="pb-4 pt-2 px-2 font-bold">Wallet Balance</th>

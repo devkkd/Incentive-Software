@@ -195,12 +195,23 @@ export default function AdminVendorsPage() {
   const downloadTemplate = async () => {
     const XLSX = await import('xlsx');
     const ws = XLSX.utils.aoa_to_sheet([
-      ['Loc', 'Cons Party Code', 'Cons Party Name', 'Cons Party City Desc', 'Party Type', 'Net Retail Qty', 'Mobile No', 'Sales Person'],
-      ['AJM', 'TRJ028', 'MAHESHWARI MOTORS BEAWAR', 'BEAWAR', 'TRADER/RETAILER', '53253', '9876543210', 'Rajesh Kumar'],
-      ['AJM', '0454', 'GEHLOT MOTORS', 'MAKRANA', 'MASS', '47769', '9876543211', 'Suresh Sharma'],
-      ['JOH', '3340', 'P.D. MOTORS', 'JODHPUR', 'MASS', '40837', '9876543212', 'Amit Singh'],
+      // Header row — exact same as form fields
+      ['Location', 'Party Code', 'Party Name', 'Party City', 'Party Type', 'Mobile No', 'Sales Person Name', 'Email Address'],
+      // Sample rows
+      ['AJM', 'TRJ028', 'MAHESHWARI MOTORS BEAWAR', 'BEAWAR', 'TRADER/RETAILER', '9876543210', 'Rajesh Kumar', 'maheshwari@example.com'],
+      ['AJM', '0454', 'GEHLOT MOTORS', 'MAKRANA', 'MASS', '9876543211', 'Suresh Sharma', ''],
+      ['JOH', '3340', 'P.D. MOTORS', 'JODHPUR', 'MASS', '9876543212', 'Amit Singh', ''],
     ]);
-    ws['!cols'] = [{ wch: 8 }, { wch: 16 }, { wch: 30 }, { wch: 20 }, { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 20 }];
+    ws['!cols'] = [
+      { wch: 12 }, // Location
+      { wch: 14 }, // Party Code
+      { wch: 30 }, // Party Name
+      { wch: 18 }, // Party City
+      { wch: 18 }, // Party Type
+      { wch: 14 }, // Mobile No
+      { wch: 22 }, // Sales Person Name
+      { wch: 28 }, // Email Address
+    ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Vendors Template');
     XLSX.writeFile(wb, 'vendor_import_template.xlsx');
@@ -238,8 +249,8 @@ export default function AdminVendorsPage() {
             {editError && <div className="mb-4 p-3 bg-[#FDEDEC] rounded-xl text-[13px] text-red-700">{editError}</div>}
             <div className="grid grid-cols-2 gap-4 mb-6">
               {[
-                { label: 'Company Name', key: 'companyName' },
-                { label: 'Person Name', key: 'personName' },
+                { label: 'Party Name', key: 'companyName' },
+                { label: 'Party City', key: 'partyCity' },
                 { label: 'Mobile Number', key: 'mobileNumber' },
                 { label: 'Email', key: 'email' },
                 { label: 'Sales Person', key: 'salesPerson' },
@@ -294,8 +305,8 @@ export default function AdminVendorsPage() {
               <>
                 <div className="mb-5 p-4 bg-[#F4F7FB] border border-[#E2E8F0] rounded-xl text-[12px] text-gray-600 leading-relaxed">
                   <p className="font-bold text-gray-800 mb-1">Required Excel Columns:</p>
-                  <p className="font-mono text-[11px] text-[#2B3B8A]">Loc · Cons Party Code · Cons Party Name · Cons Party City Desc · Party Type · Net Retail Qty · Mobile No · Sales Person</p>
-                  <p className="mt-2 text-gray-500">Mobile No must be a 10-digit number. Loc must match an existing division location code.</p>
+                  <p className="font-mono text-[11px] text-[#2B3B8A]">Location · Party Code · Party Name · Party City · Party Type · Mobile No · Sales Person Name · Email Address</p>
+                  <p className="mt-2 text-gray-500">Mobile No must be 10 digits. Location must match an existing division code (e.g. AJM, JOH).</p>
                 </div>
 
                 {importError && <div className="mb-4 p-3 bg-[#FDEDEC] rounded-xl text-[13px] text-red-700">{importError}</div>}
@@ -428,34 +439,40 @@ export default function AdminVendorsPage() {
               <thead>
                 <tr className="border-b-2 border-gray-100 text-gray-900 text-[13px]">
                   <th className="pb-4 pt-2 px-2 font-bold">#</th>
-                  <th className="pb-4 pt-2 px-2 font-bold">Company Name</th>
+                  <th className="pb-4 pt-2 px-2 font-bold">Location</th>
+                  <th className="pb-4 pt-2 px-2 font-bold">Party Code</th>
+                  <th className="pb-4 pt-2 px-2 font-bold">Party Name</th>
+                  <th className="pb-4 pt-2 px-2 font-bold">Party City</th>
+                  <th className="pb-4 pt-2 px-2 font-bold">Party Type</th>
                   <th className="pb-4 pt-2 px-2 font-bold">Mobile</th>
-                  <th className="pb-4 pt-2 px-2 font-bold">Account No.</th>
                   <th className="pb-4 pt-2 px-2 font-bold">Sales Person</th>
-                  <th className="pb-4 pt-2 px-2 font-bold">Wallet Balance</th>
-                  <th className="pb-4 pt-2 px-2 font-bold">Last Redemption</th>
-                  <th className="pb-4 pt-2 px-2 font-bold">Division | Created</th>
+                  <th className="pb-4 pt-2 px-2 font-bold">Email</th>
+                  <th className="pb-4 pt-2 px-2 font-bold">Wallet</th>
                   <th className="pb-4 pt-2 px-2 font-bold">Status</th>
                   <th className="pb-4 pt-2 px-2 font-bold">Action</th>
                 </tr>
               </thead>
               <tbody className="text-gray-700 font-medium text-[13px]">
                 {loading ? (
-                  <tr><td colSpan="10" className="py-10 text-center text-gray-400">Loading...</td></tr>
+                  <tr><td colSpan="12" className="py-10 text-center text-gray-400">Loading...</td></tr>
                 ) : vendors.length > 0 ? vendors.map((vendor, i) => (
                   <tr key={vendor._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
                     <td className="py-5 px-2">{String((pagination.page - 1) * 10 + i + 1).padStart(2, '0')}</td>
-                    <td className="py-5 px-2">{vendor.companyName}</td>
-                    <td className="py-5 px-2">{vendor.mobileNumber}</td>
-                    <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{vendor.accountNumber}</td>
-                    <td className="py-5 px-2">{vendor.salesPerson || '—'}</td>
-                    <td className="py-5 px-2">₹{Number(vendor.walletBalance).toFixed(2)}</td>
                     <td className="py-5 px-2">
-                      {vendor.lastRedemptionAmount > 0
-                        ? `₹${vendor.lastRedemptionAmount} | ${vendor.lastRedemptionDate ? new Date(vendor.lastRedemptionDate).toLocaleDateString('en-IN') : 'N/A'}`
-                        : '—'}
+                      <span className="font-mono font-bold text-[#2B3B8A] bg-[#EEF2FF] px-2 py-0.5 rounded text-[12px]">{vendor.division?.name || '—'}</span>
                     </td>
-                    <td className="py-5 px-2">{vendor.division?.name || '—'} | {new Date(vendor.createdAt).toLocaleDateString('en-IN')}</td>
+                    <td className="py-5 px-2 font-semibold text-[#2B3B8A] font-mono text-[12px]">{vendor.accountNumber}</td>
+                    <td className="py-5 px-2 font-semibold">{vendor.companyName}</td>
+                    <td className="py-5 px-2 text-gray-600">{vendor.partyCity || '—'}</td>
+                    <td className="py-5 px-2">
+                      {vendor.partyType ? (
+                        <span className="text-[11px] font-semibold bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{vendor.partyType}</span>
+                      ) : '—'}
+                    </td>
+                    <td className="py-5 px-2">{vendor.mobileNumber}</td>
+                    <td className="py-5 px-2 text-gray-600">{vendor.salesPerson || '—'}</td>
+                    <td className="py-5 px-2 text-gray-500 text-[12px]">{vendor.email || '—'}</td>
+                    <td className="py-5 px-2">₹{Number(vendor.walletBalance).toFixed(2)}</td>
                     <td className="py-5 px-2">
                       <span className={`px-3 py-1.5 rounded-lg border text-[13px] font-semibold capitalize ${statusStyles[vendor.status] || 'text-gray-600 bg-gray-100 border-gray-200'}`}>
                         {vendor.status}
@@ -480,7 +497,7 @@ export default function AdminVendorsPage() {
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan="10" className="py-12 text-center">
+                    <td colSpan="12" className="py-12 text-center">
                       <div className="flex flex-col items-center gap-2 text-gray-400">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-10 h-10 opacity-40">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />

@@ -66,6 +66,16 @@ const vendorSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    partyCity: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    partyType: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',

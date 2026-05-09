@@ -113,12 +113,16 @@ router.get('/stats', protect, authorize('admin'), async (req, res) => {
     }));
 
     const totalDivisionAmount = divisionStats.reduce((s, d) => s + d.total, 0);
-    const pieData = divisionStats.map(d => ({
-      name: d.name,
-      value: totalDivisionAmount > 0 ? Math.round((d.total / totalDivisionAmount) * 100) : 0,
-      amount: d.total,
-      color: d.color,
-    }));
+    // Only include divisions that have actual incentives distributed
+    const pieData = divisionStats
+      .filter(d => d.total > 0)
+      .map(d => ({
+        name: d.name,
+        value: totalDivisionAmount > 0 ? Math.round((d.total / totalDivisionAmount) * 100) : 0,
+        amount: d.total,
+        color: d.color,
+      }))
+      .sort((a, b) => b.amount - a.amount); // highest first
 
     res.status(200).json({
       success: true,

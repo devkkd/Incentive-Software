@@ -3,7 +3,7 @@ const nodemailer = require('nodemailer');
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
   port: parseInt(process.env.EMAIL_PORT),
-  secure: false,
+  secure: false, // Brevo uses STARTTLS on port 587
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
@@ -19,7 +19,7 @@ const sendOtpEmail = async (toEmail, otp, purpose = 'password_change') => {
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #f8faff; border-radius: 16px;">
       <div style="text-align: center; margin-bottom: 24px;">
-        <h2 style="color: #2B3B8A; margin: 0;">Faith Trust Commitment</h2>
+        <h2 style="color: #2B3B8A; margin: 0;">Friends Trading Corporation</h2>
         <p style="color: #6b7280; font-size: 14px; margin: 4px 0 0;">Incentive Management System</p>
       </div>
       <div style="background: white; border-radius: 12px; padding: 24px; border: 1px solid #e5e7eb;">

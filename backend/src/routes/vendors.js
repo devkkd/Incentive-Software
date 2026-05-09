@@ -20,11 +20,14 @@ const upload = multer({
 // @access  Admin only
 router.post('/', protect, authorize('admin'), async (req, res) => {
   try {
-    const { companyName, personName, accountNumber, mobileNumber, email, address, salesPerson } = req.body;
+    const { companyName, personName, accountNumber, mobileNumber, email, address, salesPerson, partyCity, partyType } = req.body;
 
-    if (!companyName || !personName || !accountNumber || !mobileNumber) {
-      return res.status(400).json({ success: false, message: 'Company name, person name, account number and mobile number are required' });
+    if (!companyName || !accountNumber || !mobileNumber) {
+      return res.status(400).json({ success: false, message: 'Party Name, Party Code and Mobile Number are required' });
     }
+
+    // personName defaults to companyName if not provided
+    const resolvedPersonName = personName || companyName;
 
     // Get division for location code prefix
     const divisionId = req.user.role === 'branch'
@@ -55,12 +58,14 @@ router.post('/', protect, authorize('admin'), async (req, res) => {
 
     const vendor = await Vendor.create({
       companyName,
-      personName,
+      personName: resolvedPersonName,
       accountNumber: prefixedAccountNumber,
       mobileNumber,
       email: email || null,
       address: address || '',
       salesPerson: salesPerson || null,
+      partyCity: partyCity || null,
+      partyType: partyType || null,
       division: divisionId,
       createdBy: req.user._id,
     });
@@ -97,13 +102,15 @@ router.post('/bulk-import', protect, authorize('admin'), upload.single('file'), 
     for (const rawRow of rows) {
       const row = normalize(rawRow);
 
-      const loc = String(row['loc'] || '').trim().toUpperCase();
-      const consPartyCode = String(row['cons party code'] || row['cons_party_code'] || '').trim();
-      const consPartyName = String(row['cons party name'] || row['cons_party_name'] || '').trim();
-      const city = String(row['cons party city desc'] || row['cons_party_city_desc'] || row['city'] || '').trim();
+      const loc = String(row['location'] || row['loc'] || '').trim().toUpperCase();
+      const consPartyCode = String(row['party code'] || row['cons party code'] || row['cons_party_code'] || '').trim();
+      const consPartyName = String(row['party name'] || row['cons party name'] || row['cons_party_name'] || '').trim();
+      const city = String(row['party city'] || row['cons party city desc'] || row['cons_party_city_desc'] || row['city'] || '').trim();
       const partyType = String(row['party type'] || row['party_type'] || '').trim();
       const mobileNumber = String(row['mobile no'] || row['mobile_no'] || row['mobile'] || '').trim();
-      const salesPerson = String(row['sales person'] || row['sales_person'] || '').trim();
+      const salesPerson = String(row['sales person name'] || row['sales person'] || row['sales_person'] || '').trim();
+      const email = String(row['email address'] || row['email'] || '').trim();
+      const address = String(row['address'] || '').trim();
 
       if (!loc || !consPartyCode || !consPartyName) {
         results.failed.push({ row: consPartyCode || 'N/A', reason: 'Missing required fields: Loc, Cons Party Code, Cons Party Name' });
@@ -145,8 +152,11 @@ router.post('/bulk-import', protect, authorize('admin'), upload.single('file'), 
           personName: consPartyName,
           accountNumber: prefixedAccountNumber,
           mobileNumber,
-          address: city,
+          address: address || city || '',
+          partyCity: city || null,
+          partyType: partyType || null,
           salesPerson: salesPerson || null,
+          email: email || null,
           division: division._id,
           createdBy: req.user._id,
         });
@@ -207,11 +217,11 @@ router.get('/', protect, async (req, res) => {
 // @access  Admin only
 router.put('/:id', protect, authorize('admin'), async (req, res) => {
   try {
-    const { companyName, personName, mobileNumber, email, address, status, salesPerson } = req.body;
+    const { companyName, personName, mobileNumber, email, address, status, salesPerson, partyCity, partyType } = req.body;
 
     const vendor = await Vendor.findByIdAndUpdate(
       req.params.id,
-      { companyName, personName, mobileNumber, email, address, status, salesPerson },
+      { companyName, personName, mobileNumber, email, address, status, salesPerson, partyCity, partyType },
       { new: true, runValidators: true }
     );
 
@@ -255,8 +265,18 @@ router.get('/search', protect, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Search query required' });
     }
 
+    const trimmed = q.trim();
+
+    // Build search conditions:
+    // 1. Exact mobile number match
+    // 2. Exact full account number match (e.g. ETY-TRJ020)
+    // 3. Suffix match — account number ends with the query (e.g. TRJ020 matches ETY-TRJ020)
     const vendor = await Vendor.findOne({
-      $or: [{ mobileNumber: q }, { accountNumber: q }],
+      $or: [
+        { mobileNumber: trimmed },
+        { accountNumber: trimmed },
+        { accountNumber: { $regex: `-${trimmed}$`, $options: 'i' } },
+      ],
       status: { $ne: 'blocked' },
     }).populate('division', 'name location locationCode');
 

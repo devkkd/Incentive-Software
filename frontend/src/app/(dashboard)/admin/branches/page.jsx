@@ -146,7 +146,7 @@ export default function BranchesPage() {
             {editError && <div className="mb-4 p-3 bg-[#FDEDEC] rounded-xl text-[13px] text-red-700">{editError}</div>}
             <div className="space-y-4 mb-6">
               <div className="space-y-1.5">
-                <label className="text-[13px] font-medium text-gray-700">Branch Name</label>
+                <label className="text-[13px] font-medium text-gray-700">Location Name</label>
                 <input type="text" value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
@@ -156,10 +156,10 @@ export default function BranchesPage() {
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
               <div className="space-y-1.5">
-                <label className="text-[13px] font-medium text-gray-700">Division</label>
+                <label className="text-[13px] font-medium text-gray-700">Location</label>
                 <select value={editForm.divisionId} onChange={e => setEditForm(p => ({ ...p, divisionId: e.target.value }))}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]">
-                  <option value="">Select Division</option>
+                  <option value="">Select Location</option>
                   {divisions.map(d => <option key={d._id} value={d._id}>{d.name} ({d.locationCode})</option>)}
                 </select>
               </div>
@@ -221,25 +221,25 @@ export default function BranchesPage() {
         <form onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
             <div className="space-y-1.5">
-              <label className="block text-[13px] font-medium text-gray-700">Branch Name <span className="text-[#E74C3C]">*</span></label>
-              <input type="text" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Jodhpur Branch"
-                className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] placeholder:text-gray-400 ${fieldErrors.name ? 'border-[#E74C3C] bg-red-50' : 'border-gray-200'}`} />
-              {fieldErrors.name && <p className="text-[11px] text-[#E74C3C]">{fieldErrors.name}</p>}
+              <label className="block text-[13px] font-medium text-gray-700">Location <span className="text-[#E74C3C]">*</span></label>
+              <select value={form.divisionId} onChange={(e) => set('divisionId', e.target.value)}
+                className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] ${fieldErrors.divisionId ? 'border-[#E74C3C] bg-red-50' : 'border-gray-200'}`}>
+                <option value="">Select Location</option>
+                {divisions.map(d => <option key={d._id} value={d._id}>{d.name} ({d.locationCode})</option>)}
+              </select>
+              {fieldErrors.divisionId && <p className="text-[11px] text-[#E74C3C]">{fieldErrors.divisionId}</p>}
             </div>
             <div className="space-y-1.5">
-              <label className="block text-[13px] font-medium text-gray-700">Email Address <span className="text-[#E74C3C]">*</span></label>
+              <label className="block text-[13px] font-medium text-gray-700"> Email <span className="text-[#E74C3C]">*</span></label>
               <input type="email" value={form.email} onChange={(e) => set('email', e.target.value)} placeholder="e.g. jodhpur@ftc.com"
                 className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] placeholder:text-gray-400 ${fieldErrors.email ? 'border-[#E74C3C] bg-red-50' : 'border-gray-200'}`} />
               {fieldErrors.email && <p className="text-[11px] text-[#E74C3C]">{fieldErrors.email}</p>}
             </div>
             <div className="space-y-1.5">
-              <label className="block text-[13px] font-medium text-gray-700">Division <span className="text-[#E74C3C]">*</span></label>
-              <select value={form.divisionId} onChange={(e) => set('divisionId', e.target.value)}
-                className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] ${fieldErrors.divisionId ? 'border-[#E74C3C] bg-red-50' : 'border-gray-200'}`}>
-                <option value="">Select Division</option>
-                {divisions.map(d => <option key={d._id} value={d._id}>{d.name} ({d.locationCode})</option>)}
-              </select>
-              {fieldErrors.divisionId && <p className="text-[11px] text-[#E74C3C]">{fieldErrors.divisionId}</p>}
+              <label className="block text-[13px] font-medium text-gray-700">Location Name <span className="text-[#E74C3C]">*</span></label>
+              <input type="text" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Jodhpur Branch"
+                className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] placeholder:text-gray-400 ${fieldErrors.name ? 'border-[#E74C3C] bg-red-50' : 'border-gray-200'}`} />
+              {fieldErrors.name && <p className="text-[11px] text-[#E74C3C]">{fieldErrors.name}</p>}
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
@@ -284,9 +284,9 @@ export default function BranchesPage() {
               <thead>
                 <tr className="border-b-2 border-gray-100 text-gray-900">
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">#</th>
-                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Branch Name</th>
+                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Location Name</th>
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Email</th>
-                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Division</th>
+                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Location</th>
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Code</th>
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Created</th>
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Status</th>

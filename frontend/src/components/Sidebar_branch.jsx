@@ -4,6 +4,7 @@ import React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import MarutiPartnerBadge from '@/components/MarutiPartnerBadge';
 
 export default function Sidebar_branch() {
   const pathname = usePathname();
@@ -44,7 +45,7 @@ export default function Sidebar_branch() {
       <Link href="/branch" className="h-[72px] flex items-center px-6 border-b border-gray-200 hover:opacity-80 transition-opacity shrink-0">
         <div className="flex items-center gap-1">
           <Image src="/images/logo/logo.svg" alt="FTC" width={40} height={24} className="object-contain" />
-          <Image src="/images/logo/logoname.svg" alt="Faith Trust Commitment" width={110} height={20} className="object-contain" />
+          <Image src="/images/logo/logoname.png" alt="Friends Trading Corporation" width={110} height={20} className="object-contain" />
         </div>
       </Link>
 
@@ -67,6 +68,11 @@ export default function Sidebar_branch() {
           </Link>
         ))}
       </nav>
+
+      {/* Partner Badge */}
+      <div className="px-6 py-5 border-t border-gray-100">
+        <MarutiPartnerBadge size="lg" />
+      </div>
     </aside>
   );
 }

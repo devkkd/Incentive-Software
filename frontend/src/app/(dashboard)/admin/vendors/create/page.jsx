@@ -11,14 +11,13 @@ const authHeaders = () => {
   return { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 };
 
-// Defined OUTSIDE component — prevents focus loss on every keystroke
 const InputField = ({ label, id, type = 'text', placeholder, value, onChange, error, hint, required = false }) => (
   <div className="space-y-1.5">
-    <label htmlFor={id} className="block text-[14px] font-medium text-gray-800">
+    <label htmlFor={id} className="block text-[13px] font-medium text-gray-800">
       {label} {required && <span className="text-[#E74C3C]">*</span>}
     </label>
     <input id={id} type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
-      className={`w-full px-4 py-3 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] focus:border-transparent transition-colors placeholder:text-gray-400 ${error ? 'border-[#E74C3C] bg-red-50' : 'border-gray-200'}`} />
+      className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] focus:border-transparent transition-colors placeholder:text-gray-400 ${error ? 'border-[#E74C3C] bg-red-50' : 'border-gray-200'}`} />
     {error && <p className="text-[12px] text-[#E74C3C] font-medium">{error}</p>}
     {hint && !error && <p className="text-[12px] text-gray-400">{hint}</p>}
   </div>
@@ -28,14 +27,15 @@ export default function AdminCreateVendorPage() {
   const router = useRouter();
 
   const [form, setForm] = useState({
+    divisionId: '',
+    accountNumber: '',
     companyName: '',
     personName: '',
-    accountNumber: '',
+    partyCity: '',
+    partyType: '',
     mobileNumber: '',
-    email: '',
-    address: '',
     salesPerson: '',
-    divisionId: '',
+    email: '',
   });
 
   const [divisions, setDivisions] = useState([]);
@@ -57,13 +57,12 @@ export default function AdminCreateVendorPage() {
 
   const validate = () => {
     const errors = {};
-    if (!form.companyName.trim()) errors.companyName = 'Company name required';
-    if (!form.personName.trim()) errors.personName = 'Person name required';
-    if (!form.accountNumber.trim()) errors.accountNumber = 'Account number required';
-    if (!form.mobileNumber.trim()) errors.mobileNumber = 'Mobile number required';
+    if (!form.divisionId) errors.divisionId = 'Location is required';
+    if (!form.accountNumber.trim()) errors.accountNumber = 'Party Code is required';
+    if (!form.companyName.trim()) errors.companyName = 'Party Name is required';
+    if (!form.mobileNumber.trim()) errors.mobileNumber = 'Mobile number is required';
     else if (!/^\d{10}$/.test(form.mobileNumber.trim())) errors.mobileNumber = 'Enter valid 10-digit mobile number';
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errors.email = 'Enter valid email';
-    if (!form.divisionId) errors.divisionId = 'Division is required';
     return errors;
   };
 
@@ -90,12 +89,11 @@ export default function AdminCreateVendorPage() {
     }
   };
 
-  // Get selected division prefix for preview
   const selectedDivision = divisions.find(d => d._id === form.divisionId);
 
   return (
     <div className="p-8 md:p-10 max-w-[1600px] mx-auto">
-      <div className="mb-8">
+      <div className="mb-6">
         <div className="flex items-center gap-2 text-[13px] text-gray-500 mb-3">
           <Link href="/admin/vendors" className="hover:text-[#2B3B8A] transition-colors">Vendors</Link>
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
@@ -111,7 +109,7 @@ export default function AdminCreateVendorPage() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
 
           {error && (
-            <div className="mx-8 mt-8 p-4 bg-[#FDEDEC] border border-[#E74C3C]/20 rounded-xl flex items-center gap-3">
+            <div className="mx-8 mt-6 p-4 bg-[#FDEDEC] border border-[#E74C3C]/20 rounded-xl flex items-center gap-3">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-[#E74C3C] shrink-0">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
               </svg>
@@ -119,84 +117,60 @@ export default function AdminCreateVendorPage() {
             </div>
           )}
 
-          <div className="flex flex-col lg:flex-row">
+          <div className="p-8 md:p-10">
+            <h3 className="text-[16px] font-bold text-gray-900 mb-6">Vendor / Party Details</h3>
 
-            {/* Left: Company Info */}
-            <div className="w-full lg:w-1/2 p-8 md:p-10 border-b lg:border-b-0 lg:border-r border-gray-100">
-              <div className="flex items-center gap-3 mb-8">
-                <div className="w-10 h-10 bg-[#2B3B8A] rounded-xl flex items-center justify-center shrink-0">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-white">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-[18px] font-bold text-gray-900 tracking-tight">Company Information</h3>
-                  <p className="text-[13px] text-gray-500">Basic vendor details</p>
-                </div>
+            {/* Row 1: Location, Party Code, Party Name */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-5">
+              <div className="space-y-1.5">
+                <label className="block text-[13px] font-medium text-gray-800">Location <span className="text-[#E74C3C]">*</span></label>
+                <select value={form.divisionId} onChange={(e) => set('divisionId', e.target.value)}
+                  className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] ${fieldErrors.divisionId ? 'border-[#E74C3C] bg-red-50' : 'border-gray-200'}`}>
+                  <option value="">Select Location</option>
+                  {divisions.map(d => <option key={d._id} value={d._id}>{d.name} — {d.location}</option>)}
+                </select>
+                {fieldErrors.divisionId && <p className="text-[12px] text-[#E74C3C] font-medium">{fieldErrors.divisionId}</p>}
               </div>
 
-              <div className="space-y-5">
-                {/* Division selector — admin only */}
-                <div className="space-y-1.5">
-                  <label className="block text-[14px] font-medium text-gray-800">Division <span className="text-[#E74C3C]">*</span></label>
-                  <select value={form.divisionId} onChange={(e) => set('divisionId', e.target.value)}
-                    className={`w-full px-4 py-3 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] ${fieldErrors.divisionId ? 'border-[#E74C3C] bg-red-50' : 'border-gray-200'}`}>
-                    <option value="">Select Division</option>
-                    {divisions.map(d => <option key={d._id} value={d._id}>{d.name} ({d.locationCode})</option>)}
-                  </select>
-                  {fieldErrors.divisionId && <p className="text-[12px] text-[#E74C3C] font-medium">{fieldErrors.divisionId}</p>}
-                </div>
+              <InputField label="Party Code" id="accountNumber" placeholder="e.g. TRJ028"
+                value={form.accountNumber} onChange={(v) => set('accountNumber', v)} error={fieldErrors.accountNumber}
+                hint={selectedDivision ? `Saved as: ${selectedDivision.name}-${form.accountNumber || 'XXXXX'}` : ''}
+                required />
 
-                <InputField label="Vendor Company Name" id="companyName" placeholder="e.g. Sharma Auto Parts Pvt Ltd"
-                  value={form.companyName} onChange={(v) => set('companyName', v)} error={fieldErrors.companyName} required />
-                <InputField label="Contact Person Name" id="personName" placeholder="e.g. Ramesh Sharma"
-                  value={form.personName} onChange={(v) => set('personName', v)} error={fieldErrors.personName} required />
-                <InputField label="Vendor Account Number" id="accountNumber" placeholder="e.g. 7792811100"
-                  value={form.accountNumber} onChange={(v) => set('accountNumber', v)} error={fieldErrors.accountNumber}
-                  hint={selectedDivision ? `Will be saved as: ${selectedDivision.locationCode}-${form.accountNumber || 'XXXXXXXXXX'}` : 'Select division first'}
-                  required />
-                <InputField label="Full Address" id="address" placeholder="e.g. 100, MG Road, Jodhpur, Rajasthan"
-                  value={form.address} onChange={(v) => set('address', v)} error={fieldErrors.address} />
-                <InputField label="Sales Person" id="salesPerson" placeholder="e.g. Rajesh Kumar"
-                  value={form.salesPerson} onChange={(v) => set('salesPerson', v)} error={fieldErrors.salesPerson} />
-              </div>
+              <InputField label="Party Name" id="companyName" placeholder="e.g. MAHESHWARI MOTORS"
+                value={form.companyName} onChange={(v) => set('companyName', v)} error={fieldErrors.companyName} required />
             </div>
 
-            {/* Right: Contact Info */}
-            <div className="w-full lg:w-1/2 p-8 md:p-10">
-              <div className="flex items-center gap-3 mb-8">
-                <div className="w-10 h-10 bg-[#2B3B8A] rounded-xl flex items-center justify-center shrink-0">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-white">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-[18px] font-bold text-gray-900 tracking-tight">Contact Details</h3>
-                  <p className="text-[13px] text-gray-500">Mobile & email for OTP and communication</p>
-                </div>
+            {/* Row 2: Party City, Party Type, Mobile No */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-5">
+              <InputField label="Party City" id="partyCity" placeholder="e.g. Beawar"
+                value={form.partyCity} onChange={(v) => set('partyCity', v)} error={fieldErrors.partyCity} />
+
+              <div className="space-y-1.5">
+                <label className="block text-[13px] font-medium text-gray-800">Party Type</label>
+                <select value={form.partyType} onChange={(e) => set('partyType', e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A]">
+                  <option value="">Select Type</option>
+                  <option value="MASS">MASS</option>
+                  <option value="TRADER/RETAILER">TRADER/RETAILER</option>
+                  <option value="DEALER">DEALER</option>
+                  <option value="DISTRIBUTOR">DISTRIBUTOR</option>
+                </select>
               </div>
 
-              <div className="space-y-5">
-                <InputField label="Mobile Number" id="mobileNumber" type="tel" placeholder="e.g. 9876543210"
-                  value={form.mobileNumber} onChange={(v) => set('mobileNumber', v)} error={fieldErrors.mobileNumber}
-                  hint="10-digit mobile number — used for OTP during redemption" required />
-                <InputField label="Email Address" id="email" type="email" placeholder="e.g. vendor@example.com"
-                  value={form.email} onChange={(v) => set('email', v)} error={fieldErrors.email}
-                  hint="Optional — for email notifications" />
-              </div>
+              <InputField label="Mobile No." id="mobileNumber" type="tel" placeholder="e.g. 9876543210"
+                value={form.mobileNumber} onChange={(v) => set('mobileNumber', v)} error={fieldErrors.mobileNumber}
+                hint="10-digit — used for OTP during redemption" required />
+            </div>
 
-              <div className="mt-8 bg-[#F4F7FB] border border-[#E2E8F0] rounded-xl p-4 flex gap-3 items-start">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-[#2B3B8A] shrink-0 mt-0.5">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
-                </svg>
-                <div className="text-[12px] text-gray-600 leading-relaxed">
-                  <span className="font-bold text-gray-900 block mb-1">Account Number Format</span>
-                  The account number will be prefixed with the selected division's location code.
-                  {selectedDivision && (
-                    <><br /><span className="font-mono text-[#2B3B8A] font-semibold">{selectedDivision.locationCode}-{form.accountNumber || 'XXXXXXXXXX'}</span></>
-                  )}
-                </div>
-              </div>
+            {/* Row 3: Sales Person Name, Email Address */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <InputField label="Sales Person Name" id="salesPerson" placeholder="e.g. Rajesh Kumar"
+                value={form.salesPerson} onChange={(v) => set('salesPerson', v)} error={fieldErrors.salesPerson} />
+
+              <InputField label="Email Address" id="email" type="email" placeholder="e.g. vendor@example.com"
+                value={form.email} onChange={(v) => set('email', v)} error={fieldErrors.email}
+                hint="Optional" />
             </div>
           </div>
 

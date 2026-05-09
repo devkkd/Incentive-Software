@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata = {
   title: "FTC Incentive Management",
-  description: "Faith Trust Commitment - Incentive Management System",
+  description: "Friends Trading Corporation - Incentive Management System",
 };
 
 export default function RootLayout({ children }) {

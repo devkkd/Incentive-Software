@@ -50,7 +50,7 @@ export default function CreateBranchPage() {
     if (!form.name.trim()) errors.name = 'Branch name is required';
     if (!form.email.trim()) errors.email = 'Email is required';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errors.email = 'Enter a valid email address';
-    if (!form.divisionId) errors.divisionId = 'Division is required';
+    if (!form.divisionId) errors.divisionId = 'Location is required';
     if (!form.password) errors.password = 'Password is required';
     else if (form.password.length < 8) errors.password = 'Password must be at least 8 characters';
     if (form.password !== form.confirmPassword) errors.confirmPassword = 'Passwords do not match';
@@ -89,7 +89,7 @@ export default function CreateBranchPage() {
           </svg>
           <span className="text-gray-800 font-medium">Create New Branch</span>
         </div>
-        <h2 className="text-[14px] text-gray-700 mb-1">Welcome to Faith Trust Commitment - Incentive Management</h2>
+        <h2 className="text-[14px] text-gray-700 mb-1">Welcome to Friends Trading Corporation - Incentive Management</h2>
         <h1 className="text-[28px] font-bold text-black tracking-tight">Admin Portal</h1>
       </div>
 
@@ -127,10 +127,10 @@ export default function CreateBranchPage() {
 
                 {/* Division */}
                 <div className="space-y-1.5">
-                  <label className="block text-[14px] font-medium text-gray-800">Division <span className="text-[#E74C3C]">*</span></label>
+                  <label className="block text-[14px] font-medium text-gray-800">Location <span className="text-[#E74C3C]">*</span></label>
                   <select value={form.divisionId} onChange={(e) => set('divisionId', e.target.value)}
                     className={`w-full px-4 py-3 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] ${fieldErrors.divisionId ? 'border-[#E74C3C] bg-red-50' : 'border-gray-200'}`}>
-                    <option value="">Select Division</option>
+                    <option value="">Select Location</option>
                     {divisions.map(d => <option key={d._id} value={d._id}>{d.name} ({d.locationCode})</option>)}
                   </select>
                   {fieldErrors.divisionId && <p className="text-[12px] text-[#E74C3C] font-medium">{fieldErrors.divisionId}</p>}

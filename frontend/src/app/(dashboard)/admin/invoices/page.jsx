@@ -163,7 +163,7 @@ export default function AdminInvoicesPage() {
   return (
     <div className="p-8 md:p-10 max-w-[1600px] mx-auto">
       <div className="mb-6">
-        <h2 className="text-[14px] text-gray-700 mb-1">Welcome to Faith Trust Commitment - Incentive Management</h2>
+        <h2 className="text-[14px] text-gray-700 mb-1">Welcome to Friends Trading Corporation - Incentive Management</h2>
         <h1 className="text-[28px] font-bold text-black tracking-tight">Admin Portal</h1>
       </div>
 
@@ -210,7 +210,7 @@ export default function AdminInvoicesPage() {
                 <th className="pb-4 font-bold px-2">Invoice Date</th>
                 <th className="pb-4 font-bold px-2">Invoice Amount (₹)</th>
                 <th className="pb-4 font-bold px-2">Location/City</th>
-                <th className="pb-4 font-bold px-2">Division</th>
+                <th className="pb-4 font-bold px-2">Location</th>
               </tr>
             </thead>
             <tbody className="text-gray-700 font-medium text-[13px]">

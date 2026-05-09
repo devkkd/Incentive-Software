@@ -252,7 +252,7 @@ export default function GlobalSearch({ role = 'admin' }) {
           {/* Footer hint */}
           <div className="px-4 py-2 border-t border-gray-50 bg-gray-50/50">
             <p className="text-[11px] text-gray-400">
-              Search by: vendor name · account no · mobile · invoice no · branch · division code
+              Search by: vendor name · account no · mobile · invoice no · branch · Location code
             </p>
           </div>
         </div>
