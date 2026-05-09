@@ -28,7 +28,7 @@ const BRANCHES = [
 ];
 
 const seed = async () => {
-  await mongoose.connect(process.env.MONGODB_URI);
+  await mongoose.connect(process.env.MONGO_URI);
   console.log('Connected to MongoDB');
 
   await User.deleteMany({});
