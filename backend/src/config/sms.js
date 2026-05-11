@@ -1,9 +1,96 @@
 /**
- * SMS Service — FTC Incentive Management
+ * SMS/WhatsApp Service — FTC Incentive Management
  *
- * SMS_PROVIDER=msg91   → MSG91 OTP API (production)
- * SMS_PROVIDER=        → Dev mode, OTP shown on screen
+ * SMS_PROVIDER=msg91      → MSG91 OTP API (production SMS)
+ * SMS_PROVIDER=whatsapp   → Meta WhatsApp Cloud API
+ * SMS_PROVIDER=           → Dev mode, OTP shown on screen
  */
+
+// ─── WhatsApp Cloud API ───────────────────────────────────────────────────────
+const _sendWhatsApp = async (mobileNumber, otp, vendorName = '') => {
+  const token = process.env.WHATSAPP_TOKEN;
+  const phoneNumberId = process.env.WHATSAPP_PHONE_ID;
+  const templateName = process.env.WHATSAPP_OTP_TEMPLATE || 'ftc_otp';
+
+  const response = await fetch(
+    `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: `91${mobileNumber}`,
+        type: 'template',
+        template: {
+          name: templateName,
+          language: { code: 'en' },
+          components: [
+            {
+              type: 'body',
+              parameters: [
+                { type: 'text', text: vendorName || 'Vendor' },
+                { type: 'text', text: otp },
+              ],
+            },
+          ],
+        },
+      }),
+    }
+  );
+
+  const data = await response.json();
+  console.log('[WhatsApp Response]', JSON.stringify(data));
+
+  if (data.error) {
+    throw new Error(`WhatsApp error: ${data.error.message}`);
+  }
+
+  return { success: true };
+};
+
+// ─── WhatsApp Confirmation Message ───────────────────────────────────────────
+const _sendWhatsAppConfirmation = async (mobileNumber, vendorName, amount, balance) => {
+  const token = process.env.WHATSAPP_TOKEN;
+  const phoneNumberId = process.env.WHATSAPP_PHONE_ID;
+  const templateName = process.env.WHATSAPP_CONFIRM_TEMPLATE || 'ftc_redemption';
+
+  const response = await fetch(
+    `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: `91${mobileNumber}`,
+        type: 'template',
+        template: {
+          name: templateName,
+          language: { code: 'en' },
+          components: [
+            {
+              type: 'body',
+              parameters: [
+                { type: 'text', text: vendorName || 'Vendor' },
+                { type: 'text', text: `Rs.${amount}` },
+                { type: 'text', text: `Rs.${balance}` },
+              ],
+            },
+          ],
+        },
+      }),
+    }
+  );
+
+  const data = await response.json();
+  console.log('[WhatsApp Confirm Response]', JSON.stringify(data));
+  return { success: !data.error };
+};
 
 // ─── MSG91 OTP API ────────────────────────────────────────────────────────────
 const _sendMsg91Otp = async (mobileNumber, otp) => {
@@ -85,6 +172,16 @@ const sendSmsOtp = async (mobileNumber, otp, vendorName = '') => {
     return { success: true, dev: true };
   }
 
+  if (provider === 'whatsapp') {
+    try {
+      return await _sendWhatsApp(mobileNumber, otp, vendorName);
+    } catch (error) {
+      console.error('[WhatsApp OTP ERROR]', error.message);
+      console.log(`[FALLBACK] OTP for ${mobileNumber}: ${otp}`);
+      throw error;
+    }
+  }
+
   if (provider === 'msg91') {
     try {
       return await _sendMsg91Otp(mobileNumber, otp);
@@ -95,14 +192,10 @@ const sendSmsOtp = async (mobileNumber, otp, vendorName = '') => {
     }
   }
 
-  // fallback
   _logDev(mobileNumber, 'OTP', otp);
   return { success: true, dev: true };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PUBLIC: Send Redemption Confirmation SMS
-// ─────────────────────────────────────────────────────────────────────────────
 const sendRedemptionConfirmation = async (mobileNumber, vendorName, redeemedAmount, remainingBalance) => {
   const provider = process.env.SMS_PROVIDER;
   const name = vendorName || 'Vendor';
@@ -111,6 +204,15 @@ const sendRedemptionConfirmation = async (mobileNumber, vendorName, redeemedAmou
   if (!provider) {
     _logDev(mobileNumber, 'CONFIRMATION', message);
     return { success: true, dev: true };
+  }
+
+  if (provider === 'whatsapp') {
+    try {
+      return await _sendWhatsAppConfirmation(mobileNumber, name, redeemedAmount, remainingBalance);
+    } catch (error) {
+      console.error('[WhatsApp CONFIRM ERROR]', error.message);
+      return { success: false, error: error.message };
+    }
   }
 
   if (provider === 'msg91') {

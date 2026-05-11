@@ -50,7 +50,7 @@ const seed = async () => {
   // Create admin user
   await User.create({
     name: 'Admin',
-    email: 'developmentkontentkraftdigital@gmail.com',
+    email: 'friends.ftc.it@gmail.com',
     password: 'Admin@1234',
     role: 'admin',
     division: null,
@@ -91,7 +91,7 @@ const seed = async () => {
   }
 
   console.log('\n--- Seed Complete ---');
-  console.log('Admin  → developmentkontentkraftdigital@gmail.com / Admin@1234');
+  console.log('Admin  → friends.ftc.it@gmail.com / Admin@1234');
   console.log('Branch → mehravivek2001@gmail.com / Branch@1234');
 
   await mongoose.disconnect();

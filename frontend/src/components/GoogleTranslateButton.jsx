@@ -28,6 +28,14 @@ export default function GoogleTranslateButton() {
 
   const handleSwitch = (l) => {
     switchLang(l);
+    if (l === 'en') {
+      // Reload page to fully restore original English text
+      // Remove Google Translate cookie first
+      document.cookie = 'googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+      document.cookie = 'googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=' + window.location.hostname;
+      window.location.reload();
+      return;
+    }
     triggerGoogleTranslate(l);
   };
 
