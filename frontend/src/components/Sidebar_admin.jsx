@@ -27,7 +27,7 @@ export default function Sidebar_admin() {
       {/* Sidebar Logo */}
       <Link href="/admin" className="h-[72px] flex items-center px-6 border-b border-gray-200 hover:opacity-80 transition-opacity shrink-0">
         <div className="flex items-center gap-1">
-          <Image src="/images/logo/logo.svg" alt="FTC" width={40} height={24} className="object-contain" />
+          <Image src="/images/logo/logo.jpeg" alt="FTC" width={40} height={24} className="object-contain" />
           <Image src="/images/logo/logoname.png" alt="Friends Trading Corporation" width={110} height={20} className="object-contain" />
         </div>
       </Link>

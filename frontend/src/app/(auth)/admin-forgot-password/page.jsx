@@ -167,7 +167,7 @@ export default function AdminForgotPasswordPage() {
       <div className="bg-white rounded-4xl p-8 sm:p-10 w-full text-gray-900 max-w-[480px] shadow-lg">
 
         <div className="flex items-center gap-1 mb-6">
-          <Image src="/images/logo/logo.svg" alt="FTC Logo" width={80} height={40} className="object-contain" />
+          <Image src="/images/logo/logo.jpeg" alt="FTC Logo" width={80} height={40} className="object-contain" />
           <Image src="/images/logo/logoname.png" alt="Friends Trading Corporation" width={160} height={36} className="object-contain" />
         </div>
 

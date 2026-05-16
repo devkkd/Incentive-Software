@@ -137,7 +137,7 @@ export default function DivisionsPage() {
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
               <div className="space-y-1.5">
-                <label className="text-[13px] font-medium text-gray-700">Serial No. <span className="text-gray-400 font-normal">(cannot change)</span></label>
+                <label className="text-[13px] font-medium text-gray-700">Invoice No.<span className="text-gray-400 font-normal">(cannot change)</span></label>
                 <input type="text" value={editForm.locationCode} disabled
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-100 text-sm font-mono bg-gray-50 text-gray-400 cursor-not-allowed" />
               </div>
@@ -226,7 +226,7 @@ export default function DivisionsPage() {
 
             {/* Serial Number = locationCode */}
             <div className="space-y-1.5">
-              <label className="block text-[13px] font-medium text-gray-700">Serial No. <span className="text-[#E74C3C]">*</span></label>
+              <label className="block text-[13px] font-medium text-gray-700">Invoice No. <span className="text-[#E74C3C]">*</span></label>
               <input
                 type="text" value={form.locationCode} maxLength={5}
                 onChange={(e) => set('locationCode', e.target.value)}
@@ -267,9 +267,9 @@ export default function DivisionsPage() {
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">#</th>
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Location Code</th>
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Location</th>
-                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Serial No.</th>
+                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Invoice No.</th>
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Invoice Prefix</th>
-                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Vendor Prefix</th>
+                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Party Code Prefix</th>
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Status</th>
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Created</th>
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Actions</th>

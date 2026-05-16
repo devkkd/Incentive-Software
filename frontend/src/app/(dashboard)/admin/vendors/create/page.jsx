@@ -151,10 +151,11 @@ export default function AdminCreateVendorPage() {
                 <select value={form.partyType} onChange={(e) => set('partyType', e.target.value)}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A]">
                   <option value="">Select Type</option>
+                  <option value="CO-DEALER">CO-DEALER</option>
+                  <option value="CO-DISTRIBUTOR">CO-DISTRIBUTOR</option>
+                  <option value="INDEPENDENT WORKSHOP">INDEPENDENT WORKSHOP</option>
                   <option value="MASS">MASS</option>
                   <option value="TRADER/RETAILER">TRADER/RETAILER</option>
-                  <option value="DEALER">DEALER</option>
-                  <option value="DISTRIBUTOR">DISTRIBUTOR</option>
                 </select>
               </div>
 

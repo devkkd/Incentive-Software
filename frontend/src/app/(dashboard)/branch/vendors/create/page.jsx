@@ -183,7 +183,7 @@ export default function CreateVendorPage() {
                   required
                 />
                 <InputField
-                  label="Vendor Account Number"
+                  label="Party Code"
                   id="accountNumber"
                   placeholder="e.g. 7792811100"
                   value={form.accountNumber}

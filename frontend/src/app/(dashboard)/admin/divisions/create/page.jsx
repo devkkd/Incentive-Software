@@ -128,7 +128,7 @@ export default function CreateDivisionPage() {
                   {fieldErrors.locationCode
                     ? <p className="text-[12px] text-[#E74C3C] font-medium">{fieldErrors.locationCode}</p>
                     : <p className="text-[12px] text-gray-400">
-                        Vendor account prefix:{' '}
+                       Party Code prefix:{' '}
                         <span className="font-mono font-semibold text-[#2B3B8A]">{form.locationCode || 'XXX'}-XXXXX</span>
                       </p>
                   }
@@ -154,7 +154,7 @@ export default function CreateDivisionPage() {
                 <div className="p-4 bg-[#EEF2FF] border border-[#2B3B8A]/10 rounded-xl">
                   <p className="text-[13px] font-bold text-[#2B3B8A] mb-1">Division</p>
                   <p className="text-[12px] text-gray-600 leading-relaxed">
-                    A division is a location/area with a unique code (e.g. <span className="font-mono font-bold">AJM</span>). It is used to prefix vendor account numbers and group data by location.
+                    A division is a location/area with a unique code (e.g. <span className="font-mono font-bold">AJM</span>). It is used to prefix Party Code numbers and group data by location.
                   </p>
                 </div>
                 <div className="p-4 bg-[#F4F7FB] border border-gray-100 rounded-xl">

@@ -21,7 +21,6 @@ export default function BranchDashboard() {
 
   // Invoice form
   const [invoiceForm, setInvoiceForm] = useState({ date: '', number: '', amount: '', location: '' });
-  const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [invoiceError, setInvoiceError] = useState('');
   const [createdInvoice, setCreatedInvoice] = useState(null);
 
@@ -97,37 +96,7 @@ export default function BranchDashboard() {
     } catch { /* silent */ }
   };
 
-  // --- Create Invoice (no wallet credit) ---
-  const handleCreateInvoice = async () => {
-    if (!invoiceForm.date || !invoiceForm.number || !invoiceForm.amount || !invoiceForm.location) {
-      setInvoiceError('All fields are required');
-      return;
-    }
-    setInvoiceLoading(true);
-    setInvoiceError('');
-
-    try {
-      const res = await fetch(`${API}/api/invoices`, {
-        method: 'POST',
-        headers: authHeaders(),
-        credentials: 'include',
-        body: JSON.stringify({
-          vendorId: selectedVendor._id,
-          invoiceDate: invoiceForm.date,
-          invoiceNumber: invoiceForm.number,
-          invoiceAmount: invoiceForm.amount,
-          location: invoiceForm.location,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setInvoiceError(data.message || 'Failed to create invoice'); return; }
-      setCreatedInvoice(data.data);
-    } catch {
-      setInvoiceError('Server error');
-    } finally {
-      setInvoiceLoading(false);
-    }
-  };
+  // --- Invoice creation moved to handleSubmit ---
 
   // --- OTP ---
   const handleSendOTP = async () => {
@@ -184,39 +153,77 @@ export default function BranchDashboard() {
     setOtpError('');
   };
 
-  // --- Submit: debit wallet ---
+  // --- Submit: Create invoice and debit wallet ---
   const handleSubmit = async () => {
-    if (!otpVerified) return;
-    const enteredOtp = otp.join('');
-    if (enteredOtp.length !== 6) { setOtpError('Please enter all 6 digits'); return; }
+    // 1. Validate Invoice Form (required)
+    if (!invoiceForm.date || !invoiceForm.number || !invoiceForm.amount || !invoiceForm.location) {
+      setInvoiceError('All invoice fields are required to submit.');
+      return;
+    }
+
+    // 2. Validate OTP if redemption is requested
+    if (redeemAmt > 0) {
+      if (!otpVerified) return;
+      const enteredOtp = otp.join('');
+      if (enteredOtp.length !== 6) { setOtpError('Please enter all 6 digits'); return; }
+    }
+
     setSubmitLoading(true);
+    setInvoiceError('');
+    setRedeemError('');
 
     try {
-      const res = await fetch(`${API}/api/invoices/redeem`, {
+      // Step 1: Create Invoice
+      const invRes = await fetch(`${API}/api/invoices`, {
         method: 'POST',
         headers: authHeaders(),
         credentials: 'include',
         body: JSON.stringify({
           vendorId: selectedVendor._id,
-          redeemAmount: redeemAmt,
-          invoiceId: createdInvoice?._id || null,
-          otp: otp.join(''),
+          invoiceDate: invoiceForm.date,
+          invoiceNumber: invoiceForm.number,
+          invoiceAmount: invoiceForm.amount,
+          location: invoiceForm.location,
         }),
       });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setRedeemError(data.message);
-        setOtpVerified(false);
-        setOtp(['', '', '', '', '', '']);
+      const invData = await invRes.json();
+      if (!invRes.ok) {
+        setInvoiceError(invData.message || 'Failed to create invoice');
+        setSubmitLoading(false);
         return;
       }
+      const newInvoice = invData.data;
+      setCreatedInvoice(newInvoice);
 
-      setSelectedVendor(prev => ({ ...prev, walletBalance: data.data.newWalletBalance }));
+      // Step 2: Redemption (if requested)
+      if (redeemAmt > 0) {
+        const redRes = await fetch(`${API}/api/invoices/redeem`, {
+          method: 'POST',
+          headers: authHeaders(),
+          credentials: 'include',
+          body: JSON.stringify({
+            vendorId: selectedVendor._id,
+            redeemAmount: redeemAmt,
+            invoiceId: newInvoice._id,
+            otp: otp.join(''),
+          }),
+        });
+        const redData = await redRes.json();
+
+        if (!redRes.ok) {
+          setRedeemError(redData.message);
+          setOtpVerified(false);
+          setOtp(['', '', '', '', '', '']);
+          setSubmitLoading(false);
+          return;
+        }
+        setSelectedVendor(prev => ({ ...prev, walletBalance: redData.data.newWalletBalance }));
+      }
+
       fetchWalletHistory(selectedVendor._id);
       setShowSuccessModal(true);
     } catch {
-      setRedeemError('Server error');
+      setInvoiceError('Server error during submission');
     } finally {
       setSubmitLoading(false);
     }
@@ -244,10 +251,15 @@ export default function BranchDashboard() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
               </svg>
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2 tracking-tight">Redemption Successful</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2 tracking-tight">Success!</h2>
             <p className="text-[15px] text-gray-600 mb-2">
-              ₹{redeemAmt.toFixed(2)} redeemed from wallet.
+              Invoice has been created successfully.
             </p>
+            {redeemAmt > 0 && (
+              <p className="text-[15px] text-gray-600 mb-2">
+                ₹{redeemAmt.toFixed(2)} redeemed from wallet.
+              </p>
+            )}
             <p className="text-[13px] text-gray-500 mb-8">
               New wallet balance: <span className="font-bold text-black">₹{Number(selectedVendor?.walletBalance).toFixed(2)}</span>
             </p>
@@ -259,7 +271,7 @@ export default function BranchDashboard() {
       )}
 
       <div className="max-w-6xl mx-auto">
-        <h2 className="text-[15px] text-gray-700 mb-1">Welcome to Faith Trust Commitment - Incentive Management</h2>
+        <h2 className="text-[15px] text-gray-700 mb-1">Welcome to Friends Trading Corporation - Incentive Management</h2>
         <h1 className="text-[28px] font-bold text-black mb-8 tracking-tight">Jodhpur Division</h1>
 
         <div className="bg-white border border-gray-100 rounded-2xl shadow-sm flex flex-col">
@@ -269,7 +281,7 @@ export default function BranchDashboard() {
             <div className="w-full md:w-1/2 p-8 border-r border-gray-100 flex flex-col justify-center">
               <h3 className="text-xl font-bold text-gray-900 mb-6">Create an Invoice</h3>
               <form onSubmit={handleSearch} className="space-y-2">
-                <label className="block text-sm font-medium text-gray-800">Vendor Account Number / Mobile Number</label>
+                <label className="block text-sm font-medium text-gray-800">Party Code / Mobile Number</label>
                 <div className="flex gap-4">
                   <input
                     type="text"
@@ -318,7 +330,7 @@ export default function BranchDashboard() {
                 <div className="animate-in fade-in duration-300">
                   <h3 className="text-[18px] font-bold text-gray-900 mb-2">Account Not Found</h3>
                   <p className="text-[13px] text-gray-600 leading-relaxed">
-                    The Vendor Account Number or Mobile Number could not be found. Please contact your administrator to register a new vendor.
+                    The Party Code or Mobile Number could not be found. Please contact your administrator to register a new vendor.
                   </p>
                 </div>
               )}
@@ -391,14 +403,6 @@ export default function BranchDashboard() {
                     </div>
                   </div>
 
-                  <button
-                    onClick={handleCreateInvoice}
-                    disabled={invoiceLoading}
-                    className="bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white font-semibold px-8 py-2.5 rounded-xl self-start flex items-center gap-2 transition-colors disabled:opacity-60"
-                  >
-                    {invoiceLoading ? 'Creating...' : 'Create →'}
-                  </button>
-
                   {/* Invoice Summary */}
                   <div className="border-t border-dashed border-gray-300 pt-6 mt-6 space-y-3 text-[13px]">
                     <div className="flex justify-between text-gray-500 font-medium">
@@ -407,7 +411,7 @@ export default function BranchDashboard() {
                     </div>
                     <div className="flex justify-between text-gray-500 font-medium">
                       <span>Invoice Number</span>
-                      <span className="text-gray-800">{createdInvoice ? createdInvoice.invoiceNumber : '#0000'}</span>
+                      <span className="text-gray-800">{invoiceForm.number || '#0000'}</span>
                     </div>
                     <div className="flex justify-between text-gray-500 font-medium">
                       <span>Invoice Amount (₹)</span>
@@ -544,9 +548,9 @@ export default function BranchDashboard() {
               <div className="border-b border-gray-100 p-8 flex items-center justify-center bg-[#F8FAFC]">
                 <button
                   onClick={handleSubmit}
-                  disabled={!otpVerified || submitLoading}
+                  disabled={submitLoading || (redeemAmt > 0 && !otpVerified)}
                   className={`font-semibold px-10 py-3 rounded-xl flex items-center gap-2 transition-all duration-300 ${
-                    otpVerified && !submitLoading
+                    (!redeemAmt || otpVerified) && !submitLoading
                       ? 'bg-[#2B3B8A] text-white hover:bg-[#1a2d6b] shadow-md'
                       : 'bg-[#8492A6] text-white opacity-80 cursor-not-allowed'
                   }`}

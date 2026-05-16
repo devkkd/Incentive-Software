@@ -78,16 +78,16 @@ export default function AdminViewVendorPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
           <div className="bg-white rounded-3xl p-8 w-full max-w-[500px] shadow-2xl animate-in fade-in zoom-in duration-200">
             <h2 className="text-[26px] font-bold text-gray-900 mb-6 tracking-tight">
-              Block Vendor Account
+              Block Party Code
             </h2>
 
             <div className="space-y-3 mb-8">
               <label className="block text-[15px] font-medium text-gray-800">
-                Why This Vendor Account Has Been Blocked
+                Why This Party Code Has Been Blocked
               </label>
               <textarea
                 rows="5"
-                placeholder="Write a reason explaining why this vendor account has been blocked."
+                placeholder="Write a reason explaining why this party code has been blocked."
                 value={blockReason}
                 onChange={(e) => setBlockReason(e.target.value)}
                 className="w-full p-4 rounded-xl border border-gray-200 text-[15px] text-gray-700 placeholder:text-[#A0ABC0] focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] focus:border-transparent resize-none transition-all"
@@ -110,7 +110,7 @@ export default function AdminViewVendorPage() {
                     : 'bg-[#8492A6] text-white cursor-not-allowed opacity-90'
                 }`}
               >
-                Block Vendor Account
+                Block Party Code
               </button>
             </div>
           </div>
@@ -192,19 +192,19 @@ export default function AdminViewVendorPage() {
               {/* Column 1 */}
               <div className="space-y-6">
                 <div className="grid grid-cols-2 gap-4">
-                  <span className="text-[14px] text-gray-600">Vendor Company Name</span>
+                  <span className="text-[14px] text-gray-600">Party Name</span>
                   <span className="text-[14px] font-bold text-gray-900">{vendor.companyName.toUpperCase()}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <span className="text-[14px] text-gray-600">Vendor Person Name</span>
+                  <span className="text-[14px] text-gray-600">Party Person Name</span>
                   <span className="text-[14px] font-bold text-gray-900">{vendor.personName}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <span className="text-[14px] text-gray-600">Vendor Mobile Number</span>
+                  <span className="text-[14px] text-gray-600">Party Mobile Number</span>
                   <span className="text-[14px] font-bold text-gray-900">{vendor.mobileNumber}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <span className="text-[14px] text-gray-600">Vendor Account Number</span>
+                  <span className="text-[14px] text-gray-600">Party Code</span>
                   <span className="text-[14px] font-bold text-gray-900">{vendor.accountNumber}</span>
                 </div>
               </div>

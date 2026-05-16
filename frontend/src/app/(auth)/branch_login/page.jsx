@@ -53,15 +53,19 @@ export default function branchLoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#D6E8FB] p-4 font-sans">
       <div className="bg-white rounded-[2rem] p-8 sm:p-10 w-full text-gray-900 max-w-[480px] shadow-lg">
+        {/* Maruti Badge — top center */}
+        <div className="flex justify-center mb-4">
+          <MarutiPartnerBadge />
+        </div>
         <div className="flex justify-end mb-2">
           <GoogleTranslateButton />
         </div>
         {/* Logo Section */}
         <div className="flex items-center gap-1 mb-8">
           <Image 
-            src="/images/logo/logo.svg" 
+            src="/images/logo/logo.jpeg" 
             alt="FTC Log" 
-            width={100} 
+            width={60} 
             height={50} 
             className="object-contain"
           />
@@ -181,9 +185,9 @@ export default function branchLoginPage() {
         </div>
 
         {/* Partner Badge */}
-        <div className="mt-6 pt-5 border-t border-gray-100 flex justify-center">
+        {/* <div className="mt-6 pt-5 border-t border-gray-100 flex justify-center">
           <MarutiPartnerBadge size="sm" />
-        </div>
+        </div> */}
       </div>
     </div>
   );

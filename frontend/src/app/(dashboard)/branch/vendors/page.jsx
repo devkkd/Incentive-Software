@@ -49,7 +49,7 @@ export default function VendorsPage() {
 
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-          <h1 className="text-[28px] font-bold text-gray-900 tracking-tight">Vendors</h1>
+          <h1 className="text-[28px] font-bold text-gray-900 tracking-tight">All Party</h1>
 
           <div className="flex flex-wrap items-center gap-3">
             {/* Status Filter */}
@@ -131,33 +131,46 @@ export default function VendorsPage() {
         </div>
 
         {/* Pagination */}
-        {pagination.pages > 1 && (
-          <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-gray-100 pt-6">
-            <p className="text-[13px] text-gray-600 font-medium">
-              Showing {vendors.length} of {pagination.total} vendors
-            </p>
-            <div className="flex items-center gap-1.5">
-              <button onClick={() => fetchVendors(pagination.page - 1)} disabled={pagination.page === 1}
-                className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#2B3B8A] text-white hover:bg-[#1f2b66] disabled:opacity-40 transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-                </svg>
-              </button>
-              {Array.from({ length: pagination.pages }, (_, i) => i + 1).map((p) => (
-                <button key={p} onClick={() => fetchVendors(p)}
-                  className={`w-8 h-8 flex items-center justify-center rounded-lg text-[13px] font-semibold transition-colors ${p === pagination.page ? 'bg-[#2B3B8A] text-white' : 'bg-[#8492A6] text-white hover:bg-gray-500'}`}>
-                  {String(p).padStart(2, '0')}
+        <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-gray-100 pt-6">
+          <p className="text-[13px] text-gray-600 font-medium">
+            Showing {vendors.length} of {pagination.total} vendors
+          </p>
+          {pagination.pages > 1 && (() => {
+            const current = pagination.page;
+            const total = pagination.pages;
+            const maxVisible = 6;
+            let start = Math.max(1, current - Math.floor(maxVisible / 2));
+            let end = start + maxVisible - 1;
+            if (end > total) { end = total; start = Math.max(1, end - maxVisible + 1); }
+            const pages = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+            return (
+              <div className="flex items-center gap-1.5">
+                <button onClick={() => fetchVendors(current - 1)} disabled={current === 1}
+                  className="w-9 h-9 flex items-center justify-center rounded-xl bg-[#2B3B8A] text-white hover:bg-[#1f2b66] disabled:opacity-40 transition-colors shadow-sm">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                  </svg>
                 </button>
-              ))}
-              <button onClick={() => fetchVendors(pagination.page + 1)} disabled={pagination.page === pagination.pages}
-                className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#2B3B8A] text-white hover:bg-[#1f2b66] disabled:opacity-40 transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        )}
+                {pages.map((p) => (
+                  <button key={p} onClick={() => fetchVendors(p)}
+                    className={`w-9 h-9 flex items-center justify-center rounded-xl text-[13px] font-bold transition-colors shadow-sm ${
+                      p === current
+                        ? 'bg-[#2B3B8A] text-white shadow-md'
+                        : 'bg-[#8492A6] text-white hover:bg-[#6b7a8d]'
+                    }`}>
+                    {String(p).padStart(2, '0')}
+                  </button>
+                ))}
+                <button onClick={() => fetchVendors(current + 1)} disabled={current === total}
+                  className="w-9 h-9 flex items-center justify-center rounded-xl bg-[#2B3B8A] text-white hover:bg-[#1f2b66] disabled:opacity-40 transition-colors shadow-sm">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                  </svg>
+                </button>
+              </div>
+            );
+          })()}
+        </div>
 
       </div>
     </main>

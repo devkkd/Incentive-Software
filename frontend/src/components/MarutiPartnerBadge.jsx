@@ -5,7 +5,7 @@ import Image from 'next/image';
 // size="sm" → login pages (compact)
 // size="lg" → sidebar (bigger)
 export default function MarutiPartnerBadge({ size = 'sm' }) {
-  const dim = size === 'lg' ? 130 : 90;
+  const dim = size === 'lg' ? 150 : 90;
 
   return (
     <div className="flex items-center justify-center">

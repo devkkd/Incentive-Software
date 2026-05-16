@@ -221,8 +221,14 @@ export default function BranchesPage() {
         <form onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
             <div className="space-y-1.5">
-              <label className="block text-[13px] font-medium text-gray-700">Location <span className="text-[#E74C3C]">*</span></label>
-              <select value={form.divisionId} onChange={(e) => set('divisionId', e.target.value)}
+              <label className="block text-[13px] font-medium text-gray-700">Location Code<span className="text-[#E74C3C]">*</span></label>
+              <select value={form.divisionId} onChange={(e) => {
+                const val = e.target.value;
+                set('divisionId', val);
+                const div = divisions.find(d => d._id === val);
+                if (div) set('name', div.location);
+                else set('name', '');
+              }}
                 className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] ${fieldErrors.divisionId ? 'border-[#E74C3C] bg-red-50' : 'border-gray-200'}`}>
                 <option value="">Select Location</option>
                 {divisions.map(d => <option key={d._id} value={d._id}>{d.name} ({d.locationCode})</option>)}
@@ -273,7 +279,7 @@ export default function BranchesPage() {
       {/* ── Branches Table ── */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-[18px] font-bold text-gray-900 tracking-tight">All Branches</h2>
+          <h2 className="text-[18px] font-bold text-gray-900 tracking-tight">All Party</h2>
           <span className="text-[13px] text-gray-400 font-medium">{branches.length} total</span>
         </div>
         {loading ? (

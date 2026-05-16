@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useLang } from '@/context/LanguageContext';
 import GoogleTranslateButton from '@/components/GoogleTranslateButton';
 import GlobalSearch from '@/components/GlobalSearch';
+import MarutiPartnerBadge from '@/components/MarutiPartnerBadge';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -31,13 +32,16 @@ export default function Admin_header() {
       {/* Search */}
       <GlobalSearch role="admin" />
 
-      <div className="flex items-center gap-6">
+      <div className="flex items-center gap-4">
+        {/* Maruti Badge */}
+        <MarutiPartnerBadge />
+
         {/* Google Translate Toggle */}
         <GoogleTranslateButton />
 
         {/* Profile */}
         <Link href="/admin" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-          <Image src="/images/logo/logo.svg" alt="Admin" width={28} height={28} className="object-contain" />
+          <Image src="/images/logo/logo.jpeg" alt="Admin" width={28} height={28} className="object-contain" />
           <span className="text-sm font-bold text-gray-900">Admin</span>
         </Link>
 

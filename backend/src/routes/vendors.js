@@ -306,4 +306,16 @@ router.get('/:id/transactions', protect, async (req, res) => {
   }
 });
 
+// @route   DELETE /api/vendors/:id
+// @access  Admin only
+router.delete('/:id', protect, authorize('admin'), async (req, res) => {
+  try {
+    const vendor = await Vendor.findByIdAndDelete(req.params.id);
+    if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
+    res.status(200).json({ success: true, data: {} });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 module.exports = router;

@@ -22,7 +22,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <head>
-        <link rel="icon" href="/images/logo/logo.svg" type="image/svg+xml" />
+        <link rel="icon" href="/images/logo/logo.jpeg" type="image/svg+xml" />
         {/* Hide Google Translate toolbar/banner — we use our own buttons */}
         <style>{`
           .goog-te-banner-frame, .goog-te-balloon-frame { display: none !important; }

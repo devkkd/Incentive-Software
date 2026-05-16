@@ -69,6 +69,24 @@ export default function AdminInvoicesPage() {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState({ total: 0, page: 1, pages: 1 });
+  const [pageStart, setPageStart] = useState(1);
+
+  useEffect(() => {
+    if (pagination.page > pageStart + 5) {
+      setPageStart(pagination.page - 5);
+    } else if (pagination.page < pageStart) {
+      setPageStart(pagination.page);
+    }
+  }, [pagination.page, pageStart]);
+
+  const getVisiblePages = () => {
+    let start = pageStart;
+    let end = Math.min(pagination.pages, start + 5);
+    if (end - start < 5 && pagination.pages > 5) {
+      start = pagination.pages - 5;
+    }
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  };
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeDropdown, setActiveDropdown] = useState(null);
@@ -120,7 +138,7 @@ export default function AdminInvoicesPage() {
     doc.setFontSize(10); doc.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 26);
     autoTable(doc, {
       startY: 32,
-      head: [['#', 'Vendor', 'Account No', 'Mobile', 'Invoice No', 'Invoice Date', 'Amount', 'Location', 'Division']],
+      head: [['#', 'Party Name', 'Party Code', 'Mobile No', 'Invoice No', 'Invoice Date', 'Amount', 'Location', 'Division']],
       body: all.map((inv, i) => [
         i + 1,
         inv.vendor?.companyName || 'N/A',
@@ -141,7 +159,7 @@ export default function AdminInvoicesPage() {
     const all = await fetchAll();
     const XLSX = await import('xlsx');
     const ws = XLSX.utils.aoa_to_sheet([
-      ['#', 'Vendor Name', 'Account No', 'Mobile', 'Invoice No', 'Invoice Date', 'Amount (Rs.)', 'Location', 'Division', 'Created At'],
+      ['#', 'Party Name', 'Party Code', 'Mobile No', 'Invoice No', 'Invoice Date', 'Amount (Rs.)', 'Location', 'Division', 'Created At'],
       ...all.map((inv, i) => [
         i + 1,
         inv.vendor?.companyName || 'N/A',
@@ -190,7 +208,7 @@ export default function AdminInvoicesPage() {
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
               </svg>
-              <input type="text" placeholder="Search Vendors/Invoices" value={searchQuery}
+              <input type="text" placeholder="Search Party/Invoices" value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-[13px] focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
             </div>
@@ -203,8 +221,8 @@ export default function AdminInvoicesPage() {
             <thead>
               <tr className="border-b-2 border-gray-100 text-gray-900 text-[13px]">
                 <th className="pb-4 font-bold px-2">#</th>
-                <th className="pb-4 font-bold px-2">Vendor Name</th>
-                <th className="pb-4 font-bold px-2">Account Number</th>
+                <th className="pb-4 font-bold px-2">Party Name</th>
+                <th className="pb-4 font-bold px-2">Party Code</th>
                 <th className="pb-4 font-bold px-2">Mobile Number</th>
                 <th className="pb-4 font-bold px-2">Invoice Number</th>
                 <th className="pb-4 font-bold px-2">Invoice Date</th>
@@ -219,7 +237,7 @@ export default function AdminInvoicesPage() {
               ) : invoices.length > 0 ? invoices.map((row, index) => (
                 <tr key={row._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
                   <td className="py-5 px-2">{String((pagination.page - 1) * 10 + index + 1).padStart(2, '0')}</td>
-                  <td className="py-5 px-2">{row.vendor?.companyName || <span className="text-gray-400 italic text-[12px]">Deleted vendor</span>}</td>
+                  <td className="py-5 px-2">{row.vendor?.companyName || <span className="text-gray-400 italic text-[12px]">Deleted Party</span>}</td>
                   <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{row.vendor?.accountNumber || '—'}</td>
                   <td className="py-5 px-2">{row.vendor?.mobileNumber || '—'}</td>
                   <td className="py-5 px-2 font-semibold">{row.invoiceNumber}</td>
@@ -257,7 +275,7 @@ export default function AdminInvoicesPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
                 </svg>
               </button>
-              {Array.from({ length: Math.min(pagination.pages, 5) }, (_, i) => i + 1).map((p) => (
+              {getVisiblePages().map((p) => (
                 <button key={p} onClick={() => fetchInvoices(p)}
                   className={`w-8 h-8 flex items-center justify-center rounded-lg text-[13px] font-semibold transition-colors ${p === pagination.page ? 'bg-[#2B3B8A] text-white' : 'bg-[#8492A6] text-white hover:bg-gray-500'}`}>
                   {String(p).padStart(2, '0')}

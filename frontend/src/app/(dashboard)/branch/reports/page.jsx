@@ -17,7 +17,7 @@ const statusStyles = {
 
 export default function ReportsPage() {
   const [reportType, setReportType] = useState('vendors');
-  const [timeline, setTimeline] = useState('this_month');
+  const [timeline, setTimeline] = useState('today');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [statusFilter, setStatusFilter] = useState('');

@@ -249,7 +249,7 @@ export default function AdminIncentivesPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-[#E4F8ED] rounded-xl p-4 text-center">
                   <p className="text-[28px] font-bold text-[#00B65E]">{uploadResult.successCount}</p>
-                  <p className="text-[12px] text-gray-600 font-medium">Vendors Credited</p>
+                  <p className="text-[12px] text-gray-600 font-medium">Party Credited</p>
                 </div>
                 <div className={`rounded-xl p-4 text-center ${uploadResult.failedCount > 0 ? 'bg-[#FDEDEC]' : 'bg-gray-50'}`}>
                   <p className={`text-[28px] font-bold ${uploadResult.failedCount > 0 ? 'text-[#E74C3C]' : 'text-gray-400'}`}>{uploadResult.failedCount}</p>

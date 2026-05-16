@@ -53,18 +53,22 @@ export default function AdminLoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#EAF2F9] p-4 font-sans">
       <div className="bg-white rounded-[2rem] p-8 sm:p-10 w-full max-w-[480px] shadow-lg">
+        {/* Maruti Badge — top center */}
+        <div className="flex justify-center mb-4">
+          <MarutiPartnerBadge />
+        </div>
         <div className="flex justify-end mb-2">
           <GoogleTranslateButton />
         </div>
         {/* Logo Section */}
         <div className="flex items-center gap-1 mb-10">
-          <Image 
-            src="/images/logo/logo.svg" 
-            alt="FTC Logo" 
-            width={60} 
-            height={40} 
-            className="object-contain"
-          />
+         <Image 
+                     src="/images/logo/logo.jpeg" 
+                     alt="FTC Log" 
+                     width={60} 
+                     height={50} 
+                     className="object-contain"
+                   />
           <Image 
             src="/images/logo/logoname.png" 
             alt="Friends Trading Corporation Incentive Management" 
@@ -183,9 +187,9 @@ export default function AdminLoginPage() {
         </form>
 
         {/* Partner Badge */}
-        <div className="mt-8 pt-6 border-t border-gray-100 flex justify-center">
+        {/* <div className="mt-8 pt-6 border-t border-gray-100 flex justify-center">
           <MarutiPartnerBadge size="sm" />
-        </div>
+        </div> */}
 
       </div>
     </div>

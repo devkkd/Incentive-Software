@@ -50,7 +50,7 @@ const translations = {
     // Sidebar
     dashboard: 'Dashboard',
     allInvoicesSidebar: 'All Invoices',
-    allVendorsSidebar: 'All Vendors/Party',
+    allVendorsSidebar: 'Party List',
     allBranchesSidebar: 'Create Account',
     allDivisionsSidebar: 'All Location',
     incentivesSidebar: 'Incentives',
@@ -65,7 +65,7 @@ const translations = {
     recentActivity: 'Recent Activity',
 
     // Vendors
-    allVendors: 'All Vendors/Party',
+    allVendors: 'All Party',
     createVendor: 'Create Vendor',
     importExcel: 'Import Excel',
     template: 'Template',
@@ -78,7 +78,7 @@ const translations = {
     lastRedemption: 'Last Redemption',
     vendorCompanyName: 'Vendor Company Name',
     vendorMobile: 'Vendor Mobile Number',
-    vendorAccount: 'Vendor Account Number',
+    vendorAccount: 'Party Code',
     address: 'Full Address',
     emailOptional: 'Email Address (Optional)',
     divisionLabel: 'Division',
@@ -104,7 +104,7 @@ const translations = {
     createDivision: 'Create New Division',
     divisionName: 'Branch Code',
     locationCity: 'Location / City',
-    serialNo: 'Serial No.',
+    serialNo: 'Invoice No.',
     invoicePrefix: 'Invoice Prefix',
     vendorPrefix: 'Vendor Prefix',
     code: 'Code',
@@ -112,8 +112,8 @@ const translations = {
     noDivisionsSub: 'Use the form above to create your first division',
 
     // Branches
-    allBranches: 'All Branches',
-    createBranch: 'Create New Branch',
+    allBranches: 'All Party',
+    createBranch: 'Create New Account',
     branchName: 'Branch Name',
     locationCode: 'Location Code',
     noBranches: 'No branches yet',

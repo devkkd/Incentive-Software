@@ -62,6 +62,15 @@ export default function AdminVendorsPage() {
   const [activeDropdown, setActiveDropdown] = useState(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [pagination, setPagination] = useState({ total: 0, page: 1, pages: 1 });
+  const [pageStart, setPageStart] = useState(1);
+
+  useEffect(() => {
+    if (pagination.page > pageStart + 5) {
+      setPageStart(pagination.page - 5);
+    } else if (pagination.page < pageStart) {
+      setPageStart(pagination.page);
+    }
+  }, [pagination.page, pageStart]);
 
   // Block modal
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
@@ -111,7 +120,7 @@ export default function AdminVendorsPage() {
     const { default: jsPDF } = await import('jspdf');
     const { default: autoTable } = await import('jspdf-autotable');
     const doc = new jsPDF({ orientation: 'landscape' });
-    doc.setFontSize(16); doc.text('All Vendors/Party', 14, 18);
+    doc.setFontSize(16); doc.text('All Party', 14, 18);
     doc.setFontSize(10); doc.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 26);
     autoTable(doc, {
       startY: 32,
@@ -174,6 +183,26 @@ export default function AdminVendorsPage() {
     finally { setEditLoading(false); }
   };
 
+  // Delete
+  const handleDelete = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this vendor?')) return;
+    try {
+      const res = await fetch(`${API}/api/vendors/${id}`, {
+        method: 'DELETE', headers: authHeaders(), credentials: 'include',
+      });
+      if (res.ok) {
+        setVendors(prev => prev.filter(v => v._id !== id));
+        fetchVendors(pagination.page);
+      } else {
+        const data = await res.json();
+        alert(data.message || 'Failed to delete vendor');
+      }
+    } catch {
+      alert('Error deleting vendor');
+    }
+  };
+
+
   // Bulk import
   const handleImportSubmit = async () => {
     if (!importFile) return;
@@ -217,15 +246,24 @@ export default function AdminVendorsPage() {
     XLSX.writeFile(wb, 'vendor_import_template.xlsx');
   };
 
+  const getVisiblePages = () => {
+    let start = pageStart;
+    let end = Math.min(pagination.pages, start + 5);
+    if (end - start < 5 && pagination.pages > 5) {
+      start = pagination.pages - 5;
+    }
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  };
+
   return (
     <>
       {/* Block Modal */}
       {isBlockModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
           <div className="bg-white rounded-3xl p-8 w-full max-w-[500px] shadow-2xl animate-in fade-in zoom-in duration-200">
-            <h2 className="text-[26px] font-bold text-gray-900 mb-6 tracking-tight">Block Vendor Account</h2>
+            <h2 className="text-[26px] font-bold text-gray-900 mb-6 tracking-tight">Block Party Code</h2>
             <div className="space-y-3 mb-8">
-              <label className="block text-[15px] font-medium text-gray-800">Why This Vendor Account Has Been Blocked</label>
+              <label className="block text-[15px] font-medium text-gray-800">Why This Party Code Has Been Blocked</label>
               <textarea rows="5" placeholder="Write a reason..." value={blockReason} onChange={(e) => setBlockReason(e.target.value)}
                 className="w-full p-4 rounded-xl border border-gray-200 text-[15px] text-gray-700 placeholder:text-[#A0ABC0] focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] resize-none transition-all" />
             </div>
@@ -234,7 +272,7 @@ export default function AdminVendorsPage() {
                 className="flex-1 bg-[#111111] hover:bg-black text-white font-bold py-4 rounded-xl text-[15px] transition-colors">Cancel</button>
               <button disabled={!blockReason.trim() || blockLoading} onClick={handleBlockSubmit}
                 className={`flex-1 font-bold py-4 rounded-xl text-[15px] transition-colors ${blockReason.trim() && !blockLoading ? 'bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white' : 'bg-[#8492A6] text-white cursor-not-allowed opacity-90'}`}>
-                {blockLoading ? 'Blocking...' : 'Block Vendor Account'}
+                {blockLoading ? 'Blocking...' : 'Block Party Code'}
               </button>
             </div>
           </div>
@@ -245,7 +283,7 @@ export default function AdminVendorsPage() {
       {isEditModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
           <div className="bg-white rounded-3xl p-8 w-full max-w-[560px] shadow-2xl animate-in fade-in zoom-in duration-200">
-            <h2 className="text-[26px] font-bold text-gray-900 mb-6 tracking-tight">Edit Vendor</h2>
+            <h2 className="text-[26px] font-bold text-gray-900 mb-6 tracking-tight">Edit Party</h2>
             {editError && <div className="mb-4 p-3 bg-[#FDEDEC] rounded-xl text-[13px] text-red-700">{editError}</div>}
             <div className="grid grid-cols-2 gap-4 mb-6">
               {[
@@ -390,7 +428,7 @@ export default function AdminVendorsPage() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           {/* Header row 1: title + action buttons */}
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <h2 className="text-[20px] font-bold text-gray-900 tracking-tight whitespace-nowrap">All Vendors/Party</h2>
+            <h2 className="text-[20px] font-bold text-gray-900 tracking-tight whitespace-nowrap">All Party</h2>
             <div className="flex flex-wrap items-center gap-2">
               <Link href="/admin/vendors/create"
                 className="flex items-center gap-1.5 bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white font-semibold px-4 py-2 rounded-xl text-[13px] transition-colors whitespace-nowrap">
@@ -492,6 +530,10 @@ export default function AdminVendorsPage() {
                         ) : (
                           <span className="text-[13px] text-gray-400 italic px-2">Blocked</span>
                         )}
+                        <button onClick={() => handleDelete(vendor._id)}
+                          className="bg-[#E74C3C] hover:bg-red-600 text-white px-4 py-1.5 rounded-lg text-[13px] font-semibold transition-colors">
+                          Delete
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -518,14 +560,14 @@ export default function AdminVendorsPage() {
               Showing {vendors.length} of {pagination.total} vendors
             </p>
             {pagination.pages > 1 && (
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center justify-center gap-1.5 max-w-full">
                 <button onClick={() => fetchVendors(pagination.page - 1)} disabled={pagination.page === 1}
                   className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#2B3B8A] text-white hover:bg-[#1f2b66] disabled:opacity-40 transition-colors">
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
                   </svg>
                 </button>
-                {Array.from({ length: pagination.pages }, (_, i) => i + 1).map((p) => (
+                {getVisiblePages().map((p) => (
                   <button key={p} onClick={() => fetchVendors(p)}
                     className={`w-8 h-8 flex items-center justify-center rounded-lg text-[13px] font-semibold transition-colors ${p === pagination.page ? 'bg-[#2B3B8A] text-white' : 'bg-[#8492A6] text-white hover:bg-gray-500'}`}>
                     {String(p).padStart(2, '0')}
