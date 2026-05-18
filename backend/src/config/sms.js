@@ -92,6 +92,47 @@ const _sendWhatsAppConfirmation = async (mobileNumber, vendorName, amount, balan
   return { success: !data.error };
 };
 
+// ─── Bhash SMS/WhatsApp API (simple HTTP GET) ───────────────────────────────
+const _sendBhashWhatsapp = async (mobileNumber, otp, vendorName = '', rawMessage = null) => {
+  const user = process.env.BHASH_USER;
+  const pass = process.env.BHASH_PASS;
+  const sender = process.env.BHASH_SENDER || 'BUZWAP';
+  const textKey = process.env.BHASH_TEXT_KEY || 'otp_friends';
+
+  if (!user || !pass) {
+    throw new Error('BHASH credentials not set');
+  }
+
+  // If rawMessage provided, use it for text param; otherwise use template key and Params for OTP
+  const params = new URLSearchParams({
+    user,
+    pass,
+    sender,
+    phone: mobileNumber,
+    priority: 'wa',
+    stype: 'auth',
+  });
+
+  if (rawMessage) {
+    params.set('text', rawMessage);
+  } else {
+    params.set('text', textKey);
+    params.set('Params', otp);
+  }
+
+  const url = `http://bhashsms.com/api/sendmsgutil.php?${params.toString()}`;
+  const resp = await fetch(url, { method: 'GET' });
+  const text = await resp.text();
+  console.log('[BHASH RESPONSE]', text);
+
+  // Basic success check — BHASH usually returns a numeric status or OK text
+  if (!text || /error|invalid/i.test(text)) {
+    throw new Error(`BHASH error: ${text}`);
+  }
+
+  return { success: true };
+};
+
 // ─── MSG91 OTP API ────────────────────────────────────────────────────────────
 const _sendMsg91Otp = async (mobileNumber, otp) => {
   const authKey = process.env.MSG91_AUTH_KEY;
@@ -182,6 +223,16 @@ const sendSmsOtp = async (mobileNumber, otp, vendorName = '') => {
     }
   }
 
+  if (provider === 'bhash') {
+    try {
+      return await _sendBhashWhatsapp(mobileNumber, otp, vendorName);
+    } catch (error) {
+      console.error('[BHASH OTP ERROR]', error.message);
+      console.log(`[FALLBACK] OTP for ${mobileNumber}: ${otp}`);
+      throw error;
+    }
+  }
+
   if (provider === 'msg91') {
     try {
       return await _sendMsg91Otp(mobileNumber, otp);
@@ -211,6 +262,16 @@ const sendRedemptionConfirmation = async (mobileNumber, vendorName, redeemedAmou
       return await _sendWhatsAppConfirmation(mobileNumber, name, redeemedAmount, remainingBalance);
     } catch (error) {
       console.error('[WhatsApp CONFIRM ERROR]', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  if (provider === 'bhash') {
+    try {
+      // Bhash expects a raw text message for confirmations
+      return await _sendBhashWhatsapp(mobileNumber, null, name, message);
+    } catch (error) {
+      console.error('[BHASH CONFIRM ERROR]', error.message);
       return { success: false, error: error.message };
     }
   }

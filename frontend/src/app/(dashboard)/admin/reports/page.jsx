@@ -68,7 +68,7 @@ const getDateRange = (timeline) => {
 };
 
 export default function AdminReportsPage() {
-  const [reportType, setReportType] = useState('Party ');
+  const [reportType, setReportType] = useState('Party');
   const [timeline, setTimeline] = useState('today');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -239,7 +239,7 @@ export default function AdminReportsPage() {
 
   // Client-side filtered data — no extra API call
   const filteredData = reportData.filter((row) => {
-    if (reportType === 'Party ') {
+    if (reportType === 'Party') {
       if (statusFilter && row.status !== statusFilter.toLowerCase()) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
@@ -262,12 +262,31 @@ export default function AdminReportsPage() {
     return true;
   });
 
+  // Totals for current filtered data
+  const totals = React.useMemo(() => {
+    let walletTotal = 0;
+    let invoiceTotal = 0;
+    let incentiveTotal = 0;
+    filteredData.forEach((r) => {
+      if (reportType === 'Party') {
+        walletTotal += Number(r.walletBalance) || 0;
+      }
+      if (reportType === 'invoices') {
+        invoiceTotal += Number(r.invoiceAmount) || 0;
+      }
+      if (reportType === 'incentives') {
+        incentiveTotal += Number(r.amount) || 0;
+      }
+    });
+    return { walletTotal, invoiceTotal, incentiveTotal };
+  }, [filteredData, reportType]);
+
   const downloadPDF = async () => {
     const { default: jsPDF } = await import('jspdf');
     const { default: autoTable } = await import('jspdf-autotable');
     const doc = new jsPDF({ orientation: 'landscape' });
     doc.setFontSize(14);
-    doc.text(`${reportType === 'Party ' ? 'Party ' : reportType === 'invoices' ? 'Invoices' : 'Incentives Wallet'} Report — Admin`, 14, 18);
+    doc.text(`${reportType === 'Party' ? 'Party' : reportType === 'invoices' ? 'Invoices' : 'Incentives Wallet'} Report — Admin`, 14, 18);
     doc.setFontSize(9); doc.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 26);
     const { head, body } = getTableData();
     autoTable(doc, { startY: 32, head: [head], body, styles: { fontSize: 8 }, headStyles: { fillColor: [43, 59, 138] } });
@@ -284,7 +303,7 @@ export default function AdminReportsPage() {
   };
 
   const getTableData = () => {
-    if (reportType === 'Party ') return {
+    if (reportType === 'Party') return {
       head: ['#', 'Company Name', 'Mobile', 'Account No', 'Wallet Balance', 'Status', 'Division', 'Created'],
       body: filteredData.map((v, i) => [i+1, v.companyName, v.mobileNumber, v.accountNumber, `Rs. ${Number(v.walletBalance).toFixed(2)}`, v.status, v.division?.name||'', new Date(v.createdAt).toLocaleDateString('en-IN')]),
     };
@@ -316,7 +335,7 @@ export default function AdminReportsPage() {
             <p className="text-[15px] text-gray-800 mb-4">Select a Report to Download</p>
             <div className="flex flex-wrap gap-3 mb-6">
               {[
-                { id: 'Party ', label: 'Party' },
+                { id: 'Party', label: 'Party' },
                 { id: 'invoices', label: 'Invoices' },
                 { id: 'incentives', label: 'Incentives Wallet' },
               ].map((r) => (
@@ -431,8 +450,7 @@ export default function AdminReportsPage() {
 
           <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-8 gap-4 border-b border-gray-100 pb-6">
             <h2 className="text-[26px] font-bold text-gray-900 tracking-tight flex items-center gap-2">
-              {reportType === 'invoices' ? 'Invoices' : reportType === 'Party ' ? 'Party ' : 'Incentives Wallet'}
-              <span className="text-[15px] font-normal text-gray-500">(Data Preview — {filteredData.length} records)</span>
+              {reportType === 'invoices' ? 'Invoices' : reportType === 'Party' ? 'Party' : 'Incentives Wallet'}
             </h2>
 
             <div className="flex flex-wrap items-center gap-3">
@@ -442,7 +460,7 @@ export default function AdminReportsPage() {
                 <button onClick={downloadExcel} className="bg-[#2ECC71] hover:bg-green-600 text-white text-[10px] font-bold px-1.5 py-1 rounded transition-colors">XLS</button>
               </div>
 
-              {reportType === 'Party ' && (
+              {reportType === 'Party' && (
                 <CustomDropdown id="statusFilter" label="Status" options={['Active', 'Inactive', 'Blocked']}
                   value={statusFilter} onChange={setStatusFilter} activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} />
               )}
@@ -462,12 +480,12 @@ export default function AdminReportsPage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto pb-4">
+              <div className="overflow-x-auto pb-4">
             <table className="w-full text-left whitespace-nowrap">
               <thead>
                 <tr className="border-b-2 border-gray-100 text-gray-900 text-[13px]">
                   <th className="pb-4 font-bold px-2">#</th>
-                  {reportType === 'Party ' && <>
+                  {reportType === 'Party' && <>
                     <th className="pb-4 font-bold px-2">Party Name</th>
                     <th className="pb-4 font-bold px-2">Mobile</th>
                     <th className="pb-4 font-bold px-2">Party Code</th>
@@ -500,7 +518,7 @@ export default function AdminReportsPage() {
                 {filteredData.length > 0 ? filteredData.map((row, i) => (
                   <tr key={row._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
                     <td className="py-5 px-2">{String(i+1).padStart(2,'0')}</td>
-                    {reportType === 'Party ' && <>
+                    {reportType === 'Party' && <>
                       <td className="py-5 px-2">{row.companyName}</td>
                       <td className="py-5 px-2">{row.mobileNumber}</td>
                       <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{row.accountNumber}</td>
@@ -550,6 +568,44 @@ export default function AdminReportsPage() {
                   </tr>
                 )}
               </tbody>
+              {/* Totals footer */}
+              {filteredData.length > 0 && (
+                <tfoot className="bg-gray-50 font-semibold text-[13px]">
+                  {reportType === 'Party' && (
+                    <tr className="border-t border-gray-100">
+                      <td className="py-3 px-2" />
+                      <td colSpan="2" className="py-3 px-2 text-right">Total Wallet</td>
+                      <td className="py-3 px-2">₹{Number(totals.walletTotal).toFixed(2)}</td>
+                      <td className="py-3 px-2" />
+                      <td className="py-3 px-2" />
+                      <td className="py-3 px-2" />
+                      <td className="py-3 px-2" />
+                      <td className="py-3 px-2" />
+                    </tr>
+                  )}
+                  {reportType === 'invoices' && (
+                    <tr className="border-t border-gray-100">
+                      <td className="py-3 px-2" />
+                      <td colSpan="2" className="py-3 px-2 text-right">Total Invoice</td>
+                      <td className="py-3 px-2">₹{Number(totals.invoiceTotal).toFixed(2)}</td>
+                      <td className="py-3 px-2" />
+                      <td className="py-3 px-2" />
+                      <td className="py-3 px-2" />
+                      <td className="py-3 px-2" />
+                    </tr>
+                  )}
+                  {reportType === 'incentives' && (
+                    <tr className="border-t border-gray-100">
+                      <td className="py-3 px-2" />
+                      <td colSpan="2" className="py-3 px-2 text-right">Total Incentive</td>
+                      <td className="py-3 px-2">₹{Number(totals.incentiveTotal).toFixed(2)}</td>
+                      <td className="py-3 px-2" />
+                      <td className="py-3 px-2" />
+                      <td className="py-3 px-2" />
+                    </tr>
+                  )}
+                </tfoot>
+              )}
             </table>
           </div>
 
