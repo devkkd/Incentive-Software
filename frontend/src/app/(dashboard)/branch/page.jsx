@@ -47,6 +47,7 @@ export default function BranchDashboard() {
   // Insufficient balance check
   const walletBalance = selectedVendor ? parseFloat(selectedVendor.walletBalance) : 0;
   const isInsufficientBalance = redeemAmt > 0 && redeemAmt > walletBalance;
+  const exceedsInvoiceAmount = redeemAmt > 0 && invoiceAmt > 0 && redeemAmt > invoiceAmt;
 
   // --- Search Vendor ---
   const handleSearch = async (e) => {
@@ -102,6 +103,8 @@ export default function BranchDashboard() {
   const handleSendOTP = async () => {
     setRedeemError('');
     if (!redeemAmount || redeemAmt <= 0) { setRedeemError('Please enter a valid amount'); return; }
+    if (!invoiceAmt || invoiceAmt <= 0) { setRedeemError('Enter invoice amount before redeeming wallet'); return; }
+    if (exceedsInvoiceAmount) { setRedeemError('Wallet redemption amount cannot exceed invoice amount'); return; }
     if (isInsufficientBalance) return;
 
     setSubmitLoading(true);
@@ -110,7 +113,7 @@ export default function BranchDashboard() {
         method: 'POST',
         headers: authHeaders(),
         credentials: 'include',
-        body: JSON.stringify({ vendorId: selectedVendor._id, redeemAmount: redeemAmt }),
+        body: JSON.stringify({ vendorId: selectedVendor._id, redeemAmount: redeemAmt, invoiceAmount: invoiceAmt }),
       });
       const data = await res.json();
       if (!res.ok) { setRedeemError(data.message || 'Failed to send OTP'); return; }
@@ -161,63 +164,65 @@ export default function BranchDashboard() {
       return;
     }
 
-    // 2. Validate OTP if redemption is requested
-    if (redeemAmt > 0) {
-      if (!otpVerified) return;
-      const enteredOtp = otp.join('');
-      if (enteredOtp.length !== 6) { setOtpError('Please enter all 6 digits'); return; }
+    // 2. Wallet redemption must be present and verified before invoice creation
+    if (redeemAmt <= 0) {
+      setRedeemError('Please enter an incentives wallet redemption amount to create the invoice');
+      return;
     }
+
+    if (exceedsInvoiceAmount) {
+      setRedeemError('Wallet redemption amount cannot exceed invoice amount');
+      return;
+    }
+
+    if (!otpVerified) {
+      setOtpError('Please verify OTP before submitting');
+      return;
+    }
+
+    const enteredOtp = otp.join('');
+    if (enteredOtp.length !== 6) { setOtpError('Please enter all 6 digits'); return; }
 
     setSubmitLoading(true);
     setInvoiceError('');
     setRedeemError('');
 
     try {
-      // Step 1: Create Invoice
+      const invoicePayload = {
+        vendorId: selectedVendor._id,
+        invoiceDate: invoiceForm.date,
+        invoiceNumber: invoiceForm.number,
+        invoiceAmount: invoiceForm.amount,
+        location: invoiceForm.location,
+      };
+
+      if (redeemAmt > 0) {
+        invoicePayload.redeemAmount = redeemAmt;
+        invoicePayload.otp = otp.join('');
+      }
+
       const invRes = await fetch(`${API}/api/invoices`, {
         method: 'POST',
         headers: authHeaders(),
         credentials: 'include',
-        body: JSON.stringify({
-          vendorId: selectedVendor._id,
-          invoiceDate: invoiceForm.date,
-          invoiceNumber: invoiceForm.number,
-          invoiceAmount: invoiceForm.amount,
-          location: invoiceForm.location,
-        }),
+        body: JSON.stringify(invoicePayload),
       });
       const invData = await invRes.json();
       if (!invRes.ok) {
-        setInvoiceError(invData.message || 'Failed to create invoice');
+        if (redeemAmt > 0) {
+          setRedeemError(invData.message || 'Failed to redeem wallet');
+          setOtpVerified(false);
+          setOtp(['', '', '', '', '', '']);
+        } else {
+          setInvoiceError(invData.message || 'Failed to create invoice');
+        }
         setSubmitLoading(false);
         return;
       }
-      const newInvoice = invData.data;
-      setCreatedInvoice(newInvoice);
 
-      // Step 2: Redemption (if requested)
-      if (redeemAmt > 0) {
-        const redRes = await fetch(`${API}/api/invoices/redeem`, {
-          method: 'POST',
-          headers: authHeaders(),
-          credentials: 'include',
-          body: JSON.stringify({
-            vendorId: selectedVendor._id,
-            redeemAmount: redeemAmt,
-            invoiceId: newInvoice._id,
-            otp: otp.join(''),
-          }),
-        });
-        const redData = await redRes.json();
-
-        if (!redRes.ok) {
-          setRedeemError(redData.message);
-          setOtpVerified(false);
-          setOtp(['', '', '', '', '', '']);
-          setSubmitLoading(false);
-          return;
-        }
-        setSelectedVendor(prev => ({ ...prev, walletBalance: redData.data.newWalletBalance }));
+      setCreatedInvoice(invData.data.invoice || invData.data);
+      if (invData.data.newWalletBalance !== undefined) {
+        setSelectedVendor(prev => ({ ...prev, walletBalance: invData.data.newWalletBalance }));
       }
 
       fetchWalletHistory(selectedVendor._id);
@@ -447,9 +452,9 @@ export default function BranchDashboard() {
                       />
                       <button
                         onClick={handleSendOTP}
-                        disabled={isInsufficientBalance || !redeemAmount || submitLoading}
+                        disabled={isInsufficientBalance || !redeemAmount || !invoiceAmt || exceedsInvoiceAmount || submitLoading}
                         className={`font-semibold px-6 py-2.5 rounded-xl whitespace-nowrap flex items-center gap-2 transition-colors ${
-                          isInsufficientBalance || !redeemAmount || submitLoading
+                          isInsufficientBalance || !redeemAmount || !invoiceAmt || exceedsInvoiceAmount || submitLoading
                             ? 'bg-[#CBD5E1] text-[#64748B] cursor-not-allowed'
                             : 'bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white'
                         }`}
@@ -481,6 +486,9 @@ export default function BranchDashboard() {
                       <div className="border-t border-dashed border-gray-300 pt-6 mb-4"></div>
                       <p className="text-[13px] text-gray-800 font-medium mb-3">
                         Enter OTP sent to <span className="font-bold text-[#2B3B8A]">{selectedVendor.mobileNumber}</span>
+                        {exceedsInvoiceAmount && (
+                          <span className="block text-red-500 text-xs mt-2">Wallet redemption amount cannot exceed invoice amount.</span>
+                        )}
                       </p>
                       <div className="flex gap-3 mb-3">
                         {otp.map((digit, index) => (
@@ -548,9 +556,9 @@ export default function BranchDashboard() {
               <div className="border-b border-gray-100 p-8 flex items-center justify-center bg-[#F8FAFC]">
                 <button
                   onClick={handleSubmit}
-                  disabled={submitLoading || (redeemAmt > 0 && !otpVerified)}
+                  disabled={submitLoading || redeemAmt <= 0 || !otpVerified}
                   className={`font-semibold px-10 py-3 rounded-xl flex items-center gap-2 transition-all duration-300 ${
-                    (!redeemAmt || otpVerified) && !submitLoading
+                    redeemAmt > 0 && otpVerified && !submitLoading
                       ? 'bg-[#2B3B8A] text-white hover:bg-[#1a2d6b] shadow-md'
                       : 'bg-[#8492A6] text-white opacity-80 cursor-not-allowed'
                   }`}

@@ -395,7 +395,7 @@ export default function AdminReportsPage() {
         {/* Action */}
         <div className="border-t border-gray-100 p-6 flex justify-center bg-white">
           <button onClick={handleGetReports} disabled={loading}
-            className="bg-[#8492A6] hover:bg-[#6c7b94] disabled:opacity-60 transition-colors text-white font-semibold px-10 py-3 rounded-xl flex items-center justify-center gap-2">
+            className="bg-[#2B3B8A] hover:bg-[#1a2d6b] disabled:opacity-60 transition-colors text-white font-semibold px-10 py-3 rounded-xl flex items-center justify-center gap-2">
             {loading ? 'Loading...' : 'Get Reports →'}
           </button>
         </div>

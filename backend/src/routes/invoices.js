@@ -17,7 +17,7 @@ const generateOtp = () => String(Math.floor(100000 + Math.random() * 900000));
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/redeem/send-otp', protect, authorize('branch'), async (req, res) => {
   try {
-    const { vendorId, redeemAmount } = req.body;
+    const { vendorId, redeemAmount, invoiceAmount } = req.body;
 
     if (!vendorId || !redeemAmount) {
       return res.status(400).json({ success: false, message: 'Vendor ID and redeem amount are required' });
@@ -26,6 +26,10 @@ router.post('/redeem/send-otp', protect, authorize('branch'), async (req, res) =
     const amount = parseFloat(redeemAmount);
     if (amount <= 0) {
       return res.status(400).json({ success: false, message: 'Amount must be greater than 0' });
+    }
+
+    if (invoiceAmount && amount > parseFloat(invoiceAmount)) {
+      return res.status(400).json({ success: false, message: 'Wallet redemption amount cannot exceed invoice amount' });
     }
 
     const vendor = await Vendor.findById(vendorId);
@@ -91,7 +95,7 @@ router.post('/redeem/send-otp', protect, authorize('branch'), async (req, res) =
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/redeem', protect, authorize('branch'), async (req, res) => {
   try {
-    const { vendorId, redeemAmount, invoiceId, otp } = req.body;
+    const { vendorId, redeemAmount, invoiceAmount, invoiceId, otp } = req.body;
 
     if (!vendorId || !redeemAmount || !otp) {
       return res.status(400).json({ success: false, message: 'Vendor ID, redeem amount and OTP are required' });
@@ -113,6 +117,10 @@ router.post('/redeem', protect, authorize('branch'), async (req, res) => {
     const amount = parseFloat(redeemAmount);
     if (amount <= 0) {
       return res.status(400).json({ success: false, message: 'Amount must be greater than 0' });
+    }
+
+    if (invoiceAmount && amount > parseFloat(invoiceAmount)) {
+      return res.status(400).json({ success: false, message: 'Wallet redemption amount cannot exceed invoice amount' });
     }
 
     const vendor = await Vendor.findById(vendorId);
@@ -172,14 +180,14 @@ router.post('/redeem', protect, authorize('branch'), async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // @route   POST /api/invoices
-// @desc    Create invoice only — no wallet credit
+// @desc    Create invoice and optionally deduct wallet balance via redemption
 // @access  Branch only
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/', protect, authorize('branch'), async (req, res) => {
   try {
-    const { vendorId, invoiceDate, invoiceNumber, invoiceAmount, location } = req.body;
+    const { vendorId, invoiceDate, invoiceNumber, invoiceAmount, location, redeemAmount, otp } = req.body;
 
-    if (!vendorId || !invoiceDate || !invoiceNumber || !invoiceAmount || !location) {
+    if (!vendorId || !invoiceDate || !invoiceNumber || !invoiceAmount) {
       return res.status(400).json({ success: false, message: 'All fields are required' });
     }
 
@@ -201,18 +209,82 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
       return res.status(409).json({ success: false, message: 'This invoice number already exists' });
     }
 
+    const invoiceAmt = parseFloat(invoiceAmount);
+    const redeemAmt = redeemAmount ? parseFloat(redeemAmount) : 0;
+
+    if (redeemAmt <= 0) {
+      return res.status(400).json({ success: false, message: 'Wallet redemption is required to create the invoice' });
+    }
+
+    if (!otp) {
+      return res.status(400).json({ success: false, message: 'OTP is required for wallet redemption' });
+    }
+    if (redeemAmt > invoiceAmt) {
+      return res.status(400).json({ success: false, message: 'Wallet redemption amount cannot exceed invoice amount' });
+    }
+
+      const otpRecord = await OtpToken.findOne({
+        user: req.user._id,
+        otpCode: otp,
+        purpose: 'redemption',
+        used: false,
+        expiresAt: { $gt: new Date() },
+      });
+
+      if (!otpRecord) {
+        return res.status(400).json({ success: false, message: 'Invalid or expired OTP. Please request a new one.' });
+      }
+
+      if (redeemAmt > vendor.walletBalance) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient balance! Only ₹${vendor.walletBalance.toFixed(2)} available`,
+        });
+      }
+
+      otpRecord.used = true;
+      await otpRecord.save();
+
+      const newBalance = parseFloat((vendor.walletBalance - redeemAmt).toFixed(2));
+      await Vendor.findByIdAndUpdate(vendorId, {
+        walletBalance: newBalance,
+        lastRedemptionAmount: redeemAmt,
+        lastRedemptionDate: new Date(),
+      });
+      vendor.walletBalance = newBalance;
+
+    const invoiceLocation = req.user.division?.location || location;
+
     const invoice = await Invoice.create({
       vendor: vendorId,
       createdBy: req.user._id,
       division: divisionId,
       invoiceNumber: prefixedInvoiceNumber,
       invoiceDate: new Date(invoiceDate),
-      invoiceAmount: parseFloat(invoiceAmount),
-      location,
+      invoiceAmount: invoiceAmt,
+      location: invoiceLocation,
       status: 'processed',
     });
 
-    res.status(201).json({ success: true, data: invoice });
+    if (redeemAmt > 0) {
+      await WalletTransaction.create({
+        vendor: vendorId,
+        invoice: invoice._id,
+        type: 'debit',
+        amount: redeemAmt,
+        balanceAfter: vendor.walletBalance,
+        description: `Wallet redemption of ₹${redeemAmt}`,
+        processedBy: req.user._id,
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      data: {
+        invoice,
+        ...(redeemAmt > 0 ? { newWalletBalance: vendor.walletBalance } : {}),
+      },
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

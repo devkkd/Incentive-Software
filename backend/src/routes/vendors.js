@@ -3,6 +3,7 @@ const multer = require('multer');
 const XLSX = require('xlsx');
 const Vendor = require('../models/Vendor');
 const Division = require('../models/Division');
+const Invoice = require('../models/Invoice');
 const { protect, authorize } = require('../middleware/auth');
 
 const router = express.Router();
@@ -271,7 +272,7 @@ router.get('/search', protect, async (req, res) => {
     // 1. Exact mobile number match
     // 2. Exact full account number match (e.g. ETY-TRJ020)
     // 3. Suffix match — account number ends with the query (e.g. TRJ020 matches ETY-TRJ020)
-    const vendor = await Vendor.findOne({
+    let vendor = await Vendor.findOne({
       $or: [
         { mobileNumber: trimmed },
         { accountNumber: trimmed },
@@ -279,6 +280,31 @@ router.get('/search', protect, async (req, res) => {
       ],
       status: { $ne: 'blocked' },
     }).populate('division', 'name location locationCode');
+
+    if (!vendor) {
+      const invoice = await Invoice.findOne({
+        invoiceNumber: trimmed,
+      }).populate({
+        path: 'vendor',
+        populate: { path: 'division', select: 'name location locationCode' },
+      });
+
+      if (!invoice) {
+        const invoiceSuffix = await Invoice.findOne({
+          invoiceNumber: { $regex: `${trimmed}$`, $options: 'i' },
+        }).populate({
+          path: 'vendor',
+          populate: { path: 'division', select: 'name location locationCode' },
+        });
+        if (invoiceSuffix) vendor = invoiceSuffix.vendor;
+      } else if (invoice.vendor && invoice.vendor.status !== 'blocked') {
+        vendor = invoice.vendor;
+      }
+
+      if (invoice && invoice.vendor && invoice.vendor.status !== 'blocked') {
+        vendor = invoice.vendor;
+      }
+    }
 
     if (!vendor) {
       return res.status(404).json({ success: false, message: 'Vendor not found' });
