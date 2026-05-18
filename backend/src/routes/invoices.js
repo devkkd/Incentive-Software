@@ -24,12 +24,18 @@ router.post('/redeem/send-otp', protect, authorize('branch'), async (req, res) =
     }
 
     const amount = parseFloat(redeemAmount);
-    if (amount <= 0) {
+    if (isNaN(amount) || amount <= 0) {
       return res.status(400).json({ success: false, message: 'Amount must be greater than 0' });
     }
 
-    if (invoiceAmount && amount > parseFloat(invoiceAmount)) {
-      return res.status(400).json({ success: false, message: 'Wallet redemption amount cannot exceed invoice amount' });
+    if (invoiceAmount) {
+      const invoiceAmt = parseFloat(invoiceAmount);
+      if (isNaN(invoiceAmt) || invoiceAmt <= 0) {
+        return res.status(400).json({ success: false, message: 'Invoice amount must be greater than 0' });
+      }
+      if (amount > invoiceAmt) {
+        return res.status(400).json({ success: false, message: 'Wallet redemption amount cannot exceed invoice amount' });
+      }
     }
 
     const vendor = await Vendor.findById(vendorId);
@@ -115,12 +121,18 @@ router.post('/redeem', protect, authorize('branch'), async (req, res) => {
     }
 
     const amount = parseFloat(redeemAmount);
-    if (amount <= 0) {
+    if (isNaN(amount) || amount <= 0) {
       return res.status(400).json({ success: false, message: 'Amount must be greater than 0' });
     }
 
-    if (invoiceAmount && amount > parseFloat(invoiceAmount)) {
-      return res.status(400).json({ success: false, message: 'Wallet redemption amount cannot exceed invoice amount' });
+    if (invoiceAmount) {
+      const invoiceAmt = parseFloat(invoiceAmount);
+      if (isNaN(invoiceAmt) || invoiceAmt <= 0) {
+        return res.status(400).json({ success: false, message: 'Invoice amount must be greater than 0' });
+      }
+      if (amount > invoiceAmt) {
+        return res.status(400).json({ success: false, message: 'Wallet redemption amount cannot exceed invoice amount' });
+      }
     }
 
     const vendor = await Vendor.findById(vendorId);
@@ -210,9 +222,12 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
     }
 
     const invoiceAmt = parseFloat(invoiceAmount);
-    const redeemAmt = redeemAmount ? parseFloat(redeemAmount) : 0;
+    if (isNaN(invoiceAmt) || invoiceAmt <= 0) {
+      return res.status(400).json({ success: false, message: 'Invoice amount must be greater than 0' });
+    }
 
-    if (redeemAmt <= 0) {
+    const redeemAmt = redeemAmount ? parseFloat(redeemAmount) : 0;
+    if (isNaN(redeemAmt) || redeemAmt <= 0) {
       return res.status(400).json({ success: false, message: 'Wallet redemption is required to create the invoice' });
     }
 
@@ -253,7 +268,7 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
       });
       vendor.walletBalance = newBalance;
 
-    const invoiceLocation = req.user.division?.location || location;
+    const invoiceLocation = location || req.user.division?.location || '';
 
     const invoice = await Invoice.create({
       vendor: vendorId,

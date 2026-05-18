@@ -77,7 +77,7 @@ export default function BranchDashboard() {
       setInvoiceForm(prev => ({
         ...prev,
         date: today,
-        location: data.data.division?.location || data.data.address || '',
+        location: data.data.address || data.data.division?.location || '',
       }));
     } catch {
       setSearchError('Unable to connect to server');
