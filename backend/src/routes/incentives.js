@@ -7,6 +7,7 @@ const IncentiveUpload = require('../models/IncentiveUpload');
 const OtpToken = require('../models/OtpToken');
 const { protect, authorize } = require('../middleware/auth');
 const { sendOtpEmail } = require('../config/email');
+const { sendIncentiveCreditNotification } = require('../config/sms');
 
 const router = express.Router();
 
@@ -137,6 +138,16 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
         description: remark || 'Incentive credited via upload',
         processedBy: req.user._id,
       });
+
+      // Send WhatsApp notification to vendor (non-blocking)
+      if (vendor.mobileNumber) {
+        sendIncentiveCreditNotification(
+          vendor.mobileNumber,
+          vendor.companyName,
+          amount,
+          newBalance
+        ).catch((err) => console.error(`[CREDIT NOTIFY FAILED] ${vendor.mobileNumber}: ${err.message}`));
+      }
 
       totalAmount += amount;
       results.success.push({ partCode, vendorId: vendor._id, vendorName: vendor.companyName, amount, newBalance });

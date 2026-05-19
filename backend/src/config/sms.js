@@ -93,44 +93,57 @@ const _sendWhatsAppConfirmation = async (mobileNumber, vendorName, amount, balan
 };
 
 // ─── Bhash SMS/WhatsApp API (simple HTTP GET) ───────────────────────────────
+// OTP flow  : stype=auth, text=<template_name>, Params=<otp>
+// Confirm   : stype=normal, text=<template_name>, Params=<p1,p2,...>
 const _sendBhashWhatsapp = async (mobileNumber, otp, vendorName = '', rawMessage = null) => {
   const user = process.env.BHASH_USER;
   const pass = process.env.BHASH_PASS;
   const sender = process.env.BHASH_SENDER || 'BUZWAP';
-  const textKey = process.env.BHASH_TEXT_KEY || 'otp_friends';
+  const otpTemplate = process.env.BHASH_TEXT_KEY || 'otp_ftc';
+  const confirmTemplate = process.env.BHASH_CONFIRM_TEMPLATE || 'ftc_redemption';
 
   if (!user || !pass) {
-    throw new Error('BHASH credentials not set');
+    throw new Error('BHASH credentials not set (BHASH_USER / BHASH_PASS missing in .env)');
   }
 
-  // If rawMessage provided, use it for text param; otherwise use template key and Params for OTP
+  // Build base params — phone WITHOUT country code per BhashSMS docs
   const params = new URLSearchParams({
     user,
     pass,
     sender,
-    phone: mobileNumber,
+    phone: mobileNumber,   // 10-digit, no 91 prefix
     priority: 'wa',
-    stype: 'auth',
   });
 
   if (rawMessage) {
-    params.set('text', rawMessage);
+    // Confirmation message: use normal stype with template + Params
+    params.set('stype', 'normal');
+    params.set('text', confirmTemplate);
+    // rawMessage here is the full text; pass vendorName, amount, balance as Params
+    // Caller passes rawMessage as the full sentence — we extract values from vendorName arg
+    // For simplicity, pass the raw message as a single Param (template must match)
+    params.set('Params', rawMessage);
   } else {
-    params.set('text', textKey);
+    // OTP: stype=auth, text=template_name, Params=OTP_value
+    params.set('stype', 'auth');
+    params.set('text', otpTemplate);
     params.set('Params', otp);
   }
 
+  // BhashSMS API endpoint
   const url = `http://bhashsms.com/api/sendmsgutil.php?${params.toString()}`;
+  console.log('[BHASH REQUEST]', url.replace(pass, '***'));
+
   const resp = await fetch(url, { method: 'GET' });
   const text = await resp.text();
   console.log('[BHASH RESPONSE]', text);
 
-  // Basic success check — BHASH usually returns a numeric status or OK text
-  if (!text || /error|invalid/i.test(text)) {
+  // BhashSMS returns a numeric message ID on success, or error text on failure
+  if (!text || /error|invalid|fail/i.test(text)) {
     throw new Error(`BHASH error: ${text}`);
   }
 
-  return { success: true };
+  return { success: true, messageId: text.trim() };
 };
 
 // ─── MSG91 OTP API ────────────────────────────────────────────────────────────
@@ -247,6 +260,65 @@ const sendSmsOtp = async (mobileNumber, otp, vendorName = '') => {
   return { success: true, dev: true };
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PUBLIC: Send Incentive Credit Notification
+// Called after wallet is credited via incentive upload
+// ─────────────────────────────────────────────────────────────────────────────
+const sendIncentiveCreditNotification = async (mobileNumber, vendorName, creditedAmount, totalBalance) => {
+  const provider = process.env.SMS_PROVIDER;
+  const name = vendorName || 'Vendor';
+
+  if (!provider) {
+    _logDev(mobileNumber, 'INCENTIVE_CREDIT', `+${creditedAmount}, balance=${totalBalance}`);
+    return { success: true, dev: true };
+  }
+
+  if (provider === 'bhash') {
+    try {
+      // Uses fr_bh MARKETING template — Params: vendorName, creditedAmount, totalBalance
+      // Template must have {{1}} {{2}} {{3}} placeholders
+      // If fr_bh has different placeholders, update BHASH_CREDIT_TEMPLATE in .env
+      const creditTemplate = process.env.BHASH_CREDIT_TEMPLATE || 'fr_bh';
+      const user = process.env.BHASH_USER;
+      const pass = process.env.BHASH_PASS;
+      const sender = process.env.BHASH_SENDER || 'BUZWAP';
+
+      if (!user || !pass) throw new Error('BHASH credentials not set');
+
+      const params = new URLSearchParams({
+        user,
+        pass,
+        sender,
+        phone: mobileNumber,
+        priority: 'wa',
+        stype: 'normal',
+        text: creditTemplate,
+        Params: `${name},${creditedAmount},${totalBalance}`,
+      });
+
+      const url = `http://bhashsms.com/api/sendmsgutil.php?${params.toString()}`;
+      console.log('[BHASH CREDIT REQUEST]', url.replace(pass, '***'));
+
+      const resp = await fetch(url, { method: 'GET' });
+      const text = await resp.text();
+      console.log('[BHASH CREDIT RESPONSE]', text);
+
+      if (!text || /error|invalid|fail/i.test(text)) {
+        throw new Error(`BHASH error: ${text}`);
+      }
+
+      return { success: true, messageId: text.trim() };
+    } catch (error) {
+      console.error('[BHASH CREDIT ERROR]', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Fallback for other providers — log only
+  _logDev(mobileNumber, 'INCENTIVE_CREDIT', `+Rs.${creditedAmount}, balance=Rs.${totalBalance}`);
+  return { success: true, dev: true };
+};
+
 const sendRedemptionConfirmation = async (mobileNumber, vendorName, redeemedAmount, remainingBalance) => {
   const provider = process.env.SMS_PROVIDER;
   const name = vendorName || 'Vendor';
@@ -268,7 +340,8 @@ const sendRedemptionConfirmation = async (mobileNumber, vendorName, redeemedAmou
 
   if (provider === 'bhash') {
     try {
-      // Bhash expects a raw text message for confirmations
+      // For confirmation: pass rawMessage so _sendBhashWhatsapp uses stype=normal + confirm template
+      // The Params value is the full message text (single param) — adjust if your template uses multiple {{n}}
       return await _sendBhashWhatsapp(mobileNumber, null, name, message);
     } catch (error) {
       console.error('[BHASH CONFIRM ERROR]', error.message);
@@ -289,4 +362,4 @@ const sendRedemptionConfirmation = async (mobileNumber, vendorName, redeemedAmou
   return { success: true, dev: true };
 };
 
-module.exports = { sendSmsOtp, sendRedemptionConfirmation };
+module.exports = { sendSmsOtp, sendRedemptionConfirmation, sendIncentiveCreditNotification };
