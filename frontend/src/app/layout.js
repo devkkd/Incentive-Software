@@ -16,13 +16,18 @@ const geistMono = Geist_Mono({
 export const metadata = {
   title: "FTC Incentive Management",
   description: "Friends Trading Corporation - Incentive Management System",
+  icons: {
+    icon: "/images/logo/logo.jpeg",
+    shortcut: "/images/logo/logo.jpeg",
+  },
 };
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <head>
-        <link rel="icon" href="/images/logo/logo.jpeg" type="image/svg+xml" />
+        <link rel="icon" href="/images/logo/logo.jpeg" type="image/jpeg" />
+        <link rel="shortcut icon" href="/images/logo/logo.jpeg" type="image/jpeg" />
         {/* Hide Google Translate toolbar/banner — we use our own buttons */}
         <style>{`
           .goog-te-banner-frame, .goog-te-balloon-frame { display: none !important; }
