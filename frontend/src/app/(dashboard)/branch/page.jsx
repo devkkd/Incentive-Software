@@ -120,11 +120,7 @@ export default function BranchDashboard() {
       setOtpSent(true);
       setOtpVerified(false);
       setOtp(['', '', '', '', '', '']);
-      if (data.devOtp) {
-        setOtpError(`🔧 TEST OTP: ${data.devOtp}`);
-      } else {
-        setOtpError('');
-      }
+      setOtpError('');
     } catch { setRedeemError('Server error. Please try again.'); }
     finally { setSubmitLoading(false); }
   };
