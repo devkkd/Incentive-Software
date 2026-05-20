@@ -308,6 +308,15 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
         description: `Wallet redemption of ₹${redeemAmt}`,
         processedBy: req.user._id,
       });
+
+      // Send WhatsApp confirmation (non-blocking)
+      sendRedemptionConfirmation(
+        vendor.mobileNumber,
+        vendor.companyName,
+        redeemAmt,
+        prefixedInvoiceNumber,
+        vendor.walletBalance
+      ).catch(() => {});
     }
 
     res.status(201).json({

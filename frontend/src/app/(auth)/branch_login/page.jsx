@@ -44,6 +44,8 @@ export default function branchLoginPage() {
 
       localStorage.setItem('token', data.token);
       localStorage.setItem('role', data.data.role);
+      localStorage.setItem('name', data.data.name || '');
+      localStorage.setItem('email', data.data.email || '');
       router.push('/branch');
     } catch {
       setError('Unable to connect to server. Is the backend running?');

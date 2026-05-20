@@ -28,7 +28,7 @@ export default function Admin_header() {
   };
 
   return (
-    <header className="h-[72px] bg-white border-b border-gray-200 flex items-center justify-between px-8 shrink-0 relative z-20">
+    <header className="h-[72px] bg-white border-b border-gray-200 flex items-center justify-between px-8 shrink-0 z-10 relative">
       {/* Search */}
       <GlobalSearch role="admin" />
 

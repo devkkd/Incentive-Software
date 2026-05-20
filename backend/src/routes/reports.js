@@ -75,11 +75,27 @@ router.get('/', protect, async (req, res) => {
           { location: { $regex: q, $options: 'i' } },
         ];
       }
-      data = await Invoice.find(filter)
+      const invoices = await Invoice.find(filter)
         .sort({ createdAt: -1 })
         .limit(500)
         .populate('vendor', 'companyName accountNumber mobileNumber')
-        .populate('division', 'name location');
+        .populate('division', 'name location')
+        .lean();
+
+      // Attach redemption amount from linked wallet debit transaction
+      const invoiceIds = invoices.map(inv => inv._id);
+      const redemptions = await WalletTransaction.find({
+        invoice: { $in: invoiceIds },
+        type: 'debit',
+      }).select('invoice amount').lean();
+
+      const redemptionMap = {};
+      redemptions.forEach(r => { redemptionMap[String(r.invoice)] = r.amount; });
+
+      data = invoices.map(inv => ({
+        ...inv,
+        redeemAmount: redemptionMap[String(inv._id)] || 0,
+      }));
     }
 
     // ---- INCENTIVES WALLET REPORT (wallet transactions) ----

@@ -73,12 +73,12 @@ export default function BranchDashboard() {
       setSelectedVendor(data.data);
       fetchWalletHistory(data.data._id);
       
-      // Auto-fill invoice form with today's date and vendor location
+      // Auto-fill invoice form with today's date only — location comes from invoice prefix
       const today = new Date().toISOString().split('T')[0];
       setInvoiceForm(prev => ({
         ...prev,
         date: today,
-        location: data.data.address || data.data.division?.location || '',
+        location: '',
       }));
     } catch {
       setSearchError('Unable to connect to server');
@@ -297,8 +297,8 @@ export default function BranchDashboard() {
       )}
 
       <div className="max-w-6xl mx-auto">
-        <h2 className="text-[15px] text-gray-700 mb-1">Welcome to Friends Trading Corporation - Incentive Management</h2>
-        <h1 className="text-[28px] font-bold text-black mb-8 tracking-tight">Jodhpur Division</h1>
+        <h2 className="text-[15px] text-gray-700 mb-8">Welcome to Friends Trading Corporation - Incentive Management</h2>
+       
 
         <div className="bg-white border border-gray-100 rounded-2xl shadow-sm flex flex-col">
 
@@ -405,7 +405,7 @@ export default function BranchDashboard() {
                           setInvoiceForm({
                             ...invoiceForm,
                             number: invoiceNo,
-                            location: invoiceLocation || invoiceForm.location,
+                            location: invoiceLocation || '',
                           });
                         }}
                         placeholder="041234567890"
@@ -430,9 +430,9 @@ export default function BranchDashboard() {
                       <input
                         type="text"
                         value={invoiceForm.location}
-                        onChange={(e) => setInvoiceForm({ ...invoiceForm, location: e.target.value })}
-                        placeholder="Auto-filled from vendor"
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A] bg-gray-50"
+                        readOnly
+                        placeholder="Auto-filled from invoice prefix"
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm bg-gray-50 text-gray-500 cursor-not-allowed select-none"
                       />
                     </div>
                   </div>
@@ -481,9 +481,9 @@ export default function BranchDashboard() {
                       />
                       <button
                         onClick={handleSendOTP}
-                        disabled={isInsufficientBalance || !redeemAmount || !invoiceAmt || exceedsInvoiceAmount || submitLoading}
+                        disabled={isInsufficientBalance || !redeemAmount || !invoiceAmt || exceedsInvoiceAmount || submitLoading || !invoiceForm.location}
                         className={`font-semibold px-6 py-2.5 rounded-xl whitespace-nowrap flex items-center gap-2 transition-colors ${
-                          isInsufficientBalance || !redeemAmount || !invoiceAmt || exceedsInvoiceAmount || submitLoading
+                          isInsufficientBalance || !redeemAmount || !invoiceAmt || exceedsInvoiceAmount || submitLoading || !invoiceForm.location
                             ? 'bg-[#CBD5E1] text-[#64748B] cursor-not-allowed'
                             : 'bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white'
                         }`}
@@ -625,7 +625,7 @@ export default function BranchDashboard() {
                           </td>
                           <td className="py-4">₹{row.balanceAfter}</td>
                           <td className="py-4">{row.invoice?.invoiceNumber || 'N/A'}</td>
-                          <td className="py-4">{row.location || 'N/A'}</td>
+                          <td className="py-4">{row.invoice?.location || 'N/A'}</td>
                         </tr>
                       )) : (
                         <tr>

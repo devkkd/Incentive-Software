@@ -146,7 +146,7 @@ export default function SettingsPage() {
     <div className="p-8 md:p-10 max-w-[1600px] mx-auto space-y-6">
       <div>
         <h2 className="text-[15px] text-gray-700 mb-1">Welcome to Friends Trading Corporation - Incentive Management</h2>
-        <h1 className="text-[28px] font-bold text-black tracking-tight">Jodhpur Location</h1>
+       
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col lg:flex-row overflow-hidden min-h-[500px]">

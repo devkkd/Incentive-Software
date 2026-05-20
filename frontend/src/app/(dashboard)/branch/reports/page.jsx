@@ -33,9 +33,14 @@ export default function ReportsPage() {
   const fetchReports = async () => {
     setLoading(true); setError('');
     try {
-      const params = new URLSearchParams({ type: reportType, timeline });
-      if (timeline === 'manual' && startDate) params.append('startDate', startDate);
-      if (timeline === 'manual' && endDate) params.append('endDate', endDate);
+      const params = new URLSearchParams({ type: reportType });
+
+      if (timeline === 'manual') {
+        if (startDate) params.append('startDate', startDate);
+        if (endDate) params.append('endDate', endDate);
+      } else {
+        params.append('timeline', timeline);
+      }
 
       const res = await fetch(`${API}/api/reports?${params}`, { headers: authHeaders(), credentials: 'include' });
       const data = await res.json();
@@ -170,7 +175,7 @@ export default function ReportsPage() {
 
             <div>
               <h2 className="text-[15px] text-gray-700 mb-1">Welcome to Friends Trading Corporation - Incentive Management</h2>
-              <h1 className="text-[28px] font-bold text-black tracking-tight">Jodhpur Location</h1>
+             
             </div>
 
             {/* TOP CARD: Filters */}
@@ -329,7 +334,7 @@ export default function ReportsPage() {
                         {reportType === 'vendors' && <>
                           <th className="pb-4 pt-2 px-2 font-bold">Party Name</th>
                           <th className="pb-4 pt-2 px-2 font-bold">Mobile Number</th>
-                          <th className="pb-4 pt-2 px-2 font-bold">Account Number</th>
+                          <th className="pb-4 pt-2 px-2 font-bold">Party Code</th>
                           <th className="pb-4 pt-2 px-2 font-bold">Wallet Balance</th>
                           <th className="pb-4 pt-2 px-2 font-bold">Status</th>
                           <th className="pb-4 pt-2 px-2 font-bold">Created</th>
@@ -354,7 +359,7 @@ export default function ReportsPage() {
                     <tbody className="text-gray-700 font-medium">
                       {paginatedData.length > 0 ? paginatedData.map((row, i) => (
                         <tr key={row._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
-                          <td className="py-5 px-2">{String(i + 1).padStart(2, '0')}</td>
+                          <td className="py-5 px-2">{String((currentPage - 1) * itemsPerPage + i + 1).padStart(2, '0')}</td>
                           {reportType === 'vendors' && <>
                             <td className="py-5 px-2">{row.companyName}</td>
                             <td className="py-5 px-2">{row.mobileNumber}</td>
@@ -370,9 +375,9 @@ export default function ReportsPage() {
                           {reportType === 'invoices' && <>
                             <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{row.invoiceNumber}</td>
                             <td className="py-5 px-2">{row.vendor?.companyName || 'N/A'}</td>
-                            <td className="py-5 px-2">₹{row.invoiceAmount}</td>
-                            <td className="py-5 px-2">{row.location}</td>
-                            <td className="py-5 px-2">{new Date(row.invoiceDate).toLocaleDateString('en-IN')}</td>
+                            <td className="py-5 px-2">₹{Number(row.invoiceAmount).toFixed(2)}</td>
+                            <td className="py-5 px-2">{row.location || '—'}</td>
+                            <td className="py-5 px-2">{row.invoiceDate ? new Date(row.invoiceDate).toLocaleDateString('en-IN') : '—'}</td>
                           </>}
                           {reportType === 'incentives' && <>
                             <td className="py-5 px-2">{row.vendor?.companyName || 'N/A'}</td>
@@ -402,30 +407,30 @@ export default function ReportsPage() {
                       )}
                       {/* Totals Row */}
                       {filteredData.length > 0 && (
-                        <tr className="bg-gray-50 font-bold border-t-2 border-gray-300">
-                          <td className="py-3 px-2">TOTAL</td>
+                        <tr className="bg-[#F8FAFC] font-bold border-t-2 border-gray-200 text-[13px]">
+                          <td className="py-4 px-2 text-gray-500">TOTAL</td>
                           {reportType === 'vendors' && <>
-                            <td className="py-3 px-2"></td>
-                            <td className="py-3 px-2"></td>
-                            <td className="py-3 px-2"></td>
-                            <td className="py-3 px-2">₹{Number(totals.walletTotal).toFixed(2)}</td>
-                            <td className="py-3 px-2"></td>
-                            <td className="py-3 px-2"></td>
+                            <td className="py-4 px-2"></td>
+                            <td className="py-4 px-2"></td>
+                            <td className="py-4 px-2"></td>
+                            <td className="py-4 px-2 text-[#2B3B8A]">₹{Number(totals.walletTotal).toFixed(2)}</td>
+                            <td className="py-4 px-2"></td>
+                            <td className="py-4 px-2"></td>
                           </>}
                           {reportType === 'invoices' && <>
-                            <td className="py-3 px-2"></td>
-                            <td className="py-3 px-2"></td>
-                            <td className="py-3 px-2">₹{Number(totals.invoiceTotal).toFixed(2)}</td>
-                            <td className="py-3 px-2"></td>
-                            <td className="py-3 px-2"></td>
+                            <td className="py-4 px-2"></td>
+                            <td className="py-4 px-2"></td>
+                            <td className="py-4 px-2 text-[#2B3B8A]">₹{Number(totals.invoiceTotal).toFixed(2)}</td>
+                            <td className="py-4 px-2"></td>
+                            <td className="py-4 px-2"></td>
                           </>}
                           {reportType === 'incentives' && <>
-                            <td className="py-3 px-2"></td>
-                            <td className="py-3 px-2"></td>
-                            <td className="py-3 px-2"></td>
-                            <td className="py-3 px-2">₹{Number(totals.incentiveTotal).toFixed(2)}</td>
-                            <td className="py-3 px-2"></td>
-                            <td className="py-3 px-2"></td>
+                            <td className="py-4 px-2"></td>
+                            <td className="py-4 px-2"></td>
+                            <td className="py-4 px-2"></td>
+                            <td className="py-4 px-2 text-[#2B3B8A]">₹{Number(totals.incentiveTotal).toFixed(2)}</td>
+                            <td className="py-4 px-2"></td>
+                            <td className="py-4 px-2"></td>
                           </>}
                         </tr>
                       )}

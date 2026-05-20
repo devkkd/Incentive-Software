@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -14,6 +14,12 @@ const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 export default function Header_branch() {
   const router = useRouter();
   const { t } = useLang();
+  const [branchName, setBranchName] = useState('');
+
+  useEffect(() => {
+    const email = localStorage.getItem('email') || '';
+    setBranchName(email);
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -24,6 +30,8 @@ export default function Header_branch() {
     } catch { /* silent */ }
     localStorage.removeItem('token');
     localStorage.removeItem('role');
+    localStorage.removeItem('name');
+    localStorage.removeItem('email');
     router.replace('/');
   };
 
@@ -32,18 +40,17 @@ export default function Header_branch() {
       {/* Search */}
       <GlobalSearch role="branch" />
 
-     
-           <div className="flex items-center gap-4">
-             {/* Maruti Badge */}
-             <MarutiPartnerBadge />
-     
-             {/* Google Translate Toggle */}
-             <GoogleTranslateButton />
+      <div className="flex items-center gap-4">
+        {/* Maruti Badge */}
+        <MarutiPartnerBadge />
+
+        {/* Google Translate Toggle */}
+        <GoogleTranslateButton />
 
         {/* Profile */}
         <Link href="#" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
           <Image src="/images/logo/logo.jpeg" alt="User" width={28} height={28} className="object-contain" />
-          <span className="text-sm font-medium text-gray-700">Incentive Management</span>
+          <span className="text-sm font-medium text-gray-700">{branchName}</span>
         </Link>
 
         {/* Logout */}

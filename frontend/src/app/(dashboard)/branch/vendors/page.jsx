@@ -86,7 +86,7 @@ export default function VendorsPage() {
                 <th className="pb-4 pt-2 px-2 font-bold">#</th>
                 <th className="pb-4 pt-2 px-2 font-bold">Party Name</th>
                 <th className="pb-4 pt-2 px-2 font-bold">Mobile Number</th>
-                <th className="pb-4 pt-2 px-2 font-bold">Account Number</th>
+                <th className="pb-4 pt-2 px-2 font-bold">Party Code</th>
                 <th className="pb-4 pt-2 px-2 font-bold">Wallet Balance</th>
                 <th className="pb-4 pt-2 px-2 font-bold">Last Redemption</th>
                 <th className="pb-4 pt-2 px-2 font-bold">Status</th>

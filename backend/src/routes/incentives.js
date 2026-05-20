@@ -124,7 +124,12 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
         continue;
       }
 
-      const vendor = await Vendor.findOne({ accountNumber: partCode });
+      const vendor = await Vendor.findOne({
+        $or: [
+          { accountNumber: partCode },
+          { accountNumber: { $regex: `-${partCode}$`, $options: 'i' } },
+        ]
+      });
       if (!vendor) { results.failed.push({ partCode, reason: 'Vendor not found' }); continue; }
       if (vendor.status === 'blocked') { results.failed.push({ partCode, reason: 'Vendor is blocked' }); continue; }
 

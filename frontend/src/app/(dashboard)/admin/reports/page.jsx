@@ -84,14 +84,17 @@ export default function AdminReportsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [locationFilter, setLocationFilter] = useState('');
 
-  const [statementModal, setStatementModal] = useState({ isOpen: false, vendorName: '', data: [], loading: false });
+  const [statementModal, setStatementModal] = useState({ isOpen: false, vendor: null, vendorName: '', data: [], loading: false });
+
+  const [stmtStartDate, setStmtStartDate] = useState('');
+  const [stmtEndDate, setStmtEndDate] = useState('');
 
   const [statementSearchQuery, setStatementSearchQuery] = useState('');
   const [statementSearchLoading, setStatementSearchLoading] = useState(false);
   const [statementSearchError, setStatementSearchError] = useState('');
 
   const handleOpenStatement = async (vendor) => {
-    setStatementModal({ isOpen: true, vendorName: vendor.companyName, data: [], loading: true });
+    setStatementModal({ isOpen: true, vendor, vendorName: vendor.companyName, data: [], loading: true });
     try {
       const [invRes, trxRes] = await Promise.all([
         fetch(`${API}/api/invoices?vendorId=${vendor._id}&limit=1000`, { headers: authHeaders(), credentials: 'include' }),
@@ -99,35 +102,44 @@ export default function AdminReportsPage() {
       ]);
       const invData = await invRes.json();
       const trxData = await trxRes.json();
-      
+
       const invoices = invData.success ? invData.data : [];
       const transactions = trxData.success ? trxData.data : [];
+
+      // Sanitize text to remove zero-width spaces / soft-hyphens injected by Google Translate
+      const sanitize = (str) => String(str || '')
+        .replace(/\u200B/g, '')   // zero-width space
+        .replace(/\u00AD/g, '')   // soft hyphen
+        .replace(/₹/g, 'Rs.')     // replace rupee symbol (causes GT injection)
+        .trim();
 
       const mappedInvoices = invoices.map(inv => ({
         _id: inv._id,
         date: new Date(inv.invoiceDate),
         type: 'Invoice / Bill',
-        particulars: `Invoice No: ${inv.invoiceNumber}`,
-        amount: inv.invoiceAmount,
+        particulars: sanitize(inv.invoiceNumber),
+        debit: null,
+        credit: null,
+        invoiceAmount: inv.invoiceAmount,
         location: inv.location || '—',
-        remark: inv.status || 'Processed',
         balanceAfter: '—',
-        isCredit: null
+        isCredit: null,
       }));
 
       const mappedTransactions = transactions.map(trx => ({
         _id: trx._id,
         date: new Date(trx.createdAt),
-        type: trx.type === 'credit' ? 'Incentive Earned' : 'Redemption (Debit)',
-        particulars: trx.description || (trx.type === 'credit' ? 'Incentive Credited' : 'Wallet Redeemed'),
-        amount: trx.amount,
-        location: trx.location || '—',
-        remark: trx.type.toUpperCase(),
-        balanceAfter: `₹${trx.balanceAfter}`,
-        isCredit: trx.type === 'credit'
+        type: trx.type === 'credit' ? 'Incentive Credited' : 'Wallet Redemption',
+        particulars: sanitize(trx.description || (trx.type === 'credit' ? 'Incentive Credited' : 'Wallet Redeemed')),
+        debit: trx.type === 'debit' ? trx.amount : null,
+        credit: trx.type === 'credit' ? trx.amount : null,
+        invoiceAmount: null,
+        location: trx.invoice?.location || '—',
+        balanceAfter: trx.balanceAfter,
+        isCredit: trx.type === 'credit',
       }));
 
-      const combined = [...mappedInvoices, ...mappedTransactions].sort((a, b) => b.date - a.date);
+      const combined = [...mappedInvoices, ...mappedTransactions].sort((a, b) => a.date - b.date);
 
       setStatementModal(prev => ({ ...prev, data: combined, loading: false }));
     } catch {
@@ -135,47 +147,87 @@ export default function AdminReportsPage() {
     }
   };
 
+  const filteredStatementData = React.useMemo(() => {
+    let data = statementModal.data;
+    if (stmtStartDate) data = data.filter(r => r.date >= new Date(stmtStartDate));
+    if (stmtEndDate) {
+      const end = new Date(stmtEndDate);
+      end.setHours(23, 59, 59, 999);
+      data = data.filter(r => r.date <= end);
+    }
+    return data;
+  }, [statementModal.data, stmtStartDate, stmtEndDate]);
+
   const downloadStatementPDF = async () => {
     const { default: jsPDF } = await import('jspdf');
     const { default: autoTable } = await import('jspdf-autotable');
     const doc = new jsPDF({ orientation: 'landscape' });
-    doc.setFontSize(14);
-    doc.text(`Party Statement — ${statementModal.vendorName}`, 14, 18);
-    doc.setFontSize(9); doc.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 26);
-    
-    const head = ['#', 'Date', 'Type', 'Particulars', 'Amount (Rs)', 'Location', 'Balance After', 'Remark'];
-    const body = statementModal.data.map((row, i) => [
+    const v = statementModal.vendor;
+    const genDate = new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+
+    doc.setFontSize(16); doc.setFont('helvetica','bold');
+    doc.text('Friends Trading Corporation', 14, 18);
+    doc.setFontSize(10); doc.setFont('helvetica','normal');
+    doc.text('Incentive Wallet Statement', 14, 25);
+    doc.setFontSize(9);
+    doc.text(`Party Name   : ${v?.companyName || statementModal.vendorName}`, 14, 35);
+    doc.text(`Party Code   : ${v?.accountNumber || '—'}`, 14, 41);
+    doc.text(`Mobile       : ${v?.mobileNumber || '—'}`, 14, 47);
+    doc.text(`Branch       : ${v?.division?.name || '—'}`, 14, 53);
+    doc.text(`Wallet Bal.  : Rs. ${Number(v?.walletBalance || 0).toFixed(2)}`, 14, 59);
+    doc.text(`Generated    : ${genDate}`, 200, 35);
+
+    const head = ['#', 'Date', 'Particulars / Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited (Rs)', 'Debited (Rs)', 'Wallet Balance (Rs)', 'Location'];
+    const body = filteredStatementData.map((row, i) => [
       i + 1,
-      row.date.toLocaleDateString('en-IN'),
-      row.type,
+      row.date.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }),
       row.particulars,
-      row.amount,
+      row.type,
+      row.invoiceAmount != null ? Number(row.invoiceAmount).toFixed(2) : '—',
+      row.credit != null ? Number(row.credit).toFixed(2) : '—',
+      row.debit != null ? Number(row.debit).toFixed(2) : '—',
+      row.balanceAfter !== '—' ? `Rs. ${Number(row.balanceAfter).toFixed(2)}` : '—',
       row.location,
-      row.balanceAfter,
-      row.remark
     ]);
-    
-    autoTable(doc, { startY: 32, head: [head], body, styles: { fontSize: 8 }, headStyles: { fillColor: [43, 59, 138] } });
-    doc.save(`statement_${statementModal.vendorName.replace(/\s+/g, '_')}.pdf`);
+
+    autoTable(doc, {
+      startY: 66,
+      head: [head],
+      body,
+      styles: { fontSize: 8, cellPadding: 3 },
+      headStyles: { fillColor: [43, 59, 138], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+    });
+    doc.save(`statement_${(v?.companyName || 'party').replace(/\s+/g, '_')}.pdf`);
   };
 
   const downloadStatementExcel = async () => {
     const XLSX = await import('xlsx');
-    const head = ['#', 'Date', 'Type', 'Particulars', 'Amount (Rs)', 'Location', 'Balance After', 'Remark'];
-    const body = statementModal.data.map((row, i) => [
+    const v = statementModal.vendor;
+    const genDate = new Date().toLocaleDateString('en-IN');
+    const info = [
+      ['Friends Trading Corporation — Incentive Wallet Statement'],
+      [`Party Name: ${v?.companyName || statementModal.vendorName}`, '', `Party Code: ${v?.accountNumber || '—'}`],
+      [`Mobile: ${v?.mobileNumber || '—'}`, '', `Branch: ${v?.division?.name || '—'}`],
+      [`Wallet Balance: Rs. ${Number(v?.walletBalance || 0).toFixed(2)}`, '', `Generated: ${genDate}`],
+      [],
+    ];
+    const head = ['#', 'Date', 'Particulars / Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited (Rs)', 'Debited (Rs)', 'Wallet Balance (Rs)', 'Location'];
+    const body = filteredStatementData.map((row, i) => [
       i + 1,
-      row.date.toLocaleDateString('en-IN'),
-      row.type,
+      row.date.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }),
       row.particulars,
-      row.amount,
+      row.type,
+      row.invoiceAmount != null ? Number(row.invoiceAmount).toFixed(2) : '—',
+      row.credit != null ? Number(row.credit).toFixed(2) : '—',
+      row.debit != null ? Number(row.debit).toFixed(2) : '—',
+      row.balanceAfter !== '—' ? Number(row.balanceAfter).toFixed(2) : '—',
       row.location,
-      row.balanceAfter,
-      row.remark
     ]);
-    const ws = XLSX.utils.aoa_to_sheet([head, ...body]);
+    const ws = XLSX.utils.aoa_to_sheet([...info, head, ...body]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Statement');
-    XLSX.writeFile(wb, `statement_${statementModal.vendorName.replace(/\s+/g, '_')}.xlsx`);
+    XLSX.writeFile(wb, `statement_${(v?.companyName || 'party').replace(/\s+/g, '_')}.xlsx`);
   };
 
   const handleQuickStatementSearch = async (e) => {
@@ -266,6 +318,7 @@ export default function AdminReportsPage() {
   const totals = React.useMemo(() => {
     let walletTotal = 0;
     let invoiceTotal = 0;
+    let redeemTotal = 0;
     let incentiveTotal = 0;
     filteredData.forEach((r) => {
       if (reportType === 'Party') {
@@ -273,12 +326,13 @@ export default function AdminReportsPage() {
       }
       if (reportType === 'invoices') {
         invoiceTotal += Number(r.invoiceAmount) || 0;
+        redeemTotal += Number(r.redeemAmount) || 0;
       }
       if (reportType === 'incentives') {
         incentiveTotal += Number(r.amount) || 0;
       }
     });
-    return { walletTotal, invoiceTotal, incentiveTotal };
+    return { walletTotal, invoiceTotal, redeemTotal, incentiveTotal };
   }, [filteredData, reportType]);
 
   const downloadPDF = async () => {
@@ -308,8 +362,8 @@ export default function AdminReportsPage() {
       body: filteredData.map((v, i) => [i+1, v.companyName, v.mobileNumber, v.accountNumber, `Rs. ${Number(v.walletBalance).toFixed(2)}`, v.status, v.division?.name||'', new Date(v.createdAt).toLocaleDateString('en-IN')]),
     };
     if (reportType === 'invoices') return {
-      head: ['#', 'Invoice No', 'Vendor', 'Account No', 'Amount', 'Location', 'Division', 'Date'],
-      body: filteredData.map((inv, i) => [i+1, inv.invoiceNumber, inv.vendor?.companyName||'N/A', inv.vendor?.accountNumber||'N/A', `Rs. ${inv.invoiceAmount}`, inv.location, inv.division?.name||'', new Date(inv.invoiceDate).toLocaleDateString('en-IN')]),
+      head: ['#', 'Invoice No', 'Vendor', 'Account No', 'Invoice Amount', 'Amount Redeemed', 'Location', 'Division', 'Date'],
+      body: filteredData.map((inv, i) => [i+1, inv.invoiceNumber, inv.vendor?.companyName||'N/A', inv.vendor?.accountNumber||'N/A', `Rs. ${Number(inv.invoiceAmount).toFixed(2)}`, inv.redeemAmount > 0 ? `Rs. ${Number(inv.redeemAmount).toFixed(2)}` : '—', inv.location, inv.division?.name||'', new Date(inv.invoiceDate).toLocaleDateString('en-IN')]),
     };
     return {
       head: ['#', 'Vendor', 'Account No', 'Type', 'Amount', 'Balance After', 'Date'],
@@ -499,9 +553,10 @@ export default function AdminReportsPage() {
                     <th className="pb-4 font-bold px-2">Invoice Number</th>
                     <th className="pb-4 font-bold px-2">Party Name</th>
                     <th className="pb-4 font-bold px-2">Party Code</th>
-                    <th className="pb-4 font-bold px-2">Amount (₹)</th>
+                    <th className="pb-4 font-bold px-2">Invoice Amount (₹)</th>
+                    <th className="pb-4 font-bold px-2">Amount Redeemed (₹)</th>
                     <th className="pb-4 font-bold px-2">Location</th>
-                    <th className="pb-4 font-bold px-2">Location</th>
+                    <th className="pb-4 font-bold px-2">Division</th>
                     <th className="pb-4 font-bold px-2">Invoice Date</th>
                   </>}
                   {reportType === 'incentives' && <>
@@ -538,7 +593,10 @@ export default function AdminReportsPage() {
                       <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{row.invoiceNumber}</td>
                       <td className="py-5 px-2">{row.vendor?.companyName || 'N/A'}</td>
                       <td className="py-5 px-2">{row.vendor?.accountNumber || 'N/A'}</td>
-                      <td className="py-5 px-2">₹{row.invoiceAmount}</td>
+                      <td className="py-5 px-2">₹{Number(row.invoiceAmount).toFixed(2)}</td>
+                      <td className="py-5 px-2 font-semibold text-[#E74C3C]">
+                        {row.redeemAmount > 0 ? `₹${Number(row.redeemAmount).toFixed(2)}` : <span className="text-gray-400">—</span>}
+                      </td>
                       <td className="py-5 px-2">{row.location}</td>
                       <td className="py-5 px-2">{row.division?.name || '—'}</td>
                       <td className="py-5 px-2">{new Date(row.invoiceDate).toLocaleDateString('en-IN')}</td>
@@ -586,9 +644,9 @@ export default function AdminReportsPage() {
                   {reportType === 'invoices' && (
                     <tr className="border-t border-gray-100">
                       <td className="py-3 px-2" />
-                      <td colSpan="2" className="py-3 px-2 text-right">Total Invoice</td>
-                      <td className="py-3 px-2">₹{Number(totals.invoiceTotal).toFixed(2)}</td>
-                      <td className="py-3 px-2" />
+                      <td colSpan="2" className="py-3 px-2 text-right font-semibold">Total</td>
+                      <td className="py-3 px-2 font-semibold">₹{Number(totals.invoiceTotal).toFixed(2)}</td>
+                      <td className="py-3 px-2 font-semibold text-[#E74C3C]">₹{Number(totals.redeemTotal).toFixed(2)}</td>
                       <td className="py-3 px-2" />
                       <td className="py-3 px-2" />
                       <td className="py-3 px-2" />
@@ -617,125 +675,230 @@ export default function AdminReportsPage() {
 
       {/* Statement Modal */}
       {statementModal.isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-[#2B3B8A]">
-              <h3 className="text-xl font-bold text-white">Statement: {statementModal.vendorName}</h3>
-              <button onClick={() => setStatementModal({ isOpen: false, vendorName: '', data: [], loading: false })} className="text-white hover:text-gray-200">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4" style={{isolation:'isolate'}}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col notranslate" translate="no">
+
+            {/* Modal Header */}
+            <div className="px-8 py-5 border-b border-gray-100 flex justify-between items-center bg-[#2B3B8A]">
+              <div>
+                <h3 className="text-[18px] font-bold text-white tracking-tight">Incentive Wallet Statement</h3>
+                <p className="text-[13px] text-blue-200 mt-0.5">Friends Trading Corporation</p>
+              </div>
+              <button onClick={() => { setStatementModal({ isOpen: false, vendor: null, vendorName: '', data: [], loading: false }); setStmtStartDate(''); setStmtEndDate(''); }} className="text-white hover:text-gray-200 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
-            <div className="p-6 overflow-y-auto flex-1">
+
+            <div className="overflow-y-auto flex-1 p-8">
               {statementModal.loading ? (
-                <p className="text-center text-gray-500 py-10">Loading statement...</p>
+                <div className="flex items-center justify-center py-20 gap-3 text-gray-400">
+                  <svg className="animate-spin w-6 h-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                  <span className="text-[14px] font-medium">Loading statement...</span>
+                </div>
               ) : (
                 <>
-                  <div className="overflow-x-auto border border-gray-100 rounded-lg">
+                  {/* Party Info Header */}
+                  <div className="border border-gray-200 rounded-xl mb-6 overflow-hidden">
+                    <div className="bg-gray-50 px-6 py-3 border-b border-gray-200">
+                      <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Account / Party Details</p>
+                    </div>
+                    <div className="px-6 py-5 grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-4">
+                      <div>
+                        <p className="text-[11px] text-gray-400 font-medium uppercase tracking-wide mb-1">Party Name</p>
+                        <p className="text-[14px] font-bold text-gray-900">{statementModal.vendor?.companyName || statementModal.vendorName}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-gray-400 font-medium uppercase tracking-wide mb-1">Party Code</p>
+                        <p className="text-[14px] font-bold text-[#2B3B8A]">{statementModal.vendor?.accountNumber || '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-gray-400 font-medium uppercase tracking-wide mb-1">Mobile Number</p>
+                        <p className="text-[14px] font-semibold text-gray-800">{statementModal.vendor?.mobileNumber || '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-gray-400 font-medium uppercase tracking-wide mb-1">Branch / Division</p>
+                        <p className="text-[14px] font-semibold text-gray-800">{statementModal.vendor?.division?.name || '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-gray-400 font-medium uppercase tracking-wide mb-1">Current Wallet Balance</p>
+                        <p className="text-[16px] font-bold text-[#00B65E]">₹{Number(statementModal.vendor?.walletBalance || 0).toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-gray-400 font-medium uppercase tracking-wide mb-1">Party City</p>
+                        <p className="text-[14px] font-semibold text-gray-800">{statementModal.vendor?.partyCity || '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-gray-400 font-medium uppercase tracking-wide mb-1">Party Type</p>
+                        <p className="text-[14px] font-semibold text-gray-800">{statementModal.vendor?.partyType || '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-gray-400 font-medium uppercase tracking-wide mb-1">Statement Date</p>
+                        <p className="text-[14px] font-semibold text-gray-800">{new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Date Range Filter */}
+                  <div className="flex flex-wrap items-center gap-4 mb-4">
+                    <div className="flex items-center gap-2">
+                      <label className="text-[12px] font-medium text-gray-500 uppercase tracking-wide">From</label>
+                      <input type="date" value={stmtStartDate} onChange={e => setStmtStartDate(e.target.value)}
+                        className="px-3 py-2 rounded-lg border border-gray-200 text-[13px] text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-[12px] font-medium text-gray-500 uppercase tracking-wide">To</label>
+                      <input type="date" value={stmtEndDate} onChange={e => setStmtEndDate(e.target.value)}
+                        className="px-3 py-2 rounded-lg border border-gray-200 text-[13px] text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
+                    </div>
+                    {(stmtStartDate || stmtEndDate) && (
+                      <button onClick={() => { setStmtStartDate(''); setStmtEndDate(''); }}
+                        className="text-[12px] text-gray-400 hover:text-gray-600 underline">Clear</button>
+                    )}
+                    <span className="text-[12px] text-gray-400 ml-auto">{filteredStatementData.length} entries</span>
+                  </div>
+
+                  {/* Transaction Table */}
+                  <div className="border border-gray-200 rounded-xl overflow-hidden overflow-x-auto">
                     <table className="w-full text-left whitespace-nowrap">
-                      <thead className="bg-gray-50">
-                        <tr className="border-b border-gray-200 text-gray-900 text-[13px]">
-                          <th className="py-3 px-4 font-bold">#</th>
-                          <th className="py-3 px-4 font-bold">Date</th>
-                          <th className="py-3 px-4 font-bold">Type</th>
-                          <th className="py-3 px-4 font-bold">Particulars</th>
-                          <th className="py-3 px-4 font-bold">Amount (₹)</th>
-                          <th className="py-3 px-4 font-bold">Location</th>
-                          <th className="py-3 px-4 font-bold">Balance After</th>
-                          <th className="py-3 px-4 font-bold">Remark</th>
+                      <thead>
+                        <tr className="bg-[#2B3B8A] text-white text-[12px]">
+                          <th className="py-3.5 px-4 font-semibold">#</th>
+                          <th className="py-3.5 px-4 font-semibold">Date</th>
+                          <th className="py-3.5 px-4 font-semibold">Particulars / Invoice No.</th>
+                          <th className="py-3.5 px-4 font-semibold">Type</th>
+                          <th className="py-3.5 px-4 font-semibold text-right">Invoice Amt (₹)</th>
+                          <th className="py-3.5 px-4 font-semibold text-right" style={{color:'#86efac'}}>Credited (₹)</th>
+                          <th className="py-3.5 px-4 font-semibold text-right" style={{color:'#fca5a5'}}>Debited (₹)</th>
+                          <th className="py-3.5 px-4 font-semibold text-right">Wallet Bal. (₹)</th>
+                          <th className="py-3.5 px-4 font-semibold">Location</th>
                         </tr>
                       </thead>
-                      <tbody className="text-gray-700 font-medium text-[13px]">
-                        {statementModal.data.length > 0 ? statementModal.data.map((row, idx) => (
-                          <tr key={row._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
-                            <td className="py-3 px-4">{idx + 1}</td>
-                            <td className="py-3 px-4 whitespace-nowrap">{row.date.toLocaleDateString('en-IN')}</td>
-                            <td className="py-3 px-4">
-                              <span className={`font-semibold ${row.isCredit === true ? 'text-[#2ECC71]' : row.isCredit === false ? 'text-[#E74C3C]' : 'text-gray-600'}`}>
-                                {row.type}
-                              </span>
+                      <tbody className="text-[13px]">
+                        {filteredStatementData.length > 0 ? filteredStatementData.map((row, idx) => (
+                          <tr key={row._id} className={`border-b border-gray-100 last:border-0 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/60'} hover:bg-blue-50/40`}>
+                            <td className="py-3.5 px-4 text-gray-400 font-medium">{String(idx + 1).padStart(2, '0')}</td>
+                            <td className="py-3.5 px-4 text-gray-700 font-medium whitespace-nowrap">
+                              {row.date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                             </td>
-                            <td className="py-3 px-4 font-semibold text-[#2B3B8A]">{row.particulars}</td>
-                            <td className="py-3 px-4 font-medium">₹{row.amount}</td>
-                            <td className="py-3 px-4">{row.location}</td>
-                            <td className="py-3 px-4 font-medium">{row.balanceAfter}</td>
-                            <td className="py-3 px-4">
-                              <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold capitalize bg-[#F1F5F9] text-gray-600">
-                                {row.remark}
-                              </span>
+                            <td className="py-3.5 px-4 font-semibold text-[#2B3B8A] max-w-[220px] truncate">{row.particulars}</td>
+                            <td className="py-3.5 px-4">
+                              <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold ${
+                                row.isCredit === true ? 'bg-green-50 text-green-700 border border-green-200' :
+                                row.isCredit === false ? 'bg-red-50 text-red-600 border border-red-200' :
+                                'bg-gray-100 text-gray-600 border border-gray-200'
+                              }`}>{row.type}</span>
                             </td>
+                            <td className="py-3.5 px-4 text-right text-gray-700 font-medium">
+                              {row.invoiceAmount != null ? `₹${Number(row.invoiceAmount).toFixed(2)}` : <span className="text-gray-300">—</span>}
+                            </td>
+                            <td className="py-3.5 px-4 text-right font-bold text-[#16a34a]">
+                              {row.credit != null ? `+₹${Number(row.credit).toFixed(2)}` : <span className="text-gray-300 font-normal">—</span>}
+                            </td>
+                            <td className="py-3.5 px-4 text-right font-bold text-[#dc2626]">
+                              {row.debit != null ? `-₹${Number(row.debit).toFixed(2)}` : <span className="text-gray-300 font-normal">—</span>}
+                            </td>
+                            <td className="py-3.5 px-4 text-right font-bold text-gray-900">
+                              {row.balanceAfter !== '—' ? `₹${Number(row.balanceAfter).toFixed(2)}` : <span className="text-gray-300 font-normal">—</span>}
+                            </td>
+                            <td className="py-3.5 px-4 text-gray-600">{row.location}</td>
                           </tr>
                         )) : (
                           <tr>
-                            <td colSpan="8" className="py-10 text-center text-gray-500">No history found for this party.</td>
+                            <td colSpan="9" className="py-12 text-center text-gray-400 text-[14px]">No transactions found for this party.</td>
                           </tr>
                         )}
                       </tbody>
+                      {filteredStatementData.length > 0 && (() => {
+                        const totalCredit = filteredStatementData.reduce((s, r) => s + (r.credit || 0), 0);
+                        const totalDebit = filteredStatementData.reduce((s, r) => s + (r.debit || 0), 0);
+                        const totalInvoice = filteredStatementData.reduce((s, r) => s + (r.invoiceAmount || 0), 0);
+                        return (
+                          <tfoot className="bg-[#F8FAFC] border-t-2 border-gray-200 text-[13px] font-bold">
+                            <tr>
+                              <td colSpan="4" className="py-4 px-4 text-gray-700">Total ({filteredStatementData.length} entries)</td>
+                              <td className="py-4 px-4 text-right text-gray-800">₹{totalInvoice.toFixed(2)}</td>
+                              <td className="py-4 px-4 text-right text-[#16a34a]">+₹{totalCredit.toFixed(2)}</td>
+                              <td className="py-4 px-4 text-right text-[#dc2626]">-₹{totalDebit.toFixed(2)}</td>
+                              <td className="py-4 px-4 text-right text-[#2B3B8A]">₹{Number(statementModal.vendor?.walletBalance || 0).toFixed(2)}</td>
+                              <td className="py-4 px-4" />
+                            </tr>
+                          </tfoot>
+                        );
+                      })()}
                     </table>
                   </div>
-                  {statementModal.data.length > 0 && (
+
+                  {/* Action Buttons */}
+                  {filteredStatementData.length > 0 && (
                     <div className="mt-6 flex flex-wrap justify-end gap-3">
-                      <button onClick={downloadStatementPDF} className="px-5 py-2 bg-[#E74C3C] text-white text-[13px] font-bold rounded-lg shadow hover:bg-red-600 transition-all flex items-center gap-2">
+                      <button onClick={downloadStatementPDF} className="px-5 py-2.5 bg-[#E74C3C] text-white text-[13px] font-bold rounded-xl shadow hover:bg-red-600 transition-all flex items-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m.75 12l3 3m0 0l3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
-                        PDF Download
+                        Download PDF
                       </button>
-                      <button onClick={downloadStatementExcel} className="px-5 py-2 bg-[#2ECC71] text-white text-[13px] font-bold rounded-lg shadow hover:bg-green-600 transition-all flex items-center gap-2">
+                      <button onClick={downloadStatementExcel} className="px-5 py-2.5 bg-[#2ECC71] text-white text-[13px] font-bold rounded-xl shadow hover:bg-green-600 transition-all flex items-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
-                        Excel Download
+                        Download Excel
                       </button>
                       <button onClick={() => {
+                        const v = statementModal.vendor;
                         const printWindow = window.open('', '_blank');
-                        printWindow.document.write(`
-                          <html>
-                            <head>
-                              <title>Statement - ${statementModal.vendorName}</title>
-                              <style>
-                                body { font-family: Arial, sans-serif; padding: 30px; }
-                                h2 { text-align: center; color: #2B3B8A; margin-bottom: 20px; }
-                                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                                th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 12px; }
-                                th { background-color: #f8f9fa; font-weight: bold; }
-                                .footer { margin-top: 30px; text-align: right; font-size: 12px; color: #666; }
-                                .credit { color: #2ECC71; font-weight: bold; }
-                                .debit { color: #E74C3C; font-weight: bold; }
-                              </style>
-                            </head>
-                            <body>
-                              <h2>Party Statement: ${statementModal.vendorName}</h2>
-                              <table>
-                                <thead>
-                                  <tr>
-                                    <th>#</th>
-                                    <th>Date</th>
-                                    <th>Type</th>
-                                    <th>Particulars</th>
-                                    <th>Amount (Rs.)</th>
-                                    <th>Location</th>
-                                    <th>Balance After</th>
-                                    <th>Remark</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  ${statementModal.data.map((row, idx) => `
-                                    <tr>
-                                      <td>${idx + 1}</td>
-                                      <td>${row.date.toLocaleDateString('en-IN')}</td>
-                                      <td class="${row.isCredit === true ? 'credit' : row.isCredit === false ? 'debit' : ''}">${row.type}</td>
-                                      <td>${row.particulars}</td>
-                                      <td>Rs. ${row.amount}</td>
-                                      <td>${row.location}</td>
-                                      <td>${row.balanceAfter}</td>
-                                      <td>${row.remark}</td>
-                                    </tr>
-                                  `).join('')}
-                                </tbody>
-                              </table>
-                              <div class="footer">Generated on: ${new Date().toLocaleString('en-IN')}</div>
-                            </body>
-                          </html>
-                        `);
+                        const rows = filteredStatementData.map((row, idx) => {
+                          const badgeCls = row.isCredit === true ? 'badge-credit' : row.isCredit === false ? 'badge-debit' : 'badge-invoice';
+                          return '<tr>' +
+                            '<td>' + String(idx+1).padStart(2,'0') + '</td>' +
+                            '<td>' + row.date.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) + '</td>' +
+                            '<td><strong>' + row.particulars + '</strong></td>' +
+                            '<td><span class="badge ' + badgeCls + '">' + row.type + '</span></td>' +
+                            '<td class="right">' + (row.invoiceAmount!=null?'Rs. '+Number(row.invoiceAmount).toFixed(2):'—') + '</td>' +
+                            '<td class="right credit">' + (row.credit!=null?'+Rs. '+Number(row.credit).toFixed(2):'—') + '</td>' +
+                            '<td class="right debit">' + (row.debit!=null?'-Rs. '+Number(row.debit).toFixed(2):'—') + '</td>' +
+                            '<td class="right"><strong>' + (row.balanceAfter!=='—'?'Rs. '+Number(row.balanceAfter).toFixed(2):'—') + '</strong></td>' +
+                            '<td>' + row.location + '</td>' +
+                            '</tr>';
+                        }).join('');
+                        const totalCredit = filteredStatementData.reduce((s,r)=>s+(r.credit||0),0);
+                        const totalDebit = filteredStatementData.reduce((s,r)=>s+(r.debit||0),0);
+                        const totalInv = filteredStatementData.reduce((s,r)=>s+(r.invoiceAmount||0),0);
+                        printWindow.document.write('<!DOCTYPE html><html><head><title>Statement - ' + (v?.companyName||statementModal.vendorName) + '</title>' +
+                          '<style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;padding:32px;color:#111;font-size:13px;}' +
+                          '.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;border-bottom:2px solid #2B3B8A;padding-bottom:16px;}' +
+                          '.company{font-size:20px;font-weight:bold;color:#2B3B8A;}.subtitle{font-size:12px;color:#666;margin-top:4px;}' +
+                          '.party-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:24px;}' +
+                          '.party-field label{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px;}' +
+                          '.party-field span{font-size:13px;font-weight:600;color:#111;}.balance span{color:#00B65E;font-size:15px;}' +
+                          'table{width:100%;border-collapse:collapse;font-size:11px;}thead tr{background:#2B3B8A;color:#fff;}' +
+                          'th{padding:9px 10px;text-align:left;font-weight:600;}th.right,td.right{text-align:right;}' +
+                          'td{padding:8px 10px;border-bottom:1px solid #f0f0f0;font-family:Arial,sans-serif;letter-spacing:normal;word-spacing:normal;}tr:nth-child(even) td{background:#f8fafc;}' +
+                          '.credit{color:#16a34a;font-weight:bold;}.debit{color:#dc2626;font-weight:bold;}' +
+                          '.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:bold;}' +
+                          '.badge-credit{background:#dcfce7;color:#16a34a;}.badge-debit{background:#fee2e2;color:#dc2626;}.badge-invoice{background:#f1f5f9;color:#475569;}' +
+                          'tfoot td{background:#f8fafc;font-weight:bold;border-top:2px solid #e2e8f0;padding:10px;}' +
+                          '.footer{margin-top:24px;font-size:11px;color:#888;text-align:right;}</style></head><body>' +
+                          '<div class="header"><div><div class="company">Friends Trading Corporation</div><div class="subtitle">Incentive Wallet Statement</div></div>' +
+                          '<div style="text-align:right;font-size:12px;color:#555;">Generated: ' + new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) + '</div></div>' +
+                          '<div class="party-grid">' +
+                          '<div class="party-field"><label>Party Name</label><span>' + (v?.companyName||statementModal.vendorName) + '</span></div>' +
+                          '<div class="party-field"><label>Party Code</label><span style="color:#2B3B8A">' + (v?.accountNumber||'—') + '</span></div>' +
+                          '<div class="party-field"><label>Mobile</label><span>' + (v?.mobileNumber||'—') + '</span></div>' +
+                          '<div class="party-field"><label>Branch</label><span>' + (v?.division?.name||'—') + '</span></div>' +
+                          '<div class="party-field balance"><label>Wallet Balance</label><span>Rs. ' + Number(v?.walletBalance||0).toFixed(2) + '</span></div>' +
+                          '<div class="party-field"><label>Party City</label><span>' + (v?.partyCity||'—') + '</span></div>' +
+                          '<div class="party-field"><label>Party Type</label><span>' + (v?.partyType||'—') + '</span></div>' +
+                          '</div>' +
+                          '<table><thead><tr><th>#</th><th>Date</th><th>Particulars / Invoice No.</th><th>Type</th>' +
+                          '<th class="right">Invoice Amt (Rs)</th><th class="right">Credited (Rs)</th><th class="right">Debited (Rs)</th><th class="right">Wallet Bal (Rs)</th><th>Location</th></tr></thead>' +
+                          '<tbody>' + rows + '</tbody>' +
+                          '<tfoot><tr><td colspan="4">Total (' + filteredStatementData.length + ' entries)</td>' +
+                          '<td class="right">Rs. ' + totalInv.toFixed(2) + '</td>' +
+                          '<td class="right credit">+Rs. ' + totalCredit.toFixed(2) + '</td>' +
+                          '<td class="right debit">-Rs. ' + totalDebit.toFixed(2) + '</td>' +
+                          '<td class="right" style="color:#2B3B8A">Rs. ' + Number(v?.walletBalance||0).toFixed(2) + '</td>' +
+                          '<td></td></tr></tfoot></table>' +
+                          '<div class="footer">This is a system-generated statement. — Friends Trading Corporation</div>' +
+                          '</body></html>');
                         printWindow.document.close();
                         setTimeout(() => { printWindow.print(); }, 500);
-                      }} className="px-6 py-2.5 bg-[#2ECC71] text-white text-[14px] font-bold rounded-lg shadow hover:bg-green-600 transition-all flex items-center gap-2">
+                      }} className="px-5 py-2.5 bg-[#2B3B8A] text-white text-[13px] font-bold rounded-xl shadow hover:bg-[#1e2a61] transition-all flex items-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0v2.796c0 .6.48 1.088 1.08 1.088h8.34c.6 0 1.08-.488 1.08-1.088V10.125M12 2.25h.008v.008H12V2.25z" /></svg>
                         Print Statement
                       </button>
