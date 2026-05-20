@@ -3,6 +3,7 @@ const Invoice = require('../models/Invoice');
 const Vendor = require('../models/Vendor');
 const WalletTransaction = require('../models/WalletTransaction');
 const OtpToken = require('../models/OtpToken');
+const Division = require('../models/Division');
 const { protect, authorize } = require('../middleware/auth');
 const { sendSmsOtp, sendRedemptionConfirmation } = require('../config/sms');
 
@@ -167,11 +168,15 @@ router.post('/redeem', protect, authorize('branch'), async (req, res) => {
       processedBy: req.user._id,
     });
 
+    const invoiceRecord = invoiceId ? await Invoice.findById(invoiceId).select('invoiceNumber').lean() : null;
+    const invoiceNumberText = invoiceRecord?.invoiceNumber || invoiceId || 'N/A';
+
     // Send confirmation SMS (non-blocking — redemption already done)
     sendRedemptionConfirmation(
       vendor.mobileNumber,
       vendor.companyName,
       amount,
+      invoiceNumberText,
       newBalance
     ).catch(() => {});
 
@@ -207,14 +212,25 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
     if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
     if (vendor.status === 'blocked') return res.status(403).json({ success: false, message: 'Vendor is blocked' });
 
-    if (!req.user.division) {
+    let division = req.user.division;
+    if (!division) {
       return res.status(400).json({ success: false, message: 'Branch user division is not set. Please re-login.' });
     }
 
-    const division = req.user.division;
-    const divisionId = division._id;
+    const invoiceText = String(invoiceNumber).trim();
+    const invoicePrefixMatch = invoiceText.match(/^([^/]+)\/(.+)$/);
+    let prefixedInvoiceNumber = invoiceText;
 
-    const prefixedInvoiceNumber = `${division.locationCode}/${invoiceNumber}`;
+    if (invoicePrefixMatch) {
+      const prefix = invoicePrefixMatch[1].trim();
+      const matchedDivision = await Division.findOne({ locationCode: prefix });
+      if (!matchedDivision) {
+        return res.status(400).json({ success: false, message: 'Invalid invoice prefix. Division not found.' });
+      }
+      division = matchedDivision;
+    } else {
+      prefixedInvoiceNumber = `${division.locationCode}/${invoiceText}`;
+    }
 
     const existing = await Invoice.findOne({ invoiceNumber: prefixedInvoiceNumber });
     if (existing) {
@@ -268,7 +284,8 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
       });
       vendor.walletBalance = newBalance;
 
-    const invoiceLocation = location || req.user.division?.location || '';
+    const divisionId = division._id;
+    const invoiceLocation = location || division.location || '';
 
     const invoice = await Invoice.create({
       vendor: vendorId,
@@ -377,6 +394,41 @@ router.get('/', protect, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @route   DELETE /api/invoices/:id
+// @desc    Delete invoice
+// @access  Admin only
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete('/:id', protect, authorize('admin'), async (req, res) => {
+  try {
+    const invoice = await Invoice.findById(req.params.id);
+
+    if (!invoice) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invoice not found',
+      });
+    }
+
+    // delete related wallet transactions
+    await WalletTransaction.deleteMany({
+      invoice: invoice._id,
+    });
+
+    await invoice.deleteOne();
+
+    res.status(200).json({
+      success: true,
+      message: 'Invoice deleted successfully',
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 });
 

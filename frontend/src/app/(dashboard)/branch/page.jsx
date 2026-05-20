@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
@@ -23,6 +23,7 @@ export default function BranchDashboard() {
   const [invoiceForm, setInvoiceForm] = useState({ date: '', number: '', amount: '', location: '' });
   const [invoiceError, setInvoiceError] = useState('');
   const [createdInvoice, setCreatedInvoice] = useState(null);
+  const [divisions, setDivisions] = useState([]);
 
   // Wallet history
   const [walletHistory, setWalletHistory] = useState([]);
@@ -230,6 +231,30 @@ export default function BranchDashboard() {
     }
   };
 
+  useEffect(() => {
+    const loadDivisions = async () => {
+      try {
+        const res = await fetch(`${API}/api/divisions`, {
+          credentials: 'include',
+          headers: authHeaders(),
+        });
+        const data = await res.json();
+        if (res.ok) setDivisions(data.data || []);
+      } catch {
+        setDivisions([]);
+      }
+    };
+    loadDivisions();
+  }, []);
+
+  const getLocationFromInvoicePrefix = (invoiceNumber) => {
+    const prefixMatch = String(invoiceNumber || '').trim().match(/^([^/]+)\//);
+    if (!prefixMatch) return null;
+    const prefix = prefixMatch[1].trim();
+    const division = divisions.find((div) => div.locationCode === prefix);
+    return division?.location || null;
+  };
+
   const closeModal = () => {
     setShowSuccessModal(false);
     setOtpSent(false);
@@ -374,7 +399,15 @@ export default function BranchDashboard() {
                       <input
                         type="text"
                         value={invoiceForm.number}
-                        onChange={(e) => setInvoiceForm({ ...invoiceForm, number: e.target.value })}
+                        onChange={(e) => {
+                          const invoiceNo = e.target.value;
+                          const invoiceLocation = getLocationFromInvoicePrefix(invoiceNo);
+                          setInvoiceForm({
+                            ...invoiceForm,
+                            number: invoiceNo,
+                            location: invoiceLocation || invoiceForm.location,
+                          });
+                        }}
                         placeholder="041234567890"
                         className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]"
                       />

@@ -145,7 +145,7 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
           vendor.mobileNumber,
           vendor.companyName,
           amount,
-          newBalance
+          remark || 'Incentive upload'
         ).catch((err) => console.error(`[CREDIT NOTIFY FAILED] ${vendor.mobileNumber}: ${err.message}`));
       }
 

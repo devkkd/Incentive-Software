@@ -52,7 +52,7 @@ const _sendWhatsApp = async (mobileNumber, otp, vendorName = '') => {
 };
 
 // ─── WhatsApp Confirmation Message ───────────────────────────────────────────
-const _sendWhatsAppConfirmation = async (mobileNumber, vendorName, amount, balance) => {
+const _sendWhatsAppConfirmation = async (mobileNumber, vendorName, amount, invoiceNo, balance) => {
   const token = process.env.WHATSAPP_TOKEN;
   const phoneNumberId = process.env.WHATSAPP_PHONE_ID;
   const templateName = process.env.WHATSAPP_CONFIRM_TEMPLATE || 'ftc_redemption';
@@ -78,6 +78,7 @@ const _sendWhatsAppConfirmation = async (mobileNumber, vendorName, amount, balan
               parameters: [
                 { type: 'text', text: vendorName || 'Vendor' },
                 { type: 'text', text: `Rs.${amount}` },
+                { type: 'text', text: invoiceNo || 'N/A' },
                 { type: 'text', text: `Rs.${balance}` },
               ],
             },
@@ -264,21 +265,25 @@ const sendSmsOtp = async (mobileNumber, otp, vendorName = '') => {
 // PUBLIC: Send Incentive Credit Notification
 // Called after wallet is credited via incentive upload
 // ─────────────────────────────────────────────────────────────────────────────
-const sendIncentiveCreditNotification = async (mobileNumber, vendorName, creditedAmount, totalBalance) => {
+// ─────────────────────────────────────────────────────────────────────────────
+// PUBLIC: Send Incentive Credit Notification (ftc_credit template)
+// Called after wallet is credited via incentive upload
+// Params: {{1}} = vendorName, {{2}} = amount, {{3}} = description
+// ─────────────────────────────────────────────────────────────────────────────
+const sendIncentiveCreditNotification = async (mobileNumber, vendorName, creditedAmount, description = 'Incentive') => {
   const provider = process.env.SMS_PROVIDER;
   const name = vendorName || 'Vendor';
 
   if (!provider) {
-    _logDev(mobileNumber, 'INCENTIVE_CREDIT', `+${creditedAmount}, balance=${totalBalance}`);
+    _logDev(mobileNumber, 'INCENTIVE_CREDIT', `+Rs.${creditedAmount}, against: ${description}`);
     return { success: true, dev: true };
   }
 
   if (provider === 'bhash') {
     try {
-      // Uses fr_bh MARKETING template — Params: vendorName, creditedAmount, totalBalance
-      // Template must have {{1}} {{2}} {{3}} placeholders
-      // If fr_bh has different placeholders, update BHASH_CREDIT_TEMPLATE in .env
-      const creditTemplate = process.env.BHASH_CREDIT_TEMPLATE || 'fr_bh';
+      // ftc_credit template — Params: name, amount, description
+      // Template: Dear {{1}}, You have earned an incentive of Rs. {{2}} against {{3}}.
+      const creditTemplate = process.env.BHASH_CREDIT_TEMPLATE || 'ftc_credit';
       const user = process.env.BHASH_USER;
       const pass = process.env.BHASH_PASS;
       const sender = process.env.BHASH_SENDER || 'BUZWAP';
@@ -293,7 +298,7 @@ const sendIncentiveCreditNotification = async (mobileNumber, vendorName, credite
         priority: 'wa',
         stype: 'normal',
         text: creditTemplate,
-        Params: `${name},${creditedAmount},${totalBalance}`,
+        Params: `${name},${creditedAmount},${description}`,
       });
 
       const url = `http://bhashsms.com/api/sendmsgutil.php?${params.toString()}`;
@@ -315,50 +320,85 @@ const sendIncentiveCreditNotification = async (mobileNumber, vendorName, credite
   }
 
   // Fallback for other providers — log only
-  _logDev(mobileNumber, 'INCENTIVE_CREDIT', `+Rs.${creditedAmount}, balance=Rs.${totalBalance}`);
+  _logDev(mobileNumber, 'INCENTIVE_CREDIT', `+Rs.${creditedAmount}, against: ${description}`);
   return { success: true, dev: true };
 };
 
-const sendRedemptionConfirmation = async (mobileNumber, vendorName, redeemedAmount, remainingBalance) => {
+// ─────────────────────────────────────────────────────────────────────────────
+// PUBLIC: Send Redemption Confirmation (ftc_redemption template)
+// Called when vendor redeems wallet balance against an invoice
+// Params: {{1}} = vendorName, {{2}} = amount, {{3}} = invoiceNo, {{4}} = balance
+// ─────────────────────────────────────────────────────────────────────────────
+const sendRedemptionConfirmation = async (mobileNumber, vendorName, redeemedAmount, invoiceNo, remainingBalance) => {
   const provider = process.env.SMS_PROVIDER;
   const name = vendorName || 'Vendor';
-  const message = `Dear ${name}, Rs.${redeemedAmount} redeemed from FTC Incentive wallet. Remaining balance: Rs.${remainingBalance}. -FTCIND`;
 
   if (!provider) {
-    _logDev(mobileNumber, 'CONFIRMATION', message);
+    _logDev(mobileNumber, 'REDEMPTION', `Amount: Rs.${redeemedAmount}, Invoice: ${invoiceNo}, Balance: Rs.${remainingBalance}`);
     return { success: true, dev: true };
-  }
-
-  if (provider === 'whatsapp') {
-    try {
-      return await _sendWhatsAppConfirmation(mobileNumber, name, redeemedAmount, remainingBalance);
-    } catch (error) {
-      console.error('[WhatsApp CONFIRM ERROR]', error.message);
-      return { success: false, error: error.message };
-    }
   }
 
   if (provider === 'bhash') {
     try {
-      // For confirmation: pass rawMessage so _sendBhashWhatsapp uses stype=normal + confirm template
-      // The Params value is the full message text (single param) — adjust if your template uses multiple {{n}}
-      return await _sendBhashWhatsapp(mobileNumber, null, name, message);
+      // ftc_redemption template — Params: name, amount, invoiceNo, balance
+      // Template: Dear {{1}}, You have spent an amount of {{2}} against Invoice No. {{3}}.
+      // Your updated wallet balance is {{4}}.
+      const confirmTemplate = process.env.BHASH_CONFIRM_TEMPLATE || 'ftc_redemption';
+      const user = process.env.BHASH_USER;
+      const pass = process.env.BHASH_PASS;
+      const sender = process.env.BHASH_SENDER || 'BUZWAP';
+
+      if (!user || !pass) throw new Error('BHASH credentials not set');
+
+      const params = new URLSearchParams({
+        user,
+        pass,
+        sender,
+        phone: mobileNumber,
+        priority: 'wa',
+        stype: 'normal',
+        text: confirmTemplate,
+        Params: `${name},${redeemedAmount},${invoiceNo},${remainingBalance}`,
+      });
+
+      const url = `http://bhashsms.com/api/sendmsgutil.php?${params.toString()}`;
+      console.log('[BHASH REDEMPTION REQUEST]', url.replace(pass, '***'));
+
+      const resp = await fetch(url, { method: 'GET' });
+      const text = await resp.text();
+      console.log('[BHASH REDEMPTION RESPONSE]', text);
+
+      if (!text || /error|invalid|fail/i.test(text)) {
+        throw new Error(`BHASH error: ${text}`);
+      }
+
+      return { success: true, messageId: text.trim() };
     } catch (error) {
-      console.error('[BHASH CONFIRM ERROR]', error.message);
+      console.error('[BHASH REDEMPTION ERROR]', error.message);
       return { success: false, error: error.message };
     }
   }
 
   if (provider === 'msg91') {
     try {
+      const message = `Dear ${name}, You have spent an amount of Rs.${redeemedAmount} against Invoice No. ${invoiceNo}. Your updated wallet balance is Rs.${remainingBalance}. -FTCIND`;
       return await _sendMsg91Sms(mobileNumber, message);
     } catch (error) {
-      console.error('[SMS CONFIRM ERROR]', error.message);
+      console.error('[MSG91 REDEMPTION ERROR]', error.message);
       return { success: false, error: error.message };
     }
   }
 
-  _logDev(mobileNumber, 'CONFIRMATION', message);
+  if (provider === 'whatsapp') {
+    try {
+      return await _sendWhatsAppConfirmation(mobileNumber, name, redeemedAmount, remainingBalance);
+    } catch (error) {
+      console.error('[WhatsApp REDEMPTION ERROR]', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  _logDev(mobileNumber, 'REDEMPTION', `Amount: Rs.${redeemedAmount}, Invoice: ${invoiceNo}, Balance: Rs.${remainingBalance}`);
   return { success: true, dev: true };
 };
 

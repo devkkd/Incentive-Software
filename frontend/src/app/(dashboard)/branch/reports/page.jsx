@@ -27,6 +27,8 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState([]);
   const [error, setError] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const fetchReports = async () => {
     setLoading(true); setError('');
@@ -44,7 +46,7 @@ export default function ReportsPage() {
     finally { setLoading(false); }
   };
 
-  const handleGetReports = () => fetchReports();
+  const handleGetReports = () => { setCurrentPage(1); fetchReports(); };
 
   // Client-side filtering — instant, no API call
   const filteredData = reportData.filter((row) => {
@@ -69,6 +71,39 @@ export default function ReportsPage() {
     }
     return true;
   });
+
+  // Pagination logic
+  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+  const paginatedData = filteredData.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  // Reset to page 1 if current page exceeds max
+  React.useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(1);
+    }
+  }, [filteredData, currentPage, totalPages]);
+
+  // Totals for current filtered data
+  const totals = React.useMemo(() => {
+    let walletTotal = 0;
+    let invoiceTotal = 0;
+    let incentiveTotal = 0;
+    filteredData.forEach((r) => {
+      if (reportType === 'vendors') {
+        walletTotal += Number(r.walletBalance) || 0;
+      }
+      if (reportType === 'invoices') {
+        invoiceTotal += Number(r.invoiceAmount) || 0;
+      }
+      if (reportType === 'incentives') {
+        incentiveTotal += Number(r.amount) || 0;
+      }
+    });
+    return { walletTotal, invoiceTotal, incentiveTotal };
+  }, [filteredData, reportType]);
 
   // Download PDF
   const downloadPDF = async () => {
@@ -150,7 +185,7 @@ export default function ReportsPage() {
                     {[
                       { id: 'vendors', label: 'Vendors' },
                       { id: 'incentives', label: 'Incentives Wallet' },
-                      { id: 'invoices', label: 'Upload Invoices' },
+                      { id: 'invoices', label: 'Invoices' },
                     ].map((r) => (
                       <button
                         key={r.id}
@@ -317,7 +352,7 @@ export default function ReportsPage() {
                       </tr>
                     </thead>
                     <tbody className="text-gray-700 font-medium">
-                      {filteredData.length > 0 ? filteredData.map((row, i) => (
+                      {paginatedData.length > 0 ? paginatedData.map((row, i) => (
                         <tr key={row._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
                           <td className="py-5 px-2">{String(i + 1).padStart(2, '0')}</td>
                           {reportType === 'vendors' && <>
@@ -365,12 +400,82 @@ export default function ReportsPage() {
                           </td>
                         </tr>
                       )}
+                      {/* Totals Row */}
+                      {filteredData.length > 0 && (
+                        <tr className="bg-gray-50 font-bold border-t-2 border-gray-300">
+                          <td className="py-3 px-2">TOTAL</td>
+                          {reportType === 'vendors' && <>
+                            <td className="py-3 px-2"></td>
+                            <td className="py-3 px-2"></td>
+                            <td className="py-3 px-2"></td>
+                            <td className="py-3 px-2">₹{Number(totals.walletTotal).toFixed(2)}</td>
+                            <td className="py-3 px-2"></td>
+                            <td className="py-3 px-2"></td>
+                          </>}
+                          {reportType === 'invoices' && <>
+                            <td className="py-3 px-2"></td>
+                            <td className="py-3 px-2"></td>
+                            <td className="py-3 px-2">₹{Number(totals.invoiceTotal).toFixed(2)}</td>
+                            <td className="py-3 px-2"></td>
+                            <td className="py-3 px-2"></td>
+                          </>}
+                          {reportType === 'incentives' && <>
+                            <td className="py-3 px-2"></td>
+                            <td className="py-3 px-2"></td>
+                            <td className="py-3 px-2"></td>
+                            <td className="py-3 px-2">₹{Number(totals.incentiveTotal).toFixed(2)}</td>
+                            <td className="py-3 px-2"></td>
+                            <td className="py-3 px-2"></td>
+                          </>}
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
 
-                <div className="mt-6 border-t border-gray-100 pt-4">
-                  <p className="text-[13px] text-gray-600 font-medium">Showing {filteredData.length} records</p>
+                <div className="mt-6 border-t border-gray-100 pt-6 flex flex-col md:flex-row justify-between items-center gap-4">
+                  <p className="text-[13px] text-gray-600 font-medium">
+                    Showing {paginatedData.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0} to {Math.min(currentPage * itemsPerPage, filteredData.length)} of {filteredData.length} records
+                  </p>
+                  {totalPages > 1 && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                        className="px-3 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        ← Previous
+                      </button>
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                          const pageNum = i + 1;
+                          return (
+                            <button
+                              key={pageNum}
+                              onClick={() => setCurrentPage(pageNum)}
+                              className={`w-8 h-8 rounded-lg text-sm font-semibold transition-colors ${
+                                currentPage === pageNum
+                                  ? 'bg-[#2B3B8A] text-white'
+                                  : 'bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100'
+                              }`}
+                            >
+                              {pageNum}
+                            </button>
+                          );
+                        })}
+                        {totalPages > 5 && (
+                          <span className="text-gray-500 text-sm px-1">...</span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                        className="px-3 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Next →
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
