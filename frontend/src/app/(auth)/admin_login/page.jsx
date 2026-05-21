@@ -148,7 +148,7 @@ export default function AdminLoginPage() {
           </div>
 
           {/* Checkbox */}
-          <div className="flex items-center pt-2">
+          {/* <div className="flex items-center pt-2">
             <label className="relative flex items-center cursor-pointer">
               <input 
                 type="checkbox" 
@@ -173,7 +173,7 @@ export default function AdminLoginPage() {
                 {t('keepSignedIn')}
               </span>
             </label>
-          </div>
+          </div> */}
 
           {/* Submit Button */}
           <div className="pt-4 flex justify-center">

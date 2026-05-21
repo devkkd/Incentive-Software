@@ -153,7 +153,7 @@ export default function branchLoginPage() {
           </div>
 
           {/* Checkbox */}
-          <div className="flex items-center pt-2">
+          {/* <div className="flex items-center pt-2">
             <div className="relative flex items-center cursor-pointer">
               <input 
                 type="checkbox" 
@@ -169,7 +169,7 @@ export default function branchLoginPage() {
             <label htmlFor="keep-signed-in" className="ml-2 text-[13px] text-gray-700 cursor-pointer select-none">
               {t('keepSignedIn')}
             </label>
-          </div>
+          </div> */}
 
           {/* Submit Button */}
           <button 

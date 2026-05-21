@@ -646,10 +646,11 @@ export default function BranchDashboard() {
                       <tr className="border-b-2 border-gray-200">
                         <th className="pb-4 font-bold text-black">#</th>
                         <th className="pb-4 font-bold text-black">Date</th>
-                        <th className="pb-4 font-bold text-black">Credited</th>
-                        <th className="pb-4 font-bold text-black">Debited</th>
-                        <th className="pb-4 font-bold text-black">Balance After</th>
                         <th className="pb-4 font-bold text-black">Invoice No</th>
+                        <th className="pb-4 font-bold text-black">Invoice Amount</th>
+                        <th className="pb-4 font-bold text-black">Amount Redeemed</th>
+                        <th className="pb-4 font-bold text-black">Credited</th>
+                        <th className="pb-4 font-bold text-black">Balance After</th>
                         <th className="pb-4 font-bold text-black">Location</th>
                       </tr>
                     </thead>
@@ -658,22 +659,45 @@ export default function BranchDashboard() {
                         <tr key={row._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
                           <td className="py-4">{i + 1}</td>
                           <td className="py-4">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
-                          <td className="py-4 text-[#2ECC71] font-semibold">
-                            {row.type === 'credit' ? `+₹${row.amount}` : 'NA'}
+                          <td className="py-4 font-semibold text-[#2B3B8A]">{row.invoice?.invoiceNumber || '—'}</td>
+                          <td className="py-4">
+                            {row.invoice?.invoiceAmount != null
+                              ? `₹${Number(row.invoice.invoiceAmount).toFixed(2)}`
+                              : <span className="text-gray-400">—</span>}
                           </td>
-                          <td className="py-4 text-[#E74C3C] font-semibold">
-                            {row.type === 'debit' ? `-₹${row.amount}` : 'NA'}
+                          <td className="py-4 font-semibold text-[#E74C3C]">
+                            {row.type === 'debit' ? `-₹${Number(row.amount).toFixed(2)}` : <span className="text-gray-400">—</span>}
                           </td>
-                          <td className="py-4">₹{row.balanceAfter}</td>
-                          <td className="py-4">{row.invoice?.invoiceNumber || 'N/A'}</td>
-                          <td className="py-4">{row.invoice?.location || 'N/A'}</td>
+                          <td className="py-4 font-semibold text-[#2ECC71]">
+                            {row.type === 'credit' ? `+₹${Number(row.amount).toFixed(2)}` : <span className="text-gray-400">—</span>}
+                          </td>
+                          <td className="py-4 font-semibold">₹{Number(row.balanceAfter).toFixed(2)}</td>
+                          <td className="py-4">{row.invoice?.location || '—'}</td>
                         </tr>
                       )) : (
                         <tr>
-                          <td colSpan="7" className="py-8 text-center text-gray-400">No transactions yet</td>
+                          <td colSpan="8" className="py-8 text-center text-gray-400">No transactions yet</td>
                         </tr>
                       )}
                     </tbody>
+                    {/* Totals footer */}
+                    {walletHistory.length > 0 && (() => {
+                      const totalInvoice = walletHistory.reduce((s, r) => s + (r.invoice?.invoiceAmount || 0), 0);
+                      const totalRedeemed = walletHistory.filter(r => r.type === 'debit').reduce((s, r) => s + (r.amount || 0), 0);
+                      const totalCredited = walletHistory.filter(r => r.type === 'credit').reduce((s, r) => s + (r.amount || 0), 0);
+                      return (
+                        <tfoot className="border-t-2 border-gray-200 bg-gray-50 font-bold text-[13px]">
+                          <tr>
+                            <td colSpan="3" className="py-3 text-gray-600">Total ({walletHistory.length} entries)</td>
+                            <td className="py-3">₹{totalInvoice.toFixed(2)}</td>
+                            <td className="py-3 text-[#E74C3C]">-₹{totalRedeemed.toFixed(2)}</td>
+                            <td className="py-3 text-[#2ECC71]">+₹{totalCredited.toFixed(2)}</td>
+                            <td className="py-3" />
+                            <td className="py-3" />
+                          </tr>
+                        </tfoot>
+                      );
+                    })()}
                   </table>
                 </div>
               </div>

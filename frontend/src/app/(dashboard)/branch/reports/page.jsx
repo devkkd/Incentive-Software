@@ -95,6 +95,7 @@ export default function ReportsPage() {
   const totals = React.useMemo(() => {
     let walletTotal = 0;
     let invoiceTotal = 0;
+    let redeemTotal = 0;
     let incentiveTotal = 0;
     filteredData.forEach((r) => {
       if (reportType === 'vendors') {
@@ -102,12 +103,13 @@ export default function ReportsPage() {
       }
       if (reportType === 'invoices') {
         invoiceTotal += Number(r.invoiceAmount) || 0;
+        redeemTotal += Number(r.redeemAmount) || 0;
       }
       if (reportType === 'incentives') {
         incentiveTotal += Number(r.amount) || 0;
       }
     });
-    return { walletTotal, invoiceTotal, incentiveTotal };
+    return { walletTotal, invoiceTotal, redeemTotal, incentiveTotal };
   }, [filteredData, reportType]);
 
   // Download PDF
@@ -148,10 +150,12 @@ export default function ReportsPage() {
     }
     if (reportType === 'invoices') {
       return {
-        head: ['#', 'Invoice No', 'Vendor', 'Amount', 'Location', 'Date'],
+        head: ['#', 'Invoice No', 'Vendor', 'Invoice Amount', 'Amount Redeemed', 'Location', 'Date'],
         body: filteredData.map((inv, i) => [
           i + 1, inv.invoiceNumber, inv.vendor?.companyName || 'N/A',
-          `Rs. ${inv.invoiceAmount}`, inv.location,
+          `Rs. ${Number(inv.invoiceAmount).toFixed(2)}`,
+          inv.redeemAmount > 0 ? `Rs. ${Number(inv.redeemAmount).toFixed(2)}` : '—',
+          inv.location || '—',
           new Date(inv.invoiceDate).toLocaleDateString('en-IN'),
         ]),
       };
@@ -342,7 +346,8 @@ export default function ReportsPage() {
                         {reportType === 'invoices' && <>
                           <th className="pb-4 pt-2 px-2 font-bold">Invoice Number</th>
                           <th className="pb-4 pt-2 px-2 font-bold">Vendor</th>
-                          <th className="pb-4 pt-2 px-2 font-bold">Amount (₹)</th>
+                          <th className="pb-4 pt-2 px-2 font-bold">Invoice Amount (₹)</th>
+                          <th className="pb-4 pt-2 px-2 font-bold">Amount Redeemed (₹)</th>
                           <th className="pb-4 pt-2 px-2 font-bold">Location</th>
                           <th className="pb-4 pt-2 px-2 font-bold">Invoice Date</th>
                         </>}
@@ -376,6 +381,9 @@ export default function ReportsPage() {
                             <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{row.invoiceNumber}</td>
                             <td className="py-5 px-2">{row.vendor?.companyName || 'N/A'}</td>
                             <td className="py-5 px-2">₹{Number(row.invoiceAmount).toFixed(2)}</td>
+                            <td className="py-5 px-2 font-semibold text-[#E74C3C]">
+                              {row.redeemAmount > 0 ? `₹${Number(row.redeemAmount).toFixed(2)}` : <span className="text-gray-400">—</span>}
+                            </td>
                             <td className="py-5 px-2">{row.location || '—'}</td>
                             <td className="py-5 px-2">{row.invoiceDate ? new Date(row.invoiceDate).toLocaleDateString('en-IN') : '—'}</td>
                           </>}
@@ -421,6 +429,7 @@ export default function ReportsPage() {
                             <td className="py-4 px-2"></td>
                             <td className="py-4 px-2"></td>
                             <td className="py-4 px-2 text-[#2B3B8A]">₹{Number(totals.invoiceTotal).toFixed(2)}</td>
+                            <td className="py-4 px-2 text-[#E74C3C]">₹{Number(totals.redeemTotal).toFixed(2)}</td>
                             <td className="py-4 px-2"></td>
                             <td className="py-4 px-2"></td>
                           </>}
