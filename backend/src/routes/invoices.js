@@ -218,6 +218,11 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
     }
 
     const invoiceText = String(invoiceNumber).trim();
+    const invoiceFormatRegex = /^\d+\/(?:RS|CSI)\/\d{8}$/i;
+    if (!invoiceFormatRegex.test(invoiceText)) {
+      return res.status(400).json({ success: false, message: 'Invoice number must be in format 1/RS/26001200 or 5/CSI/15001623' });
+    }
+
     const invoicePrefixMatch = invoiceText.match(/^([^/]+)\/(.+)$/);
     let prefixedInvoiceNumber = invoiceText;
 

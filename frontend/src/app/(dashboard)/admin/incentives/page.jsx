@@ -10,7 +10,7 @@ const authHeaders = () => {
 };
 
 const downloadTemplate = () => {
-  const csvContent = ['part_code,amount,remark', 'JDH-7792811100,5000,March incentive'].join('\n');
+  const csvContent = ['party_code,amount,remark', 'JDH-7792811100,5000,March incentive'].join('\n');
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -182,7 +182,7 @@ export default function AdminIncentivesPage() {
                 <div>
                   <p className="text-[13px] font-semibold text-gray-800 mb-1">Required CSV Format</p>
                   <p className="text-[12px] text-gray-500 font-mono bg-white border border-gray-200 rounded-lg px-3 py-1.5 inline-block">
-                    part_code &nbsp;|&nbsp; amount &nbsp;|&nbsp; remark
+                    party_code &nbsp;|&nbsp; amount &nbsp;|&nbsp; remark
                   </p>
                 </div>
                 <button onClick={downloadTemplate}

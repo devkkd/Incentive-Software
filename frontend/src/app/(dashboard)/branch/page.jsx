@@ -18,6 +18,7 @@ export default function BranchDashboard() {
   const [selectedVendor, setSelectedVendor] = useState(null);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState('');
+  const [userBranch, setUserBranch] = useState(null);
 
   // Invoice form
   const [invoiceForm, setInvoiceForm] = useState({ date: '', number: '', amount: '', location: '' });
@@ -103,8 +104,17 @@ export default function BranchDashboard() {
   // --- OTP ---
   const handleSendOTP = async () => {
     setRedeemError('');
+    setInvoiceError('');
     if (!redeemAmount || redeemAmt <= 0) { setRedeemError('Please enter a valid amount'); return; }
     if (!invoiceAmt || invoiceAmt <= 0) { setRedeemError('Enter invoice amount before redeeming wallet'); return; }
+    if (!isValidInvoiceNumber(invoiceForm.number)) {
+      setInvoiceError('Invoice number must be in format 1/RS/26001200 or 5/CSI/15001623');
+      return;
+    }
+    if (!invoiceForm.location) {
+      setInvoiceError('Invoice prefix does not match any known division');
+      return;
+    }
     if (exceedsInvoiceAmount) { setRedeemError('Wallet redemption amount cannot exceed invoice amount'); return; }
     if (isInsufficientBalance) return;
 
@@ -158,6 +168,10 @@ export default function BranchDashboard() {
     // 1. Validate Invoice Form (required)
     if (!invoiceForm.date || !invoiceForm.number || !invoiceForm.amount || !invoiceForm.location) {
       setInvoiceError('All invoice fields are required to submit.');
+      return;
+    }
+    if (!isValidInvoiceNumber(invoiceForm.number)) {
+      setInvoiceError('Invoice number must be in format 1/RS/26001200 or 5/CSI/15001623');
       return;
     }
 
@@ -232,19 +246,30 @@ export default function BranchDashboard() {
   };
 
   useEffect(() => {
-    const loadDivisions = async () => {
+    const loadBranchAndDivisions = async () => {
       try {
-        const res = await fetch(`${API}/api/divisions`, {
+        // Load user's branch info
+        const userRes = await fetch(`${API}/api/auth/me`, {
           credentials: 'include',
           headers: authHeaders(),
         });
-        const data = await res.json();
-        if (res.ok) setDivisions(data.data || []);
+        const userData = await userRes.json();
+        if (userRes.ok && userData.data?.division) {
+          setUserBranch(userData.data.division);
+        }
+
+        // Load divisions
+        const divRes = await fetch(`${API}/api/divisions`, {
+          credentials: 'include',
+          headers: authHeaders(),
+        });
+        const divData = await divRes.json();
+        if (divRes.ok) setDivisions(divData.data || []);
       } catch {
         setDivisions([]);
       }
     };
-    loadDivisions();
+    loadBranchAndDivisions();
   }, []);
 
   const getLocationFromInvoicePrefix = (invoiceNumber) => {
@@ -253,6 +278,11 @@ export default function BranchDashboard() {
     const prefix = prefixMatch[1].trim();
     const division = divisions.find((div) => div.locationCode === prefix);
     return division?.location || null;
+  };
+
+  const isValidInvoiceNumber = (invoiceNumber) => {
+    const invoiceRegex = /^\d+\/(?:RS|CSI)\/(?:\d{8})$/i;
+    return invoiceRegex.test(String(invoiceNumber || '').trim());
   };
 
   const closeModal = () => {
@@ -284,6 +314,11 @@ export default function BranchDashboard() {
             {redeemAmt > 0 && (
               <p className="text-[15px] text-gray-600 mb-2">
                 ₹{redeemAmt.toFixed(2)} redeemed from wallet.
+              </p>
+            )}
+            {redeemAmt > 0 && (
+              <p className="text-[15px] font-bold text-[#E74C3C] mb-3">
+                Due Amount: ₹{(invoiceAmt - redeemAmt).toFixed(2)}
               </p>
             )}
             <p className="text-[13px] text-gray-500 mb-8">
@@ -335,7 +370,7 @@ export default function BranchDashboard() {
                 <div className="flex flex-col xl:flex-row items-start justify-between gap-6">
                   <div className="space-y-2 text-[13px] text-gray-700 font-medium">
                     <p className="text-[16px] font-bold text-black">{selectedVendor.companyName}</p>
-                    <p>{selectedVendor.personName}</p>
+                    <p>{selectedVendor.partyType || '—'}</p>
                     <p className="text-[#2B3B8A] font-bold">{selectedVendor.accountNumber}</p>
                     <p>{selectedVendor.mobileNumber}</p>
                     <p className="max-w-[250px]">{selectedVendor.address}</p>
@@ -396,21 +431,27 @@ export default function BranchDashboard() {
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[13px] font-medium text-gray-800">Invoice Number</label>
-                      <input
-                        type="text"
-                        value={invoiceForm.number}
-                        onChange={(e) => {
-                          const invoiceNo = e.target.value;
-                          const invoiceLocation = getLocationFromInvoicePrefix(invoiceNo);
-                          setInvoiceForm({
-                            ...invoiceForm,
-                            number: invoiceNo,
-                            location: invoiceLocation || '',
-                          });
-                        }}
-                        placeholder="041234567890"
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]"
-                      />
+                      <div className="flex items-center gap-2">
+                        <span className="px-3 py-2.5 bg-gray-100 rounded-xl border border-gray-200 text-sm font-mono font-bold text-gray-700">
+                          {userBranch?.locationCode || '—'}/
+                        </span>
+                        <input
+                          type="text"
+                          value={invoiceForm.number.startsWith(userBranch?.locationCode ? `${userBranch.locationCode}/` : '') ? invoiceForm.number.substring((userBranch?.locationCode?.length || 0) + 1) : invoiceForm.number}
+                          onChange={(e) => {
+                            const input = e.target.value.toUpperCase();
+                            const prefixedNo = userBranch?.locationCode ? `${userBranch.locationCode}/${input}` : input;
+                            const invoiceLocation = getLocationFromInvoicePrefix(prefixedNo);
+                            setInvoiceForm({
+                              ...invoiceForm,
+                              number: prefixedNo,
+                              location: invoiceLocation || '',
+                            });
+                          }}
+                          placeholder="RS/26001200"
+                          className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]"
+                        />
+                      </div>
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[13px] font-medium text-gray-800">Invoice Amount (₹)</label>
@@ -445,7 +486,7 @@ export default function BranchDashboard() {
                     </div>
                     <div className="flex justify-between text-gray-500 font-medium">
                       <span>Invoice Number</span>
-                      <span className="text-gray-800">{invoiceForm.number || '#0000'}</span>
+                      <span className="text-gray-800 font-mono">{invoiceForm.number || `${userBranch?.locationCode || '—'}/####`}</span>
                     </div>
                     <div className="flex justify-between text-gray-500 font-medium">
                       <span>Invoice Amount (₹)</span>

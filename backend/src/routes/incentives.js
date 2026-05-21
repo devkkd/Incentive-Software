@@ -114,7 +114,7 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
     for (const rawRow of rows) {
       const row = normalize(rawRow);
       const partCode = String(
-        row['part_code'] || row['partcode'] || row['account_no'] || row['accountno'] || row['part code'] || ''
+        row['party_code'] || row['partcode'] || row['account_no'] || row['accountno'] || row['part code'] || ''
       ).trim();
       const amount = parseFloat(row['amount'] || row['incentive_amount'] || 0);
       const remark = String(row['remark'] || row['remarks'] || '').trim();
