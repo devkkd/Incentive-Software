@@ -178,7 +178,8 @@ router.post('/redeem', protect, authorize('branch'), async (req, res) => {
       amount,
       invoiceNumberText,
       newBalance
-    ).catch(() => {});
+    ).then(r => console.log('[REDEMPTION MSG RESULT]', JSON.stringify(r)))
+     .catch(e => console.error('[REDEMPTION MSG ERROR]', e.message));
 
     res.status(200).json({
       success: true,
@@ -321,7 +322,8 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
         redeemAmt,
         prefixedInvoiceNumber,
         vendor.walletBalance
-      ).catch(() => {});
+      ).then(r => console.log('[REDEMPTION MSG RESULT]', JSON.stringify(r)))
+       .catch(e => console.error('[REDEMPTION MSG ERROR]', e.message));
     }
 
     res.status(201).json({

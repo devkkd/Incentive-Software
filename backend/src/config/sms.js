@@ -286,16 +286,16 @@ const sendIncentiveCreditNotification = async (mobileNumber, vendorName, credite
       if (!user || !pass) throw new Error('BHASH credentials not set');
 
       // Params: name, amount, description  →  {{1}}, {{2}}, {{3}}
-      const params = new URLSearchParams({
+      // NOTE: Params must NOT be URL-encoded — append raw to avoid %2C issue
+      const baseParams = new URLSearchParams({
         user, pass, sender,
         phone: mobileNumber,
         priority: 'wa',
         stype: 'normal',
         text: creditTemplate,
-        Params: `${name},${creditedAmount},${description}`,
       });
 
-      const url = `http://bhashsms.com/api/sendmsgutil.php?${params.toString()}`;
+      const url = `http://bhashsms.com/api/sendmsgutil.php?${baseParams.toString()}&Params=${name},${creditedAmount},${description}`;
       console.log('[BHASH CREDIT REQUEST]', url.replace(pass, '***'));
 
       const resp = await fetch(url, { method: 'GET' });
@@ -339,17 +339,17 @@ const sendRedemptionConfirmation = async (mobileNumber, vendorName, redeemedAmou
 
       if (!user || !pass) throw new Error('BHASH credentials not set');
 
-      // Params: amount, invoiceNo, balance  →  {{1}}, {{2}}, {{3}}
-      const params = new URLSearchParams({
+      // Params: vendorName, amount, invoiceNo, balance  →  {{1}}, {{2}}, {{3}}, {{4}}
+      // NOTE: Params must NOT be URL-encoded — append raw to avoid %2C issue
+      const baseParams = new URLSearchParams({
         user, pass, sender,
         phone: mobileNumber,
         priority: 'wa',
         stype: 'normal',
         text: confirmTemplate,
-        Params: `${redeemedAmount},${invoiceNo},${remainingBalance}`,
       });
 
-      const url = `http://bhashsms.com/api/sendmsgutil.php?${params.toString()}`;
+      const url = `http://bhashsms.com/api/sendmsgutil.php?${baseParams.toString()}&Params=${name},${redeemedAmount},${invoiceNo},${remainingBalance}`;
       console.log('[BHASH REDEMPTION REQUEST]', url.replace(pass, '***'));
 
       const resp = await fetch(url, { method: 'GET' });
