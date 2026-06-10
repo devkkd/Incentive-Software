@@ -21,7 +21,7 @@ export default function BranchDashboard() {
   const [userBranch, setUserBranch] = useState(null);
 
   // Invoice form
-  const [invoiceForm, setInvoiceForm] = useState({ date: '', number: '', amount: '', location: '' });
+  const [invoiceForm, setInvoiceForm] = useState({ date: '', number: '', amount: '', location: '', remark: '' });
   const [invoiceError, setInvoiceError] = useState('');
   const [createdInvoice, setCreatedInvoice] = useState(null);
   const [divisions, setDivisions] = useState([]);
@@ -38,6 +38,42 @@ export default function BranchDashboard() {
   const [otpError, setOtpError] = useState('');
   const [submitLoading, setSubmitLoading] = useState(false);
   const otpInputRefs = useRef([]);
+
+  // OTP rate-limit state
+  // otpUnlockAt: absolute timestamp (ms) when the 30-min cooldown ends — null = not blocked
+  const [otpCount, setOtpCount] = useState(0);          // 0-3, synced from backend
+  const [otpUnlockAt, setOtpUnlockAt] = useState(null); // ms epoch
+  const [cooldownSecs, setCooldownSecs] = useState(0);  // live countdown seconds
+  const cooldownRef = useRef(null);
+
+  // Start / restart the live countdown timer
+  const startCooldown = (unlockAtMs) => {
+    setOtpUnlockAt(unlockAtMs);
+    if (cooldownRef.current) clearInterval(cooldownRef.current);
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((unlockAtMs - Date.now()) / 1000));
+      setCooldownSecs(remaining);
+      if (remaining === 0) {
+        clearInterval(cooldownRef.current);
+        setOtpUnlockAt(null);
+        setOtpCount(0); // reset counter — new 30-min window starts
+      }
+    };
+    tick(); // run immediately
+    cooldownRef.current = setInterval(tick, 1000);
+  };
+
+  // Clean up interval on unmount
+  useEffect(() => () => { if (cooldownRef.current) clearInterval(cooldownRef.current); }, []);
+
+  const isOtpBlocked = otpUnlockAt !== null && cooldownSecs > 0;
+
+  // Format seconds into mm:ss
+  const formatCooldown = (secs) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
 
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
@@ -63,6 +99,10 @@ export default function BranchDashboard() {
     setRedeemAmount('');
     setOtpSent(false);
     setOtpVerified(false);
+    setOtpCount(0);
+    setOtpUnlockAt(null);
+    setCooldownSecs(0);
+    if (cooldownRef.current) clearInterval(cooldownRef.current);
 
     try {
       const res = await fetch(`${API}/api/vendors/search?q=${searchQuery}`, {
@@ -111,10 +151,6 @@ export default function BranchDashboard() {
       setInvoiceError('Invoice number must be in format 1/RS/26001200 or 5/CSI/15001623');
       return;
     }
-    if (!invoiceForm.location) {
-      setInvoiceError('Invoice prefix does not match any known division');
-      return;
-    }
     if (exceedsInvoiceAmount) { setRedeemError('Wallet redemption amount cannot exceed invoice amount'); return; }
     if (isInsufficientBalance) return;
 
@@ -127,7 +163,18 @@ export default function BranchDashboard() {
         body: JSON.stringify({ vendorId: selectedVendor._id, redeemAmount: redeemAmt, invoiceAmount: invoiceAmt }),
       });
       const data = await res.json();
-      if (!res.ok) { setRedeemError(data.message || 'Failed to send OTP'); return; }
+      if (!res.ok) {
+        if (res.status === 429) {
+          const unlockAt = Date.now() + (data.retryAfterSeconds || 1800) * 1000;
+          startCooldown(unlockAt);
+          setOtpCount(3);
+          setRedeemError('');
+        } else {
+          setRedeemError(data.message || 'Failed to send OTP');
+        }
+        return;
+      }
+      setOtpCount(data.otpCount ?? (otpCount + 1));
       setOtpSent(true);
       setOtpVerified(false);
       setOtp(['', '', '', '', '', '']);
@@ -166,8 +213,8 @@ export default function BranchDashboard() {
   // --- Submit: Create invoice and debit wallet ---
   const handleSubmit = async () => {
     // 1. Validate Invoice Form (required)
-    if (!invoiceForm.date || !invoiceForm.number || !invoiceForm.amount || !invoiceForm.location) {
-      setInvoiceError('All invoice fields are required to submit.');
+    if (!invoiceForm.date || !invoiceForm.number || !invoiceForm.amount) {
+      setInvoiceError('Invoice date, number and amount are required to submit.');
       return;
     }
     if (!isValidInvoiceNumber(invoiceForm.number)) {
@@ -205,6 +252,7 @@ export default function BranchDashboard() {
         invoiceNumber: invoiceForm.number,
         invoiceAmount: invoiceForm.amount,
         location: invoiceForm.location,
+        remark: invoiceForm.remark || '',
       };
 
       if (redeemAmt > 0) {
@@ -220,7 +268,12 @@ export default function BranchDashboard() {
       });
       const invData = await invRes.json();
       if (!invRes.ok) {
-        if (redeemAmt > 0) {
+        // 429 = rate limit (invoice or OTP limit)
+        if (invRes.status === 429) {
+          setInvoiceError(invData.message || 'Limit reached. Please try again later.');
+          setOtpVerified(false);
+          setOtp(['', '', '', '', '', '']);
+        } else if (redeemAmt > 0) {
           setRedeemError(invData.message || 'Failed to redeem wallet');
           setOtpVerified(false);
           setOtp(['', '', '', '', '', '']);
@@ -264,7 +317,20 @@ export default function BranchDashboard() {
           headers: authHeaders(),
         });
         const divData = await divRes.json();
-        if (divRes.ok) setDivisions(divData.data || []);
+        if (divRes.ok) {
+          const divList = divData.data || [];
+          setDivisions(divList);
+
+          // Re-compute location if invoice number already entered but divisions weren't loaded yet
+          setInvoiceForm(prev => {
+            if (!prev.number) return prev;
+            const prefixMatch = String(prev.number).trim().match(/^([^/]+)\//);
+            if (!prefixMatch) return prev;
+            const prefix = prefixMatch[1].trim();
+            const matched = divList.find(d => d.locationCode === prefix);
+            return { ...prev, location: matched?.location || prev.location };
+          });
+        }
       } catch {
         setDivisions([]);
       }
@@ -293,7 +359,11 @@ export default function BranchDashboard() {
     setOtp(['', '', '', '', '', '']);
     setRedeemError('');
     setCreatedInvoice(null);
-    setInvoiceForm({ date: '', number: '', amount: '', location: '' });
+    setOtpCount(0);
+    setOtpUnlockAt(null);
+    setCooldownSecs(0);
+    if (cooldownRef.current) clearInterval(cooldownRef.current);
+    setInvoiceForm({ date: '', number: '', amount: '', location: '', remark: '' });
   };
 
   return (
@@ -471,11 +541,23 @@ export default function BranchDashboard() {
                       <input
                         type="text"
                         value={invoiceForm.location}
-                        readOnly
+                        onChange={(e) => setInvoiceForm({ ...invoiceForm, location: e.target.value })}
                         placeholder="Auto-filled from invoice prefix"
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm bg-gray-50 text-gray-500 cursor-not-allowed select-none"
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A] bg-gray-50"
                       />
                     </div>
+                  </div>
+
+                  {/* Remark field — full width below grid */}
+                  <div className="space-y-1.5 mt-4">
+                    <label className="text-[13px] font-medium text-gray-800">Remark</label>
+                    <input
+                      type="text"
+                      value={invoiceForm.remark}
+                      onChange={(e) => setInvoiceForm({ ...invoiceForm, remark: e.target.value })}
+                      placeholder="Optional remark for this invoice"
+                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]"
+                    />
                   </div>
 
                   {/* Invoice Summary */}
@@ -496,6 +578,10 @@ export default function BranchDashboard() {
                       <span>Location/City</span>
                       <span className="text-gray-800">{invoiceForm.location || 'City Name'}</span>
                     </div>
+                    <div className="flex justify-between text-gray-500 font-medium">
+                      <span>Remark</span>
+                      <span className="text-gray-800 text-right max-w-[180px] truncate">{invoiceForm.remark || '—'}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -504,7 +590,25 @@ export default function BranchDashboard() {
                   <h3 className="text-xl font-bold text-gray-900 mb-6">Incentives Wallet Redemption</h3>
 
                   <div className="space-y-1.5 mb-6">
-                    <label className="text-[13px] font-medium text-gray-800">Redeem Incentives Wallet Amount (₹)</label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[13px] font-medium text-gray-800">Redeem Incentives Wallet Amount (₹)</label>
+                      {/* OTP attempt counter — dots */}
+                      {otpCount > 0 && !isOtpBlocked && (
+                        <div className="flex items-center gap-1.5">
+                          {[1, 2, 3].map((i) => (
+                            <span
+                              key={i}
+                              className={`w-2.5 h-2.5 rounded-full transition-colors ${
+                                i <= otpCount ? 'bg-orange-400' : 'bg-gray-200'
+                              }`}
+                            />
+                          ))}
+                          <span className="text-[11px] text-orange-500 font-semibold ml-1">
+                            {otpCount}/3 used
+                          </span>
+                        </div>
+                      )}
+                    </div>
                     <div className="flex gap-4">
                       <input
                         type="number"
@@ -516,22 +620,63 @@ export default function BranchDashboard() {
                           setOtpVerified(false);
                         }}
                         placeholder="5680.00"
+                        disabled={isOtpBlocked}
                         className={`flex-1 px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-1 transition-colors ${
                           isInsufficientBalance ? 'border-red-400 focus:ring-red-400' : 'border-gray-200 focus:ring-[#2B3B8A]'
-                        }`}
+                        } ${isOtpBlocked ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
                       />
                       <button
                         onClick={handleSendOTP}
-                        disabled={isInsufficientBalance || !redeemAmount || !invoiceAmt || exceedsInvoiceAmount || submitLoading || !invoiceForm.location}
+                        disabled={isOtpBlocked || isInsufficientBalance || !redeemAmount || !invoiceAmt || exceedsInvoiceAmount || submitLoading}
                         className={`font-semibold px-6 py-2.5 rounded-xl whitespace-nowrap flex items-center gap-2 transition-colors ${
-                          isInsufficientBalance || !redeemAmount || !invoiceAmt || exceedsInvoiceAmount || submitLoading || !invoiceForm.location
+                          isOtpBlocked || isInsufficientBalance || !redeemAmount || !invoiceAmt || exceedsInvoiceAmount || submitLoading
                             ? 'bg-[#CBD5E1] text-[#64748B] cursor-not-allowed'
                             : 'bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white'
                         }`}
                       >
-                        {submitLoading ? 'Sending...' : 'Send OTP →'}
+                        {submitLoading ? (
+                          <span className="flex items-center gap-2">
+                            <svg className="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                            </svg>
+                            Sending...
+                          </span>
+                        ) : isOtpBlocked ? (
+                          'Blocked'
+                        ) : otpSent ? (
+                          'Resend OTP'
+                        ) : (
+                          'Send OTP →'
+                        )}
                       </button>
                     </div>
+
+                    {/* ── Cooldown banner ────────────────────────────────────── */}
+                    {isOtpBlocked && (
+                      <div className="flex items-start gap-3 mt-3 p-4 bg-orange-50 border border-orange-200 rounded-xl animate-in fade-in duration-300">
+                        {/* Clock icon */}
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-9 h-9 text-orange-400 shrink-0">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l3.75 2.25M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div className="flex-1">
+                          <p className="text-[13px] font-bold text-orange-700">OTP Limit Reached</p>
+                          <p className="text-[12px] text-orange-600 mt-0.5 leading-relaxed">
+                            3 OTPs sent for this party. Please wait for the cooldown to complete before sending more.
+                          </p>
+                          {/* Live countdown */}
+                          <div className="mt-3 inline-flex items-center gap-2 bg-white border border-orange-200 rounded-lg px-3 py-1.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5 text-orange-500">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l3.75 2.25M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span className="text-[13px] font-mono font-bold text-orange-600 tabular-nums">
+                              {formatCooldown(cooldownSecs)}
+                            </span>
+                            <span className="text-[11px] text-orange-400">remaining</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Insufficient balance warning */}
                     {isInsufficientBalance && (
@@ -624,17 +769,28 @@ export default function BranchDashboard() {
 
               {/* Submit Button */}
               <div className="border-b border-gray-100 p-8 flex items-center justify-center bg-[#F8FAFC]">
-                <button
-                  onClick={handleSubmit}
-                  disabled={submitLoading || redeemAmt <= 0 || !otpVerified}
-                  className={`font-semibold px-10 py-3 rounded-xl flex items-center gap-2 transition-all duration-300 ${
-                    redeemAmt > 0 && otpVerified && !submitLoading
-                      ? 'bg-[#2B3B8A] text-white hover:bg-[#1a2d6b] shadow-md'
-                      : 'bg-[#8492A6] text-white opacity-80 cursor-not-allowed'
-                  }`}
-                >
-                  {submitLoading ? 'Processing...' : 'Submit →'}
-                </button>
+                {isOtpBlocked ? (
+                  <div className="flex flex-col items-center gap-2">
+                    <button disabled className="font-semibold px-10 py-3 rounded-xl bg-[#CBD5E1] text-[#64748B] cursor-not-allowed">
+                      Submit →
+                    </button>
+                    <p className="text-[12px] text-orange-500 font-semibold tabular-nums">
+                      Available in {formatCooldown(cooldownSecs)}
+                    </p>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleSubmit}
+                    disabled={submitLoading || redeemAmt <= 0 || !otpVerified}
+                    className={`font-semibold px-10 py-3 rounded-xl flex items-center gap-2 transition-all duration-300 ${
+                      redeemAmt > 0 && otpVerified && !submitLoading
+                        ? 'bg-[#2B3B8A] text-white hover:bg-[#1a2d6b] shadow-md'
+                        : 'bg-[#8492A6] text-white opacity-80 cursor-not-allowed'
+                    }`}
+                  >
+                    {submitLoading ? 'Processing...' : 'Submit →'}
+                  </button>
+                )}
               </div>
 
               {/* Wallet History */}
@@ -652,6 +808,7 @@ export default function BranchDashboard() {
                         <th className="pb-4 font-bold text-black">Credited</th>
                         <th className="pb-4 font-bold text-black">Balance After</th>
                         <th className="pb-4 font-bold text-black">Location</th>
+                        <th className="pb-4 font-bold text-black">Remark</th>
                       </tr>
                     </thead>
                     <tbody className="text-gray-700 font-medium">
@@ -673,10 +830,11 @@ export default function BranchDashboard() {
                           </td>
                           <td className="py-4 font-semibold">₹{Number(row.balanceAfter).toFixed(2)}</td>
                           <td className="py-4">{row.invoice?.location || '—'}</td>
+                          <td className="py-4 max-w-[160px] truncate text-gray-500">{row.invoice?.remark || <span className="text-gray-300">—</span>}</td>
                         </tr>
                       )) : (
                         <tr>
-                          <td colSpan="8" className="py-8 text-center text-gray-400">No transactions yet</td>
+                          <td colSpan="9" className="py-8 text-center text-gray-400">No transactions yet</td>
                         </tr>
                       )}
                     </tbody>
@@ -692,6 +850,7 @@ export default function BranchDashboard() {
                             <td className="py-3">₹{totalInvoice.toFixed(2)}</td>
                             <td className="py-3 text-[#E74C3C]">-₹{totalRedeemed.toFixed(2)}</td>
                             <td className="py-3 text-[#2ECC71]">+₹{totalCredited.toFixed(2)}</td>
+                            <td className="py-3" />
                             <td className="py-3" />
                             <td className="py-3" />
                           </tr>

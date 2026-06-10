@@ -37,6 +37,11 @@ const invoiceSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    remark: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     status: {
       type: String,
       enum: ['pending', 'processed'],

@@ -362,8 +362,8 @@ export default function AdminReportsPage() {
       body: filteredData.map((v, i) => [i+1, v.companyName, v.mobileNumber, v.accountNumber, `Rs. ${Number(v.walletBalance).toFixed(2)}`, v.status, v.division?.name||'', new Date(v.createdAt).toLocaleDateString('en-IN')]),
     };
     if (reportType === 'invoices') return {
-      head: ['#', 'Invoice No', 'Vendor', 'Account No', 'Invoice Amount', 'Amount Redeemed', 'Location', 'Division', 'Date'],
-      body: filteredData.map((inv, i) => [i+1, inv.invoiceNumber, inv.vendor?.companyName||'N/A', inv.vendor?.accountNumber||'N/A', `Rs. ${Number(inv.invoiceAmount).toFixed(2)}`, inv.redeemAmount > 0 ? `Rs. ${Number(inv.redeemAmount).toFixed(2)}` : '—', inv.location, inv.division?.name||'', new Date(inv.invoiceDate).toLocaleDateString('en-IN')]),
+      head: ['#', 'Invoice No', 'Vendor', 'Account No', 'Invoice Amount', 'Amount Redeemed', 'Location', 'Division', 'Date', 'Remark'],
+      body: filteredData.map((inv, i) => [i+1, inv.invoiceNumber, inv.vendor?.companyName||'N/A', inv.vendor?.accountNumber||'N/A', `Rs. ${Number(inv.invoiceAmount).toFixed(2)}`, inv.redeemAmount > 0 ? `Rs. ${Number(inv.redeemAmount).toFixed(2)}` : '—', inv.location, inv.division?.name||'', new Date(inv.invoiceDate).toLocaleDateString('en-IN'), inv.remark || '—']),
     };
     return {
       head: ['#', 'Vendor', 'Account No', 'Type', 'Amount', 'Balance After', 'Date'],
@@ -401,7 +401,7 @@ export default function AdminReportsPage() {
             </div>
 
             {/* Division Filter — Admin only */}
-            {divisions.length > 0 && (
+            {/* {divisions.length > 0 && (
               <div className="space-y-2">
                 <p className="text-[13px] font-medium text-gray-800">Filter by Location/Branch</p>
                 <div className="flex flex-wrap gap-2">
@@ -417,7 +417,7 @@ export default function AdminReportsPage() {
                   ))}
                 </div>
               </div>
-            )}
+            )} */}
           </div>
 
           {/* Column 2: Timeline Presets */}
@@ -558,6 +558,7 @@ export default function AdminReportsPage() {
                     <th className="pb-4 font-bold px-2">Location</th>
                     <th className="pb-4 font-bold px-2">Division</th>
                     <th className="pb-4 font-bold px-2">Invoice Date</th>
+                    <th className="pb-4 font-bold px-2">Remark</th>
                   </>}
                   {reportType === 'incentives' && <>
                     <th className="pb-4 font-bold px-2">Party Name</th>
@@ -600,6 +601,11 @@ export default function AdminReportsPage() {
                       <td className="py-5 px-2">{row.location}</td>
                       <td className="py-5 px-2">{row.division?.name || '—'}</td>
                       <td className="py-5 px-2">{new Date(row.invoiceDate).toLocaleDateString('en-IN')}</td>
+                      <td className="py-5 px-2 max-w-[140px] text-gray-500">
+                        {row.remark ? (
+                          <span title={row.remark}>{row.remark.length > 25 ? row.remark.substring(0, 25) + '…' : row.remark}</span>
+                        ) : <span className="text-gray-300">—</span>}
+                      </td>
                     </>}
                     {reportType === 'incentives' && <>
                       <td className="py-5 px-2">{row.vendor?.companyName || 'N/A'}</td>
@@ -647,6 +653,7 @@ export default function AdminReportsPage() {
                       <td colSpan="2" className="py-3 px-2 text-right font-semibold">Total</td>
                       <td className="py-3 px-2 font-semibold">₹{Number(totals.invoiceTotal).toFixed(2)}</td>
                       <td className="py-3 px-2 font-semibold text-[#E74C3C]">₹{Number(totals.redeemTotal).toFixed(2)}</td>
+                      <td className="py-3 px-2" />
                       <td className="py-3 px-2" />
                       <td className="py-3 px-2" />
                       <td className="py-3 px-2" />

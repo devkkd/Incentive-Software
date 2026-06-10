@@ -54,8 +54,40 @@ router.post('/redeem/send-otp', protect, authorize('branch'), async (req, res) =
       return res.status(400).json({ success: false, message: 'Vendor has no mobile number registered' });
     }
 
-    // Invalidate old OTPs for this branch user + redemption purpose
-    await OtpToken.deleteMany({ user: req.user._id, purpose: 'redemption', used: false });
+    // ── Rate limit: max 3 OTPs per vendor mobile per 30 minutes ──────────────
+    const otpWindowStart = new Date(Date.now() - 30 * 60 * 1000);
+    const recentOtpCount = await OtpToken.countDocuments({
+      email: vendor.mobileNumber,
+      purpose: 'redemption',
+      createdAt: { $gte: otpWindowStart },
+    });
+
+    if (recentOtpCount >= 3) {
+      const oldestOtp = await OtpToken.findOne({
+        email: vendor.mobileNumber,
+        purpose: 'redemption',
+        createdAt: { $gte: otpWindowStart },
+      }).sort({ createdAt: 1 }).lean();
+
+      const retryAfterMs = oldestOtp
+        ? new Date(oldestOtp.createdAt).getTime() + 30 * 60 * 1000 - Date.now()
+        : 0;
+      const retryAfterSeconds = Math.max(1, Math.ceil(retryAfterMs / 1000));
+
+      return res.status(429).json({
+        success: false,
+        message: `OTP limit reached. You can send a maximum of 3 OTPs per 30 minutes for this party.`,
+        retryAfterSeconds,
+        otpCount: recentOtpCount,
+      });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Mark old unused OTPs for this branch user as used (don't delete — keeps count accurate)
+    await OtpToken.updateMany(
+      { user: req.user._id, purpose: 'redemption', used: false },
+      { $set: { used: true } }
+    );
 
     const otp = generateOtp();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 min
@@ -88,6 +120,7 @@ router.post('/redeem/send-otp', protect, authorize('branch'), async (req, res) =
       success: true,
       message: smsSent && !devOtp ? `OTP sent to ${maskedMobile}` : `OTP generated`,
       maskedMobile,
+      otpCount: recentOtpCount + 1, // how many OTPs used now (including this one)
       ...(exposeOtp ? { devOtp: otp } : {}),
     });
   } catch (error) {
@@ -203,7 +236,7 @@ router.post('/redeem', protect, authorize('branch'), async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/', protect, authorize('branch'), async (req, res) => {
   try {
-    const { vendorId, invoiceDate, invoiceNumber, invoiceAmount, location, redeemAmount, otp } = req.body;
+    const { vendorId, invoiceDate, invoiceNumber, invoiceAmount, location, redeemAmount, otp, remark } = req.body;
 
     if (!vendorId || !invoiceDate || !invoiceNumber || !invoiceAmount) {
       return res.status(400).json({ success: false, message: 'All fields are required' });
@@ -301,6 +334,7 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
       invoiceDate: new Date(invoiceDate),
       invoiceAmount: invoiceAmt,
       location: invoiceLocation,
+      remark: remark || '',
       status: 'processed',
     });
 
@@ -382,14 +416,17 @@ router.get('/all', protect, authorize('admin'), async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/', protect, async (req, res) => {
   try {
-    const { vendorId, page = 1, limit = 10, q, location, startDate, endDate } = req.query;
+    const { vendorId, page = 1, limit = 10, q, location, startDate, endDate, divisionId } = req.query;
     const filter = {};
 
     if (vendorId) filter.vendor = vendorId;
     if (req.user.role === 'branch') filter.division = req.user.division._id || req.user.division;
 
+    // Admin can filter by specific division
+    if (req.user.role === 'admin' && divisionId) filter.division = divisionId;
+
     if (location) filter.location = { $regex: location, $options: 'i' };
-    if (startDate && endDate) filter.invoiceDate = { $gte: new Date(startDate), $lte: new Date(endDate) };
+    if (startDate && endDate) filter.invoiceDate = { $gte: new Date(startDate), $lte: new Date(endDate + 'T23:59:59.999Z') };
     if (q) filter.$or = [
       { invoiceNumber: { $regex: q, $options: 'i' } },
       { location: { $regex: q, $options: 'i' } },
@@ -408,6 +445,52 @@ router.get('/', protect, async (req, res) => {
       data: invoices,
       pagination: { total, page: parseInt(page), limit: parseInt(limit), pages: Math.ceil(total / limit) },
     });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @route   PATCH /api/invoices/:id
+// @desc    Update invoice amount, date, and remark (Admin only)
+// @access  Admin only
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/:id', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { invoiceAmount, invoiceDate, remark } = req.body;
+
+    const invoice = await Invoice.findById(req.params.id);
+    if (!invoice) {
+      return res.status(404).json({ success: false, message: 'Invoice not found' });
+    }
+
+    if (invoiceAmount !== undefined) {
+      const amt = parseFloat(invoiceAmount);
+      if (isNaN(amt) || amt <= 0) {
+        return res.status(400).json({ success: false, message: 'Invoice amount must be greater than 0' });
+      }
+      invoice.invoiceAmount = amt;
+    }
+
+    if (invoiceDate !== undefined) {
+      const d = new Date(invoiceDate);
+      if (isNaN(d.getTime())) {
+        return res.status(400).json({ success: false, message: 'Invalid invoice date' });
+      }
+      invoice.invoiceDate = d;
+    }
+
+    if (remark !== undefined) {
+      invoice.remark = String(remark).trim();
+    }
+
+    await invoice.save();
+
+    const updated = await Invoice.findById(invoice._id)
+      .populate('vendor', 'companyName accountNumber mobileNumber')
+      .populate('division', 'name location');
+
+    res.status(200).json({ success: true, data: updated });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
