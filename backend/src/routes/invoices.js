@@ -11,6 +11,19 @@ const router = express.Router();
 
 const generateOtp = () => String(Math.floor(100000 + Math.random() * 900000));
 
+const generateUniqueReferenceNo = async () => {
+  let attempts = 0;
+  while (attempts < 10) {
+    const refNo = String(Math.floor(10000000 + Math.random() * 90000000));
+    const exists = await Invoice.findOne({ referenceNo: refNo });
+    if (!exists) {
+      return refNo;
+    }
+    attempts++;
+  }
+  throw new Error('Could not generate unique reference number after 10 attempts');
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // @route   POST /api/invoices/redeem/send-otp
 // @desc    Send OTP to vendor's mobile for wallet redemption
@@ -201,7 +214,7 @@ router.post('/redeem', protect, authorize('branch'), async (req, res) => {
       processedBy: req.user._id,
     });
 
-    const invoiceRecord = invoiceId ? await Invoice.findById(invoiceId).select('invoiceNumber').lean() : null;
+    const invoiceRecord = invoiceId ? await Invoice.findById(invoiceId).select('invoiceNumber referenceNo').lean() : null;
     const invoiceNumberText = invoiceRecord?.invoiceNumber || invoiceId || 'N/A';
 
     // Send confirmation SMS (non-blocking — redemption already done)
@@ -210,7 +223,8 @@ router.post('/redeem', protect, authorize('branch'), async (req, res) => {
       vendor.companyName,
       amount,
       invoiceNumberText,
-      newBalance
+      newBalance,
+      invoiceRecord?.referenceNo
     ).then(r => console.log('[REDEMPTION MSG RESULT]', JSON.stringify(r)))
      .catch(e => console.error('[REDEMPTION MSG ERROR]', e.message));
 
@@ -325,6 +339,7 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
 
     const divisionId = division._id;
     const invoiceLocation = location || division.location || '';
+    const referenceNo = await generateUniqueReferenceNo();
 
     const invoice = await Invoice.create({
       vendor: vendorId,
@@ -336,6 +351,7 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
       location: invoiceLocation,
       remark: remark || '',
       status: 'processed',
+      referenceNo,
     });
 
     if (redeemAmt > 0) {
@@ -355,7 +371,8 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
         vendor.companyName,
         redeemAmt,
         prefixedInvoiceNumber,
-        vendor.walletBalance
+        vendor.walletBalance,
+        referenceNo
       ).then(r => console.log('[REDEMPTION MSG RESULT]', JSON.stringify(r)))
        .catch(e => console.error('[REDEMPTION MSG ERROR]', e.message));
     }
@@ -389,6 +406,7 @@ router.get('/all', protect, authorize('admin'), async (req, res) => {
       filter.$or = [
         { invoiceNumber: { $regex: q, $options: 'i' } },
         { location: { $regex: q, $options: 'i' } },
+        { referenceNo: { $regex: q, $options: 'i' } },
       ];
     }
 
@@ -430,6 +448,7 @@ router.get('/', protect, async (req, res) => {
     if (q) filter.$or = [
       { invoiceNumber: { $regex: q, $options: 'i' } },
       { location: { $regex: q, $options: 'i' } },
+      { referenceNo: { $regex: q, $options: 'i' } },
     ];
 
     const total = await Invoice.countDocuments(filter);
@@ -457,7 +476,7 @@ router.get('/', protect, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/:id', protect, authorize('admin'), async (req, res) => {
   try {
-    const { invoiceAmount, invoiceDate, remark } = req.body;
+    const { invoiceAmount, invoiceDate, remark, location } = req.body;
 
     const invoice = await Invoice.findById(req.params.id);
     if (!invoice) {
@@ -482,6 +501,10 @@ router.patch('/:id', protect, authorize('admin'), async (req, res) => {
 
     if (remark !== undefined) {
       invoice.remark = String(remark).trim();
+    }
+
+    if (location !== undefined) {
+      invoice.location = String(location).trim();
     }
 
     await invoice.save();

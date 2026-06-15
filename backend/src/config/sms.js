@@ -321,12 +321,13 @@ const sendIncentiveCreditNotification = async (mobileNumber, vendorName, credite
 //           Regards, Friends Trading Corporation
 // Params: {{1}} = amount, {{2}} = invoiceNo, {{3}} = balance
 // ─────────────────────────────────────────────────────────────────────────────
-const sendRedemptionConfirmation = async (mobileNumber, vendorName, redeemedAmount, invoiceNo, remainingBalance) => {
+const sendRedemptionConfirmation = async (mobileNumber, vendorName, redeemedAmount, invoiceNo, remainingBalance, referenceNo) => {
   const provider = process.env.SMS_PROVIDER;
   const name = vendorName || 'Vendor';
+  const displayInvoiceNo = referenceNo ? `${invoiceNo} (Ref:${referenceNo})` : invoiceNo;
 
   if (!provider) {
-    _logDev(mobileNumber, 'REDEMPTION', `Amount: Rs.${redeemedAmount}, Invoice: ${invoiceNo}, Balance: Rs.${remainingBalance}`);
+    _logDev(mobileNumber, 'REDEMPTION', `Amount: Rs.${redeemedAmount}, Invoice: ${displayInvoiceNo}, Balance: Rs.${remainingBalance}`);
     return { success: true, dev: true };
   }
 
@@ -349,7 +350,7 @@ const sendRedemptionConfirmation = async (mobileNumber, vendorName, redeemedAmou
         text: confirmTemplate,
       });
 
-      const url = `http://bhashsms.com/api/sendmsgutil.php?${baseParams.toString()}&Params=${name},${redeemedAmount},${invoiceNo},${remainingBalance}`;
+      const url = `http://bhashsms.com/api/sendmsgutil.php?${baseParams.toString()}&Params=${name},${redeemedAmount},${displayInvoiceNo},${remainingBalance}`;
       console.log('[BHASH REDEMPTION REQUEST]', url.replace(pass, '***'));
 
       const resp = await fetch(url, { method: 'GET' });
@@ -366,7 +367,7 @@ const sendRedemptionConfirmation = async (mobileNumber, vendorName, redeemedAmou
 
   if (provider === 'msg91') {
     try {
-      const message = `Rs.${redeemedAmount} has been deducted against Invoice No. ${invoiceNo}. Your updated wallet balance is Rs.${remainingBalance}. -FTCIND`;
+      const message = `Rs.${redeemedAmount} has been deducted against Invoice No. ${displayInvoiceNo}. Your updated wallet balance is Rs.${remainingBalance}. -FTCIND`;
       return await _sendMsg91Sms(mobileNumber, message);
     } catch (error) {
       console.error('[MSG91 REDEMPTION ERROR]', error.message);
@@ -376,14 +377,14 @@ const sendRedemptionConfirmation = async (mobileNumber, vendorName, redeemedAmou
 
   if (provider === 'whatsapp') {
     try {
-      return await _sendWhatsAppConfirmation(mobileNumber, name, redeemedAmount, invoiceNo, remainingBalance);
+      return await _sendWhatsAppConfirmation(mobileNumber, name, redeemedAmount, displayInvoiceNo, remainingBalance);
     } catch (error) {
       console.error('[WhatsApp REDEMPTION ERROR]', error.message);
       return { success: false, error: error.message };
     }
   }
 
-  _logDev(mobileNumber, 'REDEMPTION', `Amount: Rs.${redeemedAmount}, Invoice: ${invoiceNo}, Balance: Rs.${remainingBalance}`);
+  _logDev(mobileNumber, 'REDEMPTION', `Amount: Rs.${redeemedAmount}, Invoice: ${displayInvoiceNo}, Balance: Rs.${remainingBalance}`);
   return { success: true, dev: true };
 };
 

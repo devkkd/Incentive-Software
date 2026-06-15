@@ -180,7 +180,7 @@ export default function AdminInvoicesPage() {
 
   // ── Edit Modal ─────────────────────────────────────────────────────
   const [editModal, setEditModal]   = useState({ isOpen: false, invoice: null });
-  const [editForm, setEditForm]     = useState({ invoiceAmount: '', invoiceDate: '', remark: '' });
+  const [editForm, setEditForm]     = useState({ invoiceAmount: '', invoiceDate: '', remark: '', location: '' });
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError]   = useState('');
 
@@ -189,6 +189,7 @@ export default function AdminInvoicesPage() {
       invoiceAmount: invoice.invoiceAmount,
       invoiceDate: invoice.invoiceDate ? new Date(invoice.invoiceDate).toISOString().split('T')[0] : '',
       remark: invoice.remark || '',
+      location: invoice.location || '',
     });
     setEditError('');
     setEditModal({ isOpen: true, invoice });
@@ -203,7 +204,7 @@ export default function AdminInvoicesPage() {
     try {
       const res  = await fetch(`${API}/api/invoices/${editModal.invoice._id}`, {
         method: 'PATCH', headers: authHeaders(), credentials: 'include',
-        body: JSON.stringify({ invoiceAmount: amt, invoiceDate: editForm.invoiceDate, remark: editForm.remark }),
+        body: JSON.stringify({ invoiceAmount: amt, invoiceDate: editForm.invoiceDate, remark: editForm.remark, location: editForm.location }),
       });
       const data = await res.json();
       if (!res.ok) { setEditError(data.message || 'Failed to update invoice'); return; }
@@ -235,10 +236,10 @@ export default function AdminInvoicesPage() {
     doc.setFontSize(9);  doc.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 26);
     autoTable(doc, {
       startY: 32,
-      head: [['#', 'Party Name', 'Party Code', 'Mobile', 'Invoice No', 'Invoice Date', 'Amount (Rs)', 'Location', 'Division', 'Remark']],
+      head: [['#', 'Party Name', 'Party Code', 'Mobile', 'Invoice No', 'Reference No', 'Invoice Date', 'Amount (Rs)', 'Location', 'Division', 'Remark']],
       body: all.map((inv, i) => [
         i + 1, inv.vendor?.companyName || 'N/A', inv.vendor?.accountNumber || 'N/A',
-        inv.vendor?.mobileNumber || 'N/A', inv.invoiceNumber,
+        inv.vendor?.mobileNumber || 'N/A', inv.invoiceNumber, inv.referenceNo || '—',
         new Date(inv.invoiceDate).toLocaleDateString('en-IN'),
         `Rs. ${inv.invoiceAmount}`, inv.location, inv.division?.name || 'N/A', inv.remark || '—',
       ]),
@@ -251,10 +252,10 @@ export default function AdminInvoicesPage() {
     const all  = await fetchAll();
     const XLSX = await import('xlsx');
     const ws = XLSX.utils.aoa_to_sheet([
-      ['#', 'Party Name', 'Party Code', 'Mobile', 'Invoice No', 'Invoice Date', 'Amount (Rs)', 'Location', 'Division', 'Remark', 'Created At'],
+      ['#', 'Party Name', 'Party Code', 'Mobile', 'Invoice No', 'Reference No', 'Invoice Date', 'Amount (Rs)', 'Location', 'Division', 'Remark', 'Created At'],
       ...all.map((inv, i) => [
         i + 1, inv.vendor?.companyName || 'N/A', inv.vendor?.accountNumber || 'N/A',
-        inv.vendor?.mobileNumber || 'N/A', inv.invoiceNumber,
+        inv.vendor?.mobileNumber || 'N/A', inv.invoiceNumber, inv.referenceNo || '—',
         new Date(inv.invoiceDate).toLocaleDateString('en-IN'),
         inv.invoiceAmount, inv.location, inv.division?.name || 'N/A',
         inv.remark || '—', new Date(inv.createdAt).toLocaleDateString('en-IN'),
@@ -305,6 +306,13 @@ export default function AdminInvoicesPage() {
                 <input type="text" value={editForm.remark}
                   onChange={(e) => setEditForm(f => ({ ...f, remark: e.target.value }))}
                   placeholder="Add a remark..."
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A]/20 focus:border-[#2B3B8A] transition-all" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[13px] font-medium text-gray-800">Location / City</label>
+                <input type="text" value={editForm.location}
+                  onChange={(e) => setEditForm(f => ({ ...f, location: e.target.value }))}
+                  placeholder="e.g. Jodhpur"
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A]/20 focus:border-[#2B3B8A] transition-all" />
               </div>
             </div>
@@ -480,6 +488,7 @@ export default function AdminInvoicesPage() {
                 <th className="pb-3 font-semibold px-2">Party Code</th>
                 <th className="pb-3 font-semibold px-2">Mobile</th>
                 <th className="pb-3 font-semibold px-2">Invoice Number</th>
+                <th className="pb-3 font-semibold px-2">Reference No</th>
                 <th className="pb-3 font-semibold px-2">Invoice Date</th>
                 <th className="pb-3 font-semibold px-2">Amount (₹)</th>
                 <th className="pb-3 font-semibold px-2">Location</th>
@@ -491,7 +500,7 @@ export default function AdminInvoicesPage() {
             <tbody className="text-gray-700 font-medium text-[13px]">
               {loading ? (
                 <tr>
-                  <td colSpan="11" className="py-16 text-center">
+                  <td colSpan="12" className="py-16 text-center">
                     <div className="flex items-center justify-center gap-2 text-gray-400">
                       <svg className="animate-spin w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
@@ -510,6 +519,7 @@ export default function AdminInvoicesPage() {
                   <td className="py-4 px-2 font-semibold text-[#2B3B8A]">{row.vendor?.accountNumber || '—'}</td>
                   <td className="py-4 px-2 text-gray-500">{row.vendor?.mobileNumber || '—'}</td>
                   <td className="py-4 px-2 font-semibold font-mono text-[12px]">{row.invoiceNumber}</td>
+                  <td className="py-4 px-2 font-mono font-medium text-gray-800">{row.referenceNo || '—'}</td>
                   <td className="py-4 px-2">{new Date(row.invoiceDate).toLocaleDateString('en-IN')}</td>
                   <td className="py-4 px-2 font-semibold text-gray-900">₹{Number(row.invoiceAmount).toLocaleString('en-IN')}</td>
                   <td className="py-4 px-2 text-gray-500">{row.location || '—'}</td>
@@ -540,7 +550,7 @@ export default function AdminInvoicesPage() {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan="11" className="py-16 text-center">
+                  <td colSpan="12" className="py-16 text-center">
                     <div className="flex flex-col items-center gap-3 text-gray-400">
                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor" className="w-14 h-14 opacity-20">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />

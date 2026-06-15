@@ -23,6 +23,12 @@ const invoiceSchema = new mongoose.Schema(
       trim: true,
       // Auto-generated: locationCode-00001
     },
+    referenceNo: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+    },
     invoiceDate: {
       type: Date,
       required: true,

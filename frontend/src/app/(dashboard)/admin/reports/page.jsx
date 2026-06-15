@@ -117,7 +117,9 @@ export default function AdminReportsPage() {
         _id: inv._id,
         date: new Date(inv.invoiceDate),
         type: 'Invoice / Bill',
-        particulars: sanitize(inv.invoiceNumber),
+        particulars: inv.referenceNo 
+          ? `${sanitize(inv.invoiceNumber)} (Ref: ${inv.referenceNo})` 
+          : sanitize(inv.invoiceNumber),
         debit: null,
         credit: null,
         invoiceAmount: inv.invoiceAmount,
@@ -302,7 +304,7 @@ export default function AdminReportsPage() {
       if (locationFilter && row.location?.toLowerCase() !== locationFilter.toLowerCase()) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
-        if (!`${row.invoiceNumber} ${row.vendor?.companyName} ${row.location}`.toLowerCase().includes(q)) return false;
+        if (!`${row.invoiceNumber} ${row.referenceNo || ''} ${row.vendor?.companyName} ${row.location}`.toLowerCase().includes(q)) return false;
       }
     }
     if (reportType === 'incentives') {
@@ -362,8 +364,8 @@ export default function AdminReportsPage() {
       body: filteredData.map((v, i) => [i+1, v.companyName, v.mobileNumber, v.accountNumber, `Rs. ${Number(v.walletBalance).toFixed(2)}`, v.status, v.division?.name||'', new Date(v.createdAt).toLocaleDateString('en-IN')]),
     };
     if (reportType === 'invoices') return {
-      head: ['#', 'Invoice No', 'Vendor', 'Account No', 'Invoice Amount', 'Amount Redeemed', 'Location', 'Division', 'Date', 'Remark'],
-      body: filteredData.map((inv, i) => [i+1, inv.invoiceNumber, inv.vendor?.companyName||'N/A', inv.vendor?.accountNumber||'N/A', `Rs. ${Number(inv.invoiceAmount).toFixed(2)}`, inv.redeemAmount > 0 ? `Rs. ${Number(inv.redeemAmount).toFixed(2)}` : '—', inv.location, inv.division?.name||'', new Date(inv.invoiceDate).toLocaleDateString('en-IN'), inv.remark || '—']),
+      head: ['#', 'Invoice No', 'Reference No', 'Vendor', 'Account No', 'Invoice Amount', 'Amount Redeemed', 'Location', 'Division', 'Date', 'Remark'],
+      body: filteredData.map((inv, i) => [i+1, inv.invoiceNumber, inv.referenceNo || '—', inv.vendor?.companyName||'N/A', inv.vendor?.accountNumber||'N/A', `Rs. ${Number(inv.invoiceAmount).toFixed(2)}`, inv.redeemAmount > 0 ? `Rs. ${Number(inv.redeemAmount).toFixed(2)}` : '—', inv.location, inv.division?.name||'', new Date(inv.invoiceDate).toLocaleDateString('en-IN'), inv.remark || '—']),
     };
     return {
       head: ['#', 'Vendor', 'Account No', 'Type', 'Amount', 'Balance After', 'Date'],
@@ -551,6 +553,7 @@ export default function AdminReportsPage() {
                   </>}
                   {reportType === 'invoices' && <>
                     <th className="pb-4 font-bold px-2">Invoice Number</th>
+                    <th className="pb-4 font-bold px-2">Reference No</th>
                     <th className="pb-4 font-bold px-2">Party Name</th>
                     <th className="pb-4 font-bold px-2">Party Code</th>
                     <th className="pb-4 font-bold px-2">Invoice Amount (₹)</th>
@@ -592,6 +595,7 @@ export default function AdminReportsPage() {
                     </>}
                     {reportType === 'invoices' && <>
                       <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{row.invoiceNumber}</td>
+                      <td className="py-5 px-2 font-mono font-medium text-gray-800">{row.referenceNo || '—'}</td>
                       <td className="py-5 px-2">{row.vendor?.companyName || 'N/A'}</td>
                       <td className="py-5 px-2">{row.vendor?.accountNumber || 'N/A'}</td>
                       <td className="py-5 px-2">₹{Number(row.invoiceAmount).toFixed(2)}</td>
@@ -650,7 +654,7 @@ export default function AdminReportsPage() {
                   {reportType === 'invoices' && (
                     <tr className="border-t border-gray-100">
                       <td className="py-3 px-2" />
-                      <td colSpan="2" className="py-3 px-2 text-right font-semibold">Total</td>
+                      <td colSpan="3" className="py-3 px-2 text-right font-semibold">Total</td>
                       <td className="py-3 px-2 font-semibold">₹{Number(totals.invoiceTotal).toFixed(2)}</td>
                       <td className="py-3 px-2 font-semibold text-[#E74C3C]">₹{Number(totals.redeemTotal).toFixed(2)}</td>
                       <td className="py-3 px-2" />

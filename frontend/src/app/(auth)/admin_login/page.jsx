@@ -14,8 +14,8 @@ export default function AdminLoginPage() {
   const router = useRouter();
   const { t } = useLang();
   const [showPassword, setShowPassword] = useState(false);
-  const [email, setEmail] = useState('mehravivek2001@gmail.com');
-  const [password, setPassword] = useState('Admin@1234');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [keepSignedIn, setKeepSignedIn] = useState(true);
   const [error, setError] = useState('');
 

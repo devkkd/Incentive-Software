@@ -381,6 +381,11 @@ export default function BranchDashboard() {
             <p className="text-[15px] text-gray-600 mb-2">
               Invoice has been created successfully.
             </p>
+            {createdInvoice?.referenceNo && (
+              <p className="text-[15px] text-gray-800 font-semibold mb-2">
+                Reference No: <span className="text-[#2B3B8A] select-all font-mono font-bold bg-gray-50 px-2 py-0.5 rounded border border-gray-200">{createdInvoice.referenceNo}</span>
+              </p>
+            )}
             {redeemAmt > 0 && (
               <p className="text-[15px] text-gray-600 mb-2">
                 ₹{redeemAmt.toFixed(2)} redeemed from wallet.
@@ -803,6 +808,7 @@ export default function BranchDashboard() {
                         <th className="pb-4 font-bold text-black">#</th>
                         <th className="pb-4 font-bold text-black">Date</th>
                         <th className="pb-4 font-bold text-black">Invoice No</th>
+                        <th className="pb-4 font-bold text-black">Reference No</th>
                         <th className="pb-4 font-bold text-black">Invoice Amount</th>
                         <th className="pb-4 font-bold text-black">Amount Redeemed</th>
                         <th className="pb-4 font-bold text-black">Credited</th>
@@ -817,6 +823,7 @@ export default function BranchDashboard() {
                           <td className="py-4">{i + 1}</td>
                           <td className="py-4">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
                           <td className="py-4 font-semibold text-[#2B3B8A]">{row.invoice?.invoiceNumber || '—'}</td>
+                          <td className="py-4 font-mono font-medium text-gray-800">{row.invoice?.referenceNo || '—'}</td>
                           <td className="py-4">
                             {row.invoice?.invoiceAmount != null
                               ? `₹${Number(row.invoice.invoiceAmount).toFixed(2)}`
@@ -834,7 +841,7 @@ export default function BranchDashboard() {
                         </tr>
                       )) : (
                         <tr>
-                          <td colSpan="9" className="py-8 text-center text-gray-400">No transactions yet</td>
+                          <td colSpan="10" className="py-8 text-center text-gray-400">No transactions yet</td>
                         </tr>
                       )}
                     </tbody>
@@ -846,7 +853,7 @@ export default function BranchDashboard() {
                       return (
                         <tfoot className="border-t-2 border-gray-200 bg-gray-50 font-bold text-[13px]">
                           <tr>
-                            <td colSpan="3" className="py-3 text-gray-600">Total ({walletHistory.length} entries)</td>
+                            <td colSpan="4" className="py-3 text-gray-600">Total ({walletHistory.length} entries)</td>
                             <td className="py-3">₹{totalInvoice.toFixed(2)}</td>
                             <td className="py-3 text-[#E74C3C]">-₹{totalRedeemed.toFixed(2)}</td>
                             <td className="py-3 text-[#2ECC71]">+₹{totalCredited.toFixed(2)}</td>

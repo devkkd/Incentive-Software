@@ -51,7 +51,9 @@ export default function ReportsPage() {
         _id: inv._id,
         date: new Date(inv.invoiceDate),
         type: 'Invoice / Bill',
-        particulars: sanitize(inv.invoiceNumber),
+        particulars: inv.referenceNo 
+          ? `${sanitize(inv.invoiceNumber)} (Ref: ${inv.referenceNo})` 
+          : sanitize(inv.invoiceNumber),
         debit: null,
         credit: null,
         invoiceAmount: inv.invoiceAmount,
@@ -279,7 +281,7 @@ export default function ReportsPage() {
     if (reportType === 'invoices') {
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
-        if (!`${row.invoiceNumber} ${row.vendor?.companyName} ${row.location}`.toLowerCase().includes(q)) return false;
+        if (!`${row.invoiceNumber} ${row.referenceNo || ''} ${row.vendor?.companyName} ${row.location}`.toLowerCase().includes(q)) return false;
       }
     }
     if (reportType === 'incentives') {
@@ -364,9 +366,9 @@ export default function ReportsPage() {
     }
     if (reportType === 'invoices') {
       return {
-        head: ['#', 'Invoice No', 'Vendor', 'Invoice Amount', 'Amount Redeemed', 'Location', 'Date', 'Remark'],
+        head: ['#', 'Invoice No', 'Reference No', 'Vendor', 'Invoice Amount', 'Amount Redeemed', 'Location', 'Date', 'Remark'],
         body: filteredData.map((inv, i) => [
-          i + 1, inv.invoiceNumber, inv.vendor?.companyName || 'N/A',
+          i + 1, inv.invoiceNumber, inv.referenceNo || '—', inv.vendor?.companyName || 'N/A',
           `Rs. ${Number(inv.invoiceAmount).toFixed(2)}`,
           inv.redeemAmount > 0 ? `Rs. ${Number(inv.redeemAmount).toFixed(2)}` : '—',
           inv.location || '—',
@@ -771,6 +773,7 @@ export default function ReportsPage() {
                         </>}
                         {reportType === 'invoices' && <>
                           <th className="pb-4 pt-2 px-2 font-bold">Invoice Number</th>
+                          <th className="pb-4 pt-2 px-2 font-bold">Reference No</th>
                           <th className="pb-4 pt-2 px-2 font-bold">Vendor</th>
                           <th className="pb-4 pt-2 px-2 font-bold">Invoice Amount (₹)</th>
                           <th className="pb-4 pt-2 px-2 font-bold">Amount Redeemed (₹)</th>
@@ -806,6 +809,7 @@ export default function ReportsPage() {
                           </>}
                           {reportType === 'invoices' && <>
                             <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{row.invoiceNumber}</td>
+                            <td className="py-5 px-2 font-mono font-medium text-gray-800">{row.referenceNo || '—'}</td>
                             <td className="py-5 px-2">{row.vendor?.companyName || 'N/A'}</td>
                             <td className="py-5 px-2">₹{Number(row.invoiceAmount).toFixed(2)}</td>
                             <td className="py-5 px-2 font-semibold text-[#E74C3C]">
@@ -858,6 +862,7 @@ export default function ReportsPage() {
                             <td className="py-4 px-2"></td>
                           </>}
                           {reportType === 'invoices' && <>
+                            <td className="py-4 px-2"></td>
                             <td className="py-4 px-2"></td>
                             <td className="py-4 px-2"></td>
                             <td className="py-4 px-2 text-[#2B3B8A]">₹{Number(totals.invoiceTotal).toFixed(2)}</td>

@@ -111,7 +111,7 @@ router.get('/', protect, async (req, res) => {
         .sort({ createdAt: -1 })
         .limit(500)
         .populate('vendor', 'companyName accountNumber mobileNumber')
-        .populate('invoice', 'invoiceNumber');
+        .populate('invoice', 'invoiceNumber referenceNo');
     }
 
     res.status(200).json({ success: true, data, count: data.length });

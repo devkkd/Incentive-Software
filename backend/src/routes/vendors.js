@@ -214,6 +214,18 @@ router.get('/', protect, async (req, res) => {
   }
 });
 
+// @route   GET /api/vendors/:id
+// @access  Branch, Admin
+router.get('/:id', protect, async (req, res) => {
+  try {
+    const vendor = await Vendor.findById(req.params.id).populate('division', 'name location locationCode');
+    if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
+    res.status(200).json({ success: true, data: vendor });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // @route   PUT /api/vendors/:id
 // @access  Admin only
 router.put('/:id', protect, authorize('admin'), async (req, res) => {
@@ -324,7 +336,7 @@ router.get('/:id/transactions', protect, async (req, res) => {
     const transactions = await WalletTransaction.find({ vendor: req.params.id })
       .sort({ createdAt: -1 })
       .limit(20)
-      .populate('invoice', 'invoiceNumber invoiceDate invoiceAmount location remark');
+      .populate('invoice', 'invoiceNumber referenceNo invoiceDate invoiceAmount location remark');
 
     res.status(200).json({ success: true, data: transactions });
   } catch (error) {
