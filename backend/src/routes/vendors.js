@@ -214,61 +214,6 @@ router.get('/', protect, async (req, res) => {
   }
 });
 
-// @route   GET /api/vendors/:id
-// @access  Branch, Admin
-router.get('/:id', protect, async (req, res) => {
-  try {
-    const vendor = await Vendor.findById(req.params.id).populate('division', 'name location locationCode');
-    if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
-    res.status(200).json({ success: true, data: vendor });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// @route   PUT /api/vendors/:id
-// @access  Admin only
-router.put('/:id', protect, authorize('admin'), async (req, res) => {
-  try {
-    const { companyName, personName, mobileNumber, email, address, status, salesPerson, partyCity, partyType } = req.body;
-
-    const vendor = await Vendor.findByIdAndUpdate(
-      req.params.id,
-      { companyName, personName, mobileNumber, email, address, status, salesPerson, partyCity, partyType },
-      { new: true, runValidators: true }
-    );
-
-    if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
-
-    res.status(200).json({ success: true, data: vendor });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// @route   PUT /api/vendors/:id/block
-// @access  Branch, Admin
-router.put('/:id/block', protect, authorize('branch', 'admin'), async (req, res) => {
-  try {
-    const { blockReason } = req.body;
-    if (!blockReason?.trim()) {
-      return res.status(400).json({ success: false, message: 'Block reason is required' });
-    }
-
-    const vendor = await Vendor.findByIdAndUpdate(
-      req.params.id,
-      { status: 'blocked', blockReason },
-      { new: true }
-    );
-
-    if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
-
-    res.status(200).json({ success: true, data: vendor });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
 // @route   GET /api/vendors/search?q=mobileOrAccount
 // @access  Branch, Admin
 router.get('/search', protect, async (req, res) => {
@@ -321,6 +266,61 @@ router.get('/search', protect, async (req, res) => {
     if (!vendor) {
       return res.status(404).json({ success: false, message: 'Vendor not found' });
     }
+
+    res.status(200).json({ success: true, data: vendor });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   GET /api/vendors/:id
+// @access  Branch, Admin
+router.get('/:id', protect, async (req, res) => {
+  try {
+    const vendor = await Vendor.findById(req.params.id).populate('division', 'name location locationCode');
+    if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
+    res.status(200).json({ success: true, data: vendor });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   PUT /api/vendors/:id
+// @access  Admin only
+router.put('/:id', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { companyName, personName, mobileNumber, email, address, status, salesPerson, partyCity, partyType } = req.body;
+
+    const vendor = await Vendor.findByIdAndUpdate(
+      req.params.id,
+      { companyName, personName, mobileNumber, email, address, status, salesPerson, partyCity, partyType },
+      { new: true, runValidators: true }
+    );
+
+    if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
+
+    res.status(200).json({ success: true, data: vendor });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   PUT /api/vendors/:id/block
+// @access  Branch, Admin
+router.put('/:id/block', protect, authorize('branch', 'admin'), async (req, res) => {
+  try {
+    const { blockReason } = req.body;
+    if (!blockReason?.trim()) {
+      return res.status(400).json({ success: false, message: 'Block reason is required' });
+    }
+
+    const vendor = await Vendor.findByIdAndUpdate(
+      req.params.id,
+      { status: 'blocked', blockReason },
+      { new: true }
+    );
+
+    if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
 
     res.status(200).json({ success: true, data: vendor });
   } catch (error) {
