@@ -84,6 +84,7 @@ export default function AdminVendorsPage() {
   const [editForm, setEditForm] = useState({});
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState('');
+  const [divisions, setDivisions] = useState([]);
 
   // Import modal
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -107,6 +108,13 @@ export default function AdminVendorsPage() {
   }, [searchQuery, statusFilter]);
 
   useEffect(() => { fetchVendors(1); }, [fetchVendors]);
+
+  useEffect(() => {
+    fetch(`${API}/api/divisions`, { headers: authHeaders(), credentials: 'include' })
+      .then(r => r.json())
+      .then(d => { if (d.success) setDivisions(d.data); })
+      .catch(() => {});
+  }, []);
 
   // Fetch all for download
   const fetchAll = async () => {
@@ -163,7 +171,22 @@ export default function AdminVendorsPage() {
   // Edit
   const openEditModal = (vendor) => {
     setVendorToEdit(vendor);
-    setEditForm({ companyName: vendor.companyName, personName: vendor.personName, mobileNumber: vendor.mobileNumber, email: vendor.email || '', address: vendor.address || '', salesPerson: vendor.salesPerson || '', status: vendor.status });
+    // Extract accountNumber suffix (after first dash) and division id
+    const rawAccount = vendor.accountNumber || '';
+    const accSuffix = rawAccount.includes('-') ? rawAccount.split('-').slice(1).join('-') : rawAccount;
+    setEditForm({
+      companyName: vendor.companyName,
+      personName: vendor.personName,
+      mobileNumber: vendor.mobileNumber,
+      email: vendor.email || '',
+      address: vendor.address || '',
+      salesPerson: vendor.salesPerson || '',
+      status: vendor.status,
+      accountNumber: accSuffix,
+      divisionId: vendor.division?._id || '',
+      partyCity: vendor.partyCity || '',
+      partyType: vendor.partyType || '',
+    });
     setEditError('');
     setIsEditModalOpen(true);
   };
@@ -177,7 +200,7 @@ export default function AdminVendorsPage() {
       });
       const data = await res.json();
       if (!res.ok) { setEditError(data.message || 'Update failed'); return; }
-      setVendors(prev => prev.map(v => v._id === vendorToEdit._id ? { ...v, ...editForm } : v));
+      setVendors(prev => prev.map(v => v._id === vendorToEdit._id ? data.data : v));
       setIsEditModalOpen(false); setVendorToEdit(null);
     } catch { setEditError('Server error'); }
     finally { setEditLoading(false); }
@@ -286,24 +309,46 @@ export default function AdminVendorsPage() {
             <h2 className="text-[26px] font-bold text-gray-900 mb-6 tracking-tight">Edit Party</h2>
             {editError && <div className="mb-4 p-3 bg-[#FDEDEC] rounded-xl text-[13px] text-red-700">{editError}</div>}
             <div className="grid grid-cols-2 gap-4 mb-6">
-              {[
-                { label: 'Party Name', key: 'companyName' },
-                { label: 'Party City', key: 'partyCity' },
-                { label: 'Mobile Number', key: 'mobileNumber' },
-                { label: 'Email', key: 'email' },
-                { label: 'Sales Person', key: 'salesPerson' },
-              ].map(({ label, key }) => (
-                <div key={key} className="space-y-1.5">
-                  <label className="text-[13px] font-medium text-gray-800">{label}</label>
-                  <input type="text" value={editForm[key] || ''} onChange={(e) => setEditForm(p => ({ ...p, [key]: e.target.value }))}
-                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
-                </div>
-              ))}
+              <div className="space-y-1.5">
+                <label className="text-[13px] font-medium text-gray-800">Location</label>
+                <select value={editForm.divisionId || ''} onChange={(e) => setEditForm(p => ({ ...p, divisionId: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]">
+                  <option value="">Select Location</option>
+                  {divisions.map(d => <option key={d._id} value={d._id}>{d.name} — {d.location}</option>)}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[13px] font-medium text-gray-800">Party Code</label>
+                <input type="text" value={editForm.accountNumber || ''} onChange={(e) => setEditForm(p => ({ ...p, accountNumber: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
+                <p className="text-[12px] text-gray-400">Saved as: {divisions.find(d => d._id === editForm.divisionId)?.name || vendorToEdit?.division?.name || '—'}-{editForm.accountNumber || 'XXXXX'}</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[13px] font-medium text-gray-800">Party Name</label>
+                <input type="text" value={editForm.companyName || ''} onChange={(e) => setEditForm(p => ({ ...p, companyName: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[13px] font-medium text-gray-800">Party City</label>
+                <input type="text" value={editForm.partyCity || ''} onChange={(e) => setEditForm(p => ({ ...p, partyCity: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[13px] font-medium text-gray-800">Mobile Number</label>
+                <input type="text" value={editForm.mobileNumber || ''} onChange={(e) => setEditForm(p => ({ ...p, mobileNumber: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
+              </div>
+
               <div className="space-y-1.5 col-span-2">
                 <label className="text-[13px] font-medium text-gray-800">Address</label>
                 <input type="text" value={editForm.address || ''} onChange={(e) => setEditForm(p => ({ ...p, address: e.target.value }))}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
+
               <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Status</label>
                 <select value={editForm.status || ''} onChange={(e) => setEditForm(p => ({ ...p, status: e.target.value }))}
@@ -313,6 +358,7 @@ export default function AdminVendorsPage() {
                   <option value="blocked">Blocked</option>
                 </select>
               </div>
+              
             </div>
             <div className="flex items-center gap-4">
               <button onClick={() => setIsEditModalOpen(false)} className="flex-1 bg-[#111111] hover:bg-black text-white font-bold py-4 rounded-xl text-[15px] transition-colors">Cancel</button>
@@ -477,7 +523,6 @@ export default function AdminVendorsPage() {
               <thead>
                 <tr className="border-b-2 border-gray-100 text-gray-900 text-[13px]">
                   <th className="pb-4 pt-2 px-2 font-bold">#</th>
-                  <th className="pb-4 pt-2 px-2 font-bold">Location</th>
                   <th className="pb-4 pt-2 px-2 font-bold">Party Code</th>
                   <th className="pb-4 pt-2 px-2 font-bold">Party Name</th>
                   <th className="pb-4 pt-2 px-2 font-bold">Party City</th>
@@ -492,13 +537,10 @@ export default function AdminVendorsPage() {
               </thead>
               <tbody className="text-gray-700 font-medium text-[13px]">
                 {loading ? (
-                  <tr><td colSpan="12" className="py-10 text-center text-gray-400">Loading...</td></tr>
+                    <tr><td colSpan="11" className="py-10 text-center text-gray-400">Loading...</td></tr>
                 ) : vendors.length > 0 ? vendors.map((vendor, i) => (
                   <tr key={vendor._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
                     <td className="py-5 px-2">{String((pagination.page - 1) * 10 + i + 1).padStart(2, '0')}</td>
-                    <td className="py-5 px-2">
-                      <span className="font-mono font-bold text-[#2B3B8A] bg-[#EEF2FF] px-2 py-0.5 rounded text-[12px]">{vendor.division?.name || '—'}</span>
-                    </td>
                     <td className="py-5 px-2 font-semibold text-[#2B3B8A] font-mono text-[12px]">{vendor.accountNumber}</td>
                     <td className="py-5 px-2 font-semibold">{vendor.companyName}</td>
                     <td className="py-5 px-2 text-gray-600">{vendor.partyCity || '—'}</td>

@@ -289,15 +289,46 @@ router.get('/:id', protect, async (req, res) => {
 // @access  Admin only
 router.put('/:id', protect, authorize('admin'), async (req, res) => {
   try {
-    const { companyName, personName, mobileNumber, email, address, status, salesPerson, partyCity, partyType } = req.body;
+    const { companyName, personName, mobileNumber, email, address, status, salesPerson, partyCity, partyType, accountNumber, divisionId } = req.body;
 
-    const vendor = await Vendor.findByIdAndUpdate(
-      req.params.id,
-      { companyName, personName, mobileNumber, email, address, status, salesPerson, partyCity, partyType },
-      { new: true, runValidators: true }
-    );
-
+    const vendor = await Vendor.findById(req.params.id);
     if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
+
+    // If divisionId or accountNumber provided, reconstruct prefixed accountNumber and check duplicates
+    let updatedAccountNumber = vendor.accountNumber;
+    let updatedDivision = vendor.division;
+
+    if (divisionId || accountNumber) {
+      const divId = divisionId || vendor.division;
+      const division = await Division.findById(divId);
+      if (!division) return res.status(400).json({ success: false, message: 'Division not found' });
+      updatedDivision = division._id;
+      const suffix = (accountNumber || '').toString().trim() || (vendor.accountNumber || '').toString().split('-').slice(1).join('-');
+      updatedAccountNumber = `${division.name}-${suffix}`;
+
+      // Check duplicates excluding current vendor
+      const existing = await Vendor.findOne({
+        $or: [{ accountNumber: updatedAccountNumber }, { mobileNumber }],
+        _id: { $ne: vendor._id },
+      });
+      if (existing) {
+        return res.status(409).json({ success: false, message: existing.accountNumber === updatedAccountNumber ? 'This account number already exists' : 'This mobile number is already registered' });
+      }
+    }
+
+    vendor.companyName = companyName !== undefined ? companyName : vendor.companyName;
+    vendor.personName = personName !== undefined ? personName : vendor.personName;
+    vendor.mobileNumber = mobileNumber !== undefined ? mobileNumber : vendor.mobileNumber;
+    vendor.email = (email !== undefined) ? email : vendor.email;
+    vendor.address = (address !== undefined) ? address : vendor.address;
+    vendor.status = status !== undefined ? status : vendor.status;
+    vendor.salesPerson = salesPerson !== undefined ? salesPerson : vendor.salesPerson;
+    vendor.partyCity = partyCity !== undefined ? partyCity : vendor.partyCity;
+    vendor.partyType = partyType !== undefined ? partyType : vendor.partyType;
+    vendor.accountNumber = updatedAccountNumber;
+    vendor.division = updatedDivision;
+
+    await vendor.save();
 
     res.status(200).json({ success: true, data: vendor });
   } catch (error) {
