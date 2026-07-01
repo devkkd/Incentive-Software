@@ -29,6 +29,12 @@ export default function BranchDashboard() {
   // Wallet history
   const [walletHistory, setWalletHistory] = useState([]);
 
+  // Monthly sub-wallets
+  const [monthlyWallets, setMonthlyWallets] = useState([]);
+  // redemptionSplits: [{monthlyWalletId, label, available, amount}]
+  const [redemptionSplits, setRedemptionSplits] = useState([]);
+  const [walletSelectError, setWalletSelectError] = useState('');
+
   // Redemption
   const [redeemAmount, setRedeemAmount] = useState('');
   const [redeemError, setRedeemError] = useState('');
@@ -96,6 +102,9 @@ export default function BranchDashboard() {
     setSelectedVendor(null);
     setCreatedInvoice(null);
     setWalletHistory([]);
+    setMonthlyWallets([]);
+    setRedemptionSplits([]);
+    setWalletSelectError('');
     setRedeemAmount('');
     setOtpSent(false);
     setOtpVerified(false);
@@ -113,6 +122,7 @@ export default function BranchDashboard() {
       if (!res.ok) { setSearchError(data.message || 'Vendor not found'); return; }
       setSelectedVendor(data.data);
       fetchWalletHistory(data.data._id);
+      fetchMonthlyWallets(data.data._id);
       
       // Auto-fill invoice form with today's date only — location comes from invoice prefix
       const today = new Date().toISOString().split('T')[0];
@@ -137,6 +147,37 @@ export default function BranchDashboard() {
       const data = await res.json();
       if (res.ok) setWalletHistory(data.data);
     } catch { /* silent */ }
+  };
+
+  const fetchMonthlyWallets = async (vendorId) => {
+    try {
+      const res = await fetch(`${API}/api/incentives/monthly-wallets/${vendorId}`, {
+        credentials: 'include',
+        headers: authHeaders(),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMonthlyWallets(data.data || []);
+        // Reset splits when vendor changes
+        setRedemptionSplits([]);
+        setWalletSelectError('');
+      }
+    } catch { /* silent */ }
+  };
+
+  // Computed: total allocated in splits
+  const totalSplitAmount = redemptionSplits.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+
+  // Add or update a split for a monthly wallet
+  const handleSplitChange = (walletId, label, available, value) => {
+    const amt = parseFloat(value) || 0;
+    setRedemptionSplits(prev => {
+      const existing = prev.find(r => r.monthlyWalletId === walletId);
+      if (amt <= 0) return prev.filter(r => r.monthlyWalletId !== walletId);
+      if (existing) return prev.map(r => r.monthlyWalletId === walletId ? { ...r, amount: amt } : r);
+      return [...prev, { monthlyWalletId: walletId, label, available, amount: amt }];
+    });
+    setWalletSelectError('');
   };
 
   // --- Invoice creation moved to handleSubmit ---
@@ -228,6 +269,22 @@ export default function BranchDashboard() {
       return;
     }
 
+    // Validate splits cover redeemAmt
+    if (redemptionSplits.length > 0) {
+      const splitsTotal = parseFloat(redemptionSplits.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0).toFixed(2));
+      if (Math.abs(splitsTotal - redeemAmt) > 0.01) {
+        setWalletSelectError(`Split total (₹${splitsTotal}) must equal redeem amount (₹${redeemAmt})`);
+        return;
+      }
+      // Check each split doesn't exceed available
+      for (const r of redemptionSplits) {
+        if (parseFloat(r.amount) > parseFloat(r.available)) {
+          setWalletSelectError(`Amount for ${r.label} exceeds available balance ₹${r.available}`);
+          return;
+        }
+      }
+    }
+
     if (exceedsInvoiceAmount) {
       setRedeemError('Wallet redemption amount cannot exceed invoice amount');
       return;
@@ -258,6 +315,12 @@ export default function BranchDashboard() {
       if (redeemAmt > 0) {
         invoicePayload.redeemAmount = redeemAmt;
         invoicePayload.otp = otp.join('');
+        if (redemptionSplits.length > 0) {
+          invoicePayload.redemptions = redemptionSplits.map(r => ({
+            monthlyWalletId: r.monthlyWalletId,
+            amount: parseFloat(r.amount),
+          }));
+        }
       }
 
       const invRes = await fetch(`${API}/api/invoices`, {
@@ -362,6 +425,8 @@ export default function BranchDashboard() {
     setOtpCount(0);
     setOtpUnlockAt(null);
     setCooldownSecs(0);
+    setRedemptionSplits([]);
+    setWalletSelectError('');
     if (cooldownRef.current) clearInterval(cooldownRef.current);
     setInvoiceForm({ date: '', number: '', amount: '', location: '', remark: '' });
   };
@@ -592,11 +657,83 @@ export default function BranchDashboard() {
 
                 {/* RIGHT: Redemption */}
                 <div className="w-full md:w-1/2 p-8 flex flex-col">
-                  <h3 className="text-xl font-bold text-gray-900 mb-6">Incentives Wallet Redemption</h3>
+                  <h3 className="text-xl font-bold text-gray-900 mb-2">Incentives Wallet Redemption</h3>
+
+                  {/* ── Monthly Sub-Wallet Selector ───────────────────────── */}
+                  {monthlyWallets.length > 0 && (
+                    <div className="mb-5">
+                      <p className="text-[13px] font-semibold text-gray-700 mb-2">
+                        Select Month Wallet(s) to Redeem From
+                      </p>
+                      <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                        {monthlyWallets.map((mw) => {
+                          const split = redemptionSplits.find(r => r.monthlyWalletId === mw._id);
+                          const splitAmt = split?.amount || '';
+                          const isZero = mw.balance <= 0;
+                          return (
+                            <div key={mw._id}
+                              className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${
+                                isZero ? 'bg-gray-50 border-gray-100 opacity-50' : 'bg-white border-gray-200'
+                              }`}>
+                              {/* Month label + available */}
+                              <div className="flex-1 min-w-0">
+                                <p className={`text-[13px] font-semibold ${isZero ? 'text-gray-400' : 'text-gray-800'}`}>
+                                  {mw.label}
+                                </p>
+                                <p className={`text-[11px] font-medium ${isZero ? 'text-gray-300' : 'text-[#2ECC71]'}`}>
+                                  Available: ₹{Number(mw.balance).toFixed(2)}
+                                </p>
+                              </div>
+                              {/* Amount input — disabled if zero */}
+                              <div className="w-[110px] shrink-0">
+                                <input
+                                  type="number"
+                                  disabled={isZero}
+                                  value={splitAmt}
+                                  onChange={(e) => handleSplitChange(mw._id, mw.label, mw.balance, e.target.value)}
+                                  placeholder="0.00"
+                                  min="0"
+                                  max={mw.balance}
+                                  step="0.01"
+                                  className={`w-full px-3 py-2 rounded-lg border text-sm text-right focus:outline-none focus:ring-1 focus:ring-[#2B3B8A] transition-colors ${
+                                    isZero
+                                      ? 'bg-gray-100 border-gray-100 text-gray-300 cursor-not-allowed'
+                                      : parseFloat(splitAmt) > mw.balance
+                                        ? 'border-red-400 bg-red-50'
+                                        : 'border-gray-200'
+                                  }`}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {/* Split total vs redeem amount indicator */}
+                      {redemptionSplits.length > 0 && (
+                        <div className={`mt-2 px-3 py-2 rounded-lg text-[12px] font-medium flex items-center justify-between ${
+                          Math.abs(totalSplitAmount - redeemAmt) < 0.01
+                            ? 'bg-[#E4F8ED] text-[#16a34a]'
+                            : 'bg-[#FEF9C3] text-[#B45309]'
+                        }`}>
+                          <span>Split total</span>
+                          <span>₹{totalSplitAmount.toFixed(2)} {redeemAmt > 0 && `/ ₹${redeemAmt.toFixed(2)}`}</span>
+                        </div>
+                      )}
+                      {walletSelectError && (
+                        <p className="text-[12px] text-red-500 mt-1">{walletSelectError}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {monthlyWallets.length === 0 && (
+                    <div className="mb-5 p-3 bg-[#FEF9C3] border border-yellow-200 rounded-xl">
+                      <p className="text-[12px] text-yellow-700 font-medium">No incentive months found. Upload incentives first.</p>
+                    </div>
+                  )}
 
                   <div className="space-y-1.5 mb-6">
                     <div className="flex items-center justify-between">
-                      <label className="text-[13px] font-medium text-gray-800">Redeem Incentives Wallet Amount (₹)</label>
+                      <label className="text-[13px] font-medium text-gray-800">Total Redeem Amount (₹)</label>
                       {/* OTP attempt counter — dots */}
                       {otpCount > 0 && !isOtpBlocked && (
                         <div className="flex items-center gap-1.5">
@@ -812,6 +949,7 @@ export default function BranchDashboard() {
                         <th className="pb-4 font-bold text-black">Invoice Amount</th>
                         <th className="pb-4 font-bold text-black">Amount Redeemed</th>
                         <th className="pb-4 font-bold text-black">Credited</th>
+                        <th className="pb-4 font-bold text-black">Wallet Month</th>
                         <th className="pb-4 font-bold text-black">Balance After</th>
                         <th className="pb-4 font-bold text-black">Location</th>
                         <th className="pb-4 font-bold text-black">Remark</th>
@@ -835,13 +973,20 @@ export default function BranchDashboard() {
                           <td className="py-4 font-semibold text-[#2ECC71]">
                             {row.type === 'credit' ? `+₹${Number(row.amount).toFixed(2)}` : <span className="text-gray-400">—</span>}
                           </td>
+                          <td className="py-4">
+                            {row.walletLabel ? (
+                              <span className="inline-flex items-center bg-[#EEF2FF] text-[#2B3B8A] text-[11px] font-semibold px-2 py-0.5 rounded-md border border-[#2B3B8A]/10 whitespace-nowrap">
+                                {row.walletLabel}
+                              </span>
+                            ) : <span className="text-gray-400">—</span>}
+                          </td>
                           <td className="py-4 font-semibold">₹{Number(row.balanceAfter).toFixed(2)}</td>
                           <td className="py-4">{row.invoice?.location || '—'}</td>
                           <td className="py-4 max-w-[160px] truncate text-gray-500">{row.invoice?.remark || <span className="text-gray-300">—</span>}</td>
                         </tr>
                       )) : (
                         <tr>
-                          <td colSpan="10" className="py-8 text-center text-gray-400">No transactions yet</td>
+                          <td colSpan="11" className="py-8 text-center text-gray-400">No transactions yet</td>
                         </tr>
                       )}
                     </tbody>
@@ -857,6 +1002,7 @@ export default function BranchDashboard() {
                             <td className="py-3">₹{totalInvoice.toFixed(2)}</td>
                             <td className="py-3 text-[#E74C3C]">-₹{totalRedeemed.toFixed(2)}</td>
                             <td className="py-3 text-[#2ECC71]">+₹{totalCredited.toFixed(2)}</td>
+                            <td className="py-3" />
                             <td className="py-3" />
                             <td className="py-3" />
                             <td className="py-3" />

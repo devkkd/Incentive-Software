@@ -20,6 +20,8 @@ const downloadTemplate = () => {
   URL.revokeObjectURL(url);
 };
 
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
 export default function AdminIncentivesPage() {
   const [uploadState, setUploadState] = useState('idle'); // idle | otp | success | error
   const [selectedFile, setSelectedFile] = useState(null);
@@ -28,6 +30,12 @@ export default function AdminIncentivesPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [otpEmail, setOtpEmail] = useState('');
   const [sendingOtp, setSendingOtp] = useState(false);
+
+  // Month / Year for incentive upload
+  const currentDate = new Date();
+  const [uploadMonth, setUploadMonth] = useState(String(currentDate.getMonth() + 1)); // 1-12
+  const [uploadYear, setUploadYear] = useState(String(currentDate.getFullYear()));
+  const [monthYearError, setMonthYearError] = useState('');
 
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [otpError, setOtpError] = useState('');
@@ -59,6 +67,12 @@ export default function AdminIncentivesPage() {
   // Step 1: Send OTP to EMAIL_USER
   const handleUploadClick = async () => {
     if (!selectedFile) { alert('Please select a file first'); return; }
+    // Validate month/year
+    const m = parseInt(uploadMonth);
+    const y = parseInt(uploadYear);
+    if (!m || m < 1 || m > 12) { setMonthYearError('Please select a valid month'); return; }
+    if (!y || y < 2020 || y > 2100) { setMonthYearError('Please enter a valid year'); return; }
+    setMonthYearError('');
     setSendingOtp(true);
     setOtpError('');
     try {
@@ -96,6 +110,8 @@ export default function AdminIncentivesPage() {
       formData.append('file', selectedFile);
       formData.append('otp', otp.join(''));
       formData.append('frequency', 'monthly');
+      formData.append('month', uploadMonth);
+      formData.append('year', uploadYear);
 
       const res = await fetch(`${API}/api/incentives/upload`, {
         method: 'POST', headers: authHeaders(), credentials: 'include', body: formData,
@@ -118,8 +134,8 @@ export default function AdminIncentivesPage() {
     doc.setFontSize(10); doc.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 26);
     autoTable(doc, {
       startY: 32,
-      head: [['#', 'Upload Date', 'File Name', 'Total Amount', 'Frequency', 'Status']],
-      body: history.map((row, i) => [String(i+1).padStart(2,'0'), new Date(row.createdAt).toLocaleDateString('en-IN'), row.fileName, `Rs. ${row.totalAmount?.toFixed(2)}`, row.frequency, row.status]),
+      head: [['#', 'Upload Date', 'File Name', 'Incentive Month', 'Total Amount', 'Frequency', 'Status']],
+      body: history.map((row, i) => [String(i+1).padStart(2,'0'), new Date(row.createdAt).toLocaleDateString('en-IN'), row.fileName, row.walletLabel || '—', `Rs. ${row.totalAmount?.toFixed(2)}`, row.frequency, row.status]),
       styles: { fontSize: 9 }, headStyles: { fillColor: [43, 59, 138] },
     });
     doc.save('incentive_upload_history.pdf');
@@ -128,8 +144,8 @@ export default function AdminIncentivesPage() {
   const downloadExcel = async () => {
     const XLSX = await import('xlsx');
     const ws = XLSX.utils.aoa_to_sheet([
-      ['#', 'Upload Date', 'File Name', 'Total Amount (Rs.)', 'Frequency', 'Status'],
-      ...history.map((row, i) => [i+1, new Date(row.createdAt).toLocaleDateString('en-IN'), row.fileName, row.totalAmount?.toFixed(2), row.frequency, row.status]),
+      ['#', 'Upload Date', 'File Name', 'Incentive Month', 'Total Amount (Rs.)', 'Frequency', 'Status'],
+      ...history.map((row, i) => [i+1, new Date(row.createdAt).toLocaleDateString('en-IN'), row.fileName, row.walletLabel || '—', row.totalAmount?.toFixed(2), row.frequency, row.status]),
     ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'History');
@@ -153,6 +169,50 @@ export default function AdminIncentivesPage() {
 
           <div className="space-y-4">
             <label className="block text-[15px] text-gray-800">Upload Party Incentives Amount (Excel/CSV)</label>
+
+            {/* Month / Year selector */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex-1 space-y-1">
+                <label className="text-[13px] font-medium text-gray-700">Incentive Month</label>
+                <select
+                  value={uploadMonth}
+                  onChange={(e) => { setUploadMonth(e.target.value); setMonthYearError(''); }}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] bg-white"
+                >
+                  {MONTH_NAMES.map((name, idx) => (
+                    <option key={idx + 1} value={String(idx + 1)}>{name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="w-full sm:w-[130px] space-y-1">
+                <label className="text-[13px] font-medium text-gray-700">Year</label>
+                <input
+                  type="number"
+                  value={uploadYear}
+                  onChange={(e) => { setUploadYear(e.target.value); setMonthYearError(''); }}
+                  placeholder="2025"
+                  min="2020"
+                  max="2100"
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A]"
+                />
+              </div>
+            </div>
+
+            {monthYearError && (
+              <p className="text-red-500 text-[12px] -mt-1">{monthYearError}</p>
+            )}
+
+            {/* Selected month preview pill */}
+            {uploadMonth && uploadYear && !monthYearError && (
+              <div className="inline-flex items-center gap-2 bg-[#EEF2FF] border border-[#2B3B8A]/20 rounded-lg px-3 py-1.5">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5 text-[#2B3B8A]">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+                </svg>
+                <span className="text-[12px] font-semibold text-[#2B3B8A]">
+                  Crediting incentives for: {MONTH_NAMES[parseInt(uploadMonth) - 1]} {uploadYear}
+                </span>
+              </div>
+            )}
 
             <div className="flex flex-col sm:flex-row gap-4">
               <div className="flex-1 px-4 py-3 rounded-xl border border-gray-200 flex items-center gap-3 cursor-pointer hover:bg-gray-50 transition-colors"
@@ -244,6 +304,11 @@ export default function AdminIncentivesPage() {
                 <div>
                   <h3 className="text-[20px] font-bold text-gray-900 tracking-tight">Upload Successful</h3>
                   <p className="text-[14px] text-gray-600 mt-1">Total credited: <span className="font-bold text-black">₹{uploadResult.totalAmount.toFixed(2)}</span></p>
+                  {uploadResult.walletLabel && (
+                    <p className="text-[13px] text-[#2B3B8A] font-semibold mt-0.5">
+                      Wallet: {uploadResult.walletLabel}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -309,6 +374,7 @@ export default function AdminIncentivesPage() {
                 <th className="pb-4 pt-2 px-2 font-bold">#</th>
                 <th className="pb-4 pt-2 px-2 font-bold">Upload Date</th>
                 <th className="pb-4 pt-2 px-2 font-bold">File Name</th>
+                <th className="pb-4 pt-2 px-2 font-bold">Incentive Month</th>
                 <th className="pb-4 pt-2 px-2 font-bold">Incentives Total Amount</th>
                 <th className="pb-4 pt-2 px-2 font-bold">Upload Frequency</th>
                 <th className="pb-4 pt-2 px-2 font-bold">Status</th>
@@ -320,6 +386,15 @@ export default function AdminIncentivesPage() {
                   <td className="py-5 px-2">{String(i+1).padStart(2,'0')}</td>
                   <td className="py-5 px-2">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
                   <td className="py-5 px-2">{row.fileName}</td>
+                  <td className="py-5 px-2">
+                    {row.walletLabel ? (
+                      <span className="inline-flex items-center gap-1.5 bg-[#EEF2FF] text-[#2B3B8A] text-[12px] font-semibold px-2.5 py-1 rounded-lg border border-[#2B3B8A]/10">
+                        {row.walletLabel}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
                   <td className="py-5 px-2">₹{row.totalAmount?.toFixed(2)}</td>
                   <td className="py-5 px-2 capitalize">{row.frequency}</td>
                   <td className="py-5 px-2">
@@ -330,7 +405,7 @@ export default function AdminIncentivesPage() {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan="6" className="py-12 text-center">
+                  <td colSpan="7" className="py-12 text-center">
                     <div className="flex flex-col items-center gap-2 text-gray-400">
                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-10 h-10 opacity-40">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />

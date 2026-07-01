@@ -192,11 +192,24 @@ export default function AdminVendorsPage() {
   };
 
   const handleEditSubmit = async () => {
+    if (!editForm.companyName?.trim()) { setEditError('Party name is required'); return; }
     setEditLoading(true); setEditError('');
     try {
       const res = await fetch(`${API}/api/vendors/${vendorToEdit._id}`, {
         method: 'PUT', headers: authHeaders(), credentials: 'include',
-        body: JSON.stringify(editForm),
+        body: JSON.stringify({
+          companyName:   editForm.companyName,
+          personName:    editForm.personName,
+          mobileNumber:  editForm.mobileNumber,
+          email:         editForm.email,
+          address:       editForm.address,
+          salesPerson:   editForm.salesPerson,
+          status:        editForm.status,
+          accountNumber: editForm.accountNumber,
+          divisionId:    editForm.divisionId,
+          partyCity:     editForm.partyCity,
+          partyType:     editForm.partyType,
+        }),
       });
       const data = await res.json();
       if (!res.ok) { setEditError(data.message || 'Update failed'); return; }
@@ -305,41 +318,90 @@ export default function AdminVendorsPage() {
       {/* Edit Modal */}
       {isEditModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-          <div className="bg-white rounded-3xl p-8 w-full max-w-[560px] shadow-2xl animate-in fade-in zoom-in duration-200">
-            <h2 className="text-[26px] font-bold text-gray-900 mb-6 tracking-tight">Edit Party</h2>
+          <div className="bg-white rounded-3xl p-8 w-full max-w-[560px] shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
+            <h2 className="text-[22px] font-bold text-gray-900 mb-6 tracking-tight">Edit Party</h2>
             {editError && <div className="mb-4 p-3 bg-[#FDEDEC] rounded-xl text-[13px] text-red-700">{editError}</div>}
             <div className="grid grid-cols-2 gap-4 mb-6">
+
+              {/* Division / Location dropdown */}
               <div className="space-y-1.5">
-                <label className="text-[13px] font-medium text-gray-800">Location</label>
-                <select value={editForm.divisionId || ''} onChange={(e) => setEditForm(p => ({ ...p, divisionId: e.target.value }))}
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]">
+                <label className="text-[13px] font-medium text-gray-800">Location / Branch <span className="text-red-400">*</span></label>
+                <select
+                  value={editForm.divisionId || ''}
+                  onChange={(e) => {
+                    const selDiv = divisions.find(d => d._id === e.target.value);
+                    const suffix = editForm.accountNumber?.includes('-')
+                      ? editForm.accountNumber.split('-').slice(1).join('-')
+                      : editForm.accountNumber || '';
+                    setEditForm(p => ({
+                      ...p,
+                      divisionId: e.target.value,
+                      // update accountNumber prefix automatically
+                      accountNumber: selDiv ? `${selDiv.name}-${suffix}` : suffix,
+                    }));
+                  }}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A] bg-white">
                   <option value="">Select Location</option>
-                  {divisions.map(d => <option key={d._id} value={d._id}>{d.name} — {d.location}</option>)}
+                  {divisions.map(d => (
+                    <option key={d._id} value={d._id}>{d.name} — {d.location}</option>
+                  ))}
                 </select>
               </div>
 
+              {/* Party Code — editable suffix, prefix auto from division */}
               <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Party Code</label>
-                <input type="text" value={editForm.accountNumber || ''} onChange={(e) => setEditForm(p => ({ ...p, accountNumber: e.target.value }))}
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
-                <p className="text-[12px] text-gray-400">Saved as: {divisions.find(d => d._id === editForm.divisionId)?.name || vendorToEdit?.division?.name || '—'}-{editForm.accountNumber || 'XXXXX'}</p>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1">
+                    <span className="px-3 py-2.5 bg-gray-100 rounded-xl border border-gray-200 text-sm font-mono font-bold text-gray-700 shrink-0">
+                      {divisions.find(d => d._id === editForm.divisionId)?.name || vendorToEdit?.division?.name || '—'}-
+                    </span>
+                    <input
+                      type="text"
+                      value={
+                        (() => {
+                          const acc = editForm.accountNumber || '';
+                          return acc.includes('-') ? acc.split('-').slice(1).join('-') : acc;
+                        })()
+                      }
+                      onChange={(e) => {
+                        const selDiv = divisions.find(d => d._id === editForm.divisionId);
+                        const prefix = selDiv?.name || vendorToEdit?.division?.name || '';
+                        const suffix = e.target.value.toUpperCase();
+                        setEditForm(p => ({ ...p, accountNumber: prefix ? `${prefix}-${suffix}` : suffix }));
+                      }}
+                      placeholder="XXXXX"
+                      className="flex-1 px-3 py-2.5 rounded-xl border border-gray-200 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]"
+                    />
+                  </div>
+                  <p className="text-[11px] text-gray-400">Full code: <span className="font-mono font-semibold text-gray-600">{editForm.accountNumber || '—'}</span></p>
+                </div>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[13px] font-medium text-gray-800">Party Name</label>
+                <label className="text-[13px] font-medium text-gray-800">Party Name <span className="text-red-400">*</span></label>
                 <input type="text" value={editForm.companyName || ''} onChange={(e) => setEditForm(p => ({ ...p, companyName: e.target.value }))}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[13px] font-medium text-gray-800">Party City</label>
+                <label className="text-[13px] font-medium text-gray-800">Party City / Location</label>
                 <input type="text" value={editForm.partyCity || ''} onChange={(e) => setEditForm(p => ({ ...p, partyCity: e.target.value }))}
+                  placeholder="e.g. Jodhpur"
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Mobile Number</label>
                 <input type="text" value={editForm.mobileNumber || ''} onChange={(e) => setEditForm(p => ({ ...p, mobileNumber: e.target.value }))}
+                  maxLength={10}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[13px] font-medium text-gray-800">Party Type</label>
+                <input type="text" value={editForm.partyType || ''} onChange={(e) => setEditForm(p => ({ ...p, partyType: e.target.value }))}
+                  placeholder="CO-DEALER, DEALER..."
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
 
@@ -350,20 +412,26 @@ export default function AdminVendorsPage() {
               </div>
 
               <div className="space-y-1.5">
+                <label className="text-[13px] font-medium text-gray-800">Sales Person</label>
+                <input type="text" value={editForm.salesPerson || ''} onChange={(e) => setEditForm(p => ({ ...p, salesPerson: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
+              </div>
+
+              <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Status</label>
                 <select value={editForm.status || ''} onChange={(e) => setEditForm(p => ({ ...p, status: e.target.value }))}
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]">
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A] bg-white">
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                   <option value="blocked">Blocked</option>
                 </select>
               </div>
-              
+
             </div>
             <div className="flex items-center gap-4">
               <button onClick={() => setIsEditModalOpen(false)} className="flex-1 bg-[#111111] hover:bg-black text-white font-bold py-4 rounded-xl text-[15px] transition-colors">Cancel</button>
               <button onClick={handleEditSubmit} disabled={editLoading}
-                className={`flex-1 font-bold py-4 rounded-xl text-[15px] transition-colors ${!editLoading ? 'bg-[#007BFF] hover:bg-[#0056b3] text-white' : 'bg-[#8492A6] text-white cursor-not-allowed'}`}>
+                className={`flex-1 font-bold py-4 rounded-xl text-[15px] transition-colors ${!editLoading ? 'bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white' : 'bg-[#8492A6] text-white cursor-not-allowed'}`}>
                 {editLoading ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
@@ -525,7 +593,6 @@ export default function AdminVendorsPage() {
                   <th className="pb-4 pt-2 px-2 font-bold">#</th>
                   <th className="pb-4 pt-2 px-2 font-bold">Party Code</th>
                   <th className="pb-4 pt-2 px-2 font-bold">Party Name</th>
-                  <th className="pb-4 pt-2 px-2 font-bold">Party City</th>
                   <th className="pb-4 pt-2 px-2 font-bold">Party Type</th>
                   <th className="pb-4 pt-2 px-2 font-bold">Mobile</th>
                   <th className="pb-4 pt-2 px-2 font-bold">Sales Person</th>
@@ -537,13 +604,12 @@ export default function AdminVendorsPage() {
               </thead>
               <tbody className="text-gray-700 font-medium text-[13px]">
                 {loading ? (
-                    <tr><td colSpan="11" className="py-10 text-center text-gray-400">Loading...</td></tr>
+                    <tr><td colSpan="10" className="py-10 text-center text-gray-400">Loading...</td></tr>
                 ) : vendors.length > 0 ? vendors.map((vendor, i) => (
                   <tr key={vendor._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
                     <td className="py-5 px-2">{String((pagination.page - 1) * 10 + i + 1).padStart(2, '0')}</td>
                     <td className="py-5 px-2 font-semibold text-[#2B3B8A] font-mono text-[12px]">{vendor.accountNumber}</td>
                     <td className="py-5 px-2 font-semibold">{vendor.companyName}</td>
-                    <td className="py-5 px-2 text-gray-600">{vendor.partyCity || '—'}</td>
                     <td className="py-5 px-2">
                       {vendor.partyType ? (
                         <span className="text-[11px] font-semibold bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{vendor.partyType}</span>
@@ -581,7 +647,7 @@ export default function AdminVendorsPage() {
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan="12" className="py-12 text-center">
+                    <td colSpan="10" className="py-12 text-center">
                       <div className="flex flex-col items-center gap-2 text-gray-400">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-10 h-10 opacity-40">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />

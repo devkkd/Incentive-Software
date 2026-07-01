@@ -40,6 +40,16 @@ const walletTransactionSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    monthlyWallet: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'MonthlyWallet',
+      default: null, // null for legacy transactions
+    },
+    walletLabel: {
+      type: String,
+      trim: true,
+      default: null, // e.g. "May 2025" — denormalized for quick display
+    },
   },
   { timestamps: true }
 );

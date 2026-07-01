@@ -2,6 +2,7 @@ const express = require('express');
 const Invoice = require('../models/Invoice');
 const Vendor = require('../models/Vendor');
 const WalletTransaction = require('../models/WalletTransaction');
+const MonthlyWallet = require('../models/MonthlyWallet');
 const OtpToken = require('../models/OtpToken');
 const Division = require('../models/Division');
 const { protect, authorize } = require('../middleware/auth');
@@ -245,12 +246,15 @@ router.post('/redeem', protect, authorize('branch'), async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // @route   POST /api/invoices
-// @desc    Create invoice and optionally deduct wallet balance via redemption
+// @desc    Create invoice and deduct wallet balance (with monthly sub-wallet support)
 // @access  Branch only
+// Body: vendorId, invoiceDate, invoiceNumber, invoiceAmount, location, remark,
+//       redeemAmount, otp,
+//       redemptions: [{monthlyWalletId, amount}]  ← optional array for split deduction
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/', protect, authorize('branch'), async (req, res) => {
   try {
-    const { vendorId, invoiceDate, invoiceNumber, invoiceAmount, location, redeemAmount, otp, remark } = req.body;
+    const { vendorId, invoiceDate, invoiceNumber, invoiceAmount, location, redeemAmount, otp, remark, redemptions } = req.body;
 
     if (!vendorId || !invoiceDate || !invoiceNumber || !invoiceAmount) {
       return res.status(400).json({ success: false, message: 'All fields are required' });
@@ -295,11 +299,15 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invoice amount must be greater than 0' });
     }
 
+    // ── Redemption validation ─────────────────────────────────────────────────
+    // redemptions array: [{monthlyWalletId, amount}] — multi-wallet split
+    // redeemAmount: total (for backward compat / OTP check)
+    const redemptionList = Array.isArray(redemptions) && redemptions.length > 0 ? redemptions : null;
     const redeemAmt = redeemAmount ? parseFloat(redeemAmount) : 0;
+
     if (isNaN(redeemAmt) || redeemAmt <= 0) {
       return res.status(400).json({ success: false, message: 'Wallet redemption is required to create the invoice' });
     }
-
     if (!otp) {
       return res.status(400).json({ success: false, message: 'OTP is required for wallet redemption' });
     }
@@ -307,36 +315,92 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Wallet redemption amount cannot exceed invoice amount' });
     }
 
-      const otpRecord = await OtpToken.findOne({
-        user: req.user._id,
-        otpCode: otp,
-        purpose: 'redemption',
-        used: false,
-        expiresAt: { $gt: new Date() },
-      });
-
-      if (!otpRecord) {
-        return res.status(400).json({ success: false, message: 'Invalid or expired OTP. Please request a new one.' });
+    // Validate redemption list total matches redeemAmt
+    if (redemptionList) {
+      const listTotal = parseFloat(redemptionList.reduce((s, r) => s + parseFloat(r.amount || 0), 0).toFixed(2));
+      if (Math.abs(listTotal - redeemAmt) > 0.01) {
+        return res.status(400).json({ success: false, message: 'Redemption amounts do not match total' });
       }
+    }
 
-      if (redeemAmt > vendor.walletBalance) {
-        return res.status(400).json({
-          success: false,
-          message: `Insufficient balance! Only ₹${vendor.walletBalance.toFixed(2)} available`,
-        });
-      }
+    // Verify OTP
+    const otpRecord = await OtpToken.findOne({
+      user: req.user._id,
+      otpCode: otp,
+      purpose: 'redemption',
+      used: false,
+      expiresAt: { $gt: new Date() },
+    });
+    if (!otpRecord) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired OTP. Please request a new one.' });
+    }
 
-      otpRecord.used = true;
-      await otpRecord.save();
-
-      const newBalance = parseFloat((vendor.walletBalance - redeemAmt).toFixed(2));
-      await Vendor.findByIdAndUpdate(vendorId, {
-        walletBalance: newBalance,
-        lastRedemptionAmount: redeemAmt,
-        lastRedemptionDate: new Date(),
+    if (redeemAmt > vendor.walletBalance) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient balance! Only ₹${vendor.walletBalance.toFixed(2)} available`,
       });
-      vendor.walletBalance = newBalance;
+    }
 
+    // Validate monthly wallet balances if redemption list provided
+    if (redemptionList) {
+      for (const r of redemptionList) {
+        const mw = await MonthlyWallet.findById(r.monthlyWalletId);
+        if (!mw || String(mw.vendor) !== String(vendorId)) {
+          return res.status(400).json({ success: false, message: `Monthly wallet not found: ${r.monthlyWalletId}` });
+        }
+        const amt = parseFloat(r.amount);
+        if (amt > mw.balance) {
+          return res.status(400).json({
+            success: false,
+            message: `Insufficient balance in ${mw.label} wallet. Available: ₹${mw.balance}`,
+          });
+        }
+      }
+    }
+
+    // Mark OTP used
+    otpRecord.used = true;
+    await otpRecord.save();
+
+    // ── Deduct from monthly wallets ───────────────────────────────────────────
+    let remainingToDeduct = redeemAmt;
+    const walletDeductions = []; // [{monthlyWallet, amount, label}]
+
+    if (redemptionList) {
+      // Explicit split provided by frontend
+      for (const r of redemptionList) {
+        const mw = await MonthlyWallet.findById(r.monthlyWalletId);
+        const amt = parseFloat(r.amount);
+        const newMwBalance = parseFloat((mw.balance - amt).toFixed(2));
+        await MonthlyWallet.findByIdAndUpdate(mw._id, { balance: newMwBalance });
+        walletDeductions.push({ monthlyWallet: mw._id, amount: amt, label: mw.label });
+        remainingToDeduct = parseFloat((remainingToDeduct - amt).toFixed(2));
+      }
+    } else {
+      // Auto-deduct: oldest months first (FIFO)
+      const allWallets = await MonthlyWallet.find({ vendor: vendorId, balance: { $gt: 0 } })
+        .sort({ year: 1, month: 1 });
+      for (const mw of allWallets) {
+        if (remainingToDeduct <= 0) break;
+        const deduct = Math.min(mw.balance, remainingToDeduct);
+        const newMwBalance = parseFloat((mw.balance - deduct).toFixed(2));
+        await MonthlyWallet.findByIdAndUpdate(mw._id, { balance: newMwBalance });
+        walletDeductions.push({ monthlyWallet: mw._id, amount: deduct, label: mw.label });
+        remainingToDeduct = parseFloat((remainingToDeduct - deduct).toFixed(2));
+      }
+    }
+
+    // ── Deduct from main vendor wallet ────────────────────────────────────────
+    const newBalance = parseFloat((vendor.walletBalance - redeemAmt).toFixed(2));
+    await Vendor.findByIdAndUpdate(vendorId, {
+      walletBalance: newBalance,
+      lastRedemptionAmount: redeemAmt,
+      lastRedemptionDate: new Date(),
+    });
+    vendor.walletBalance = newBalance;
+
+    // ── Create invoice ────────────────────────────────────────────────────────
     const divisionId = division._id;
     const invoiceLocation = location || division.location || '';
     const referenceNo = await generateUniqueReferenceNo();
@@ -354,34 +418,39 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
       referenceNo,
     });
 
-    if (redeemAmt > 0) {
+    // ── WalletTransaction records (one per monthly wallet) ────────────────────
+    const walletLabel = walletDeductions.map(d => d.label).join(' + ');
+    for (const d of walletDeductions) {
       await WalletTransaction.create({
         vendor: vendorId,
         invoice: invoice._id,
         type: 'debit',
-        amount: redeemAmt,
-        balanceAfter: vendor.walletBalance,
-        description: `Wallet redemption of ₹${redeemAmt}`,
+        amount: d.amount,
+        balanceAfter: newBalance,
+        description: `Redemption ₹${d.amount} from ${d.label}`,
         processedBy: req.user._id,
+        monthlyWallet: d.monthlyWallet,
+        walletLabel: d.label,
       });
-
-      // Send WhatsApp confirmation (non-blocking)
-      sendRedemptionConfirmation(
-        vendor.mobileNumber,
-        vendor.companyName,
-        redeemAmt,
-        prefixedInvoiceNumber,
-        vendor.walletBalance,
-        referenceNo
-      ).then(r => console.log('[REDEMPTION MSG RESULT]', JSON.stringify(r)))
-       .catch(e => console.error('[REDEMPTION MSG ERROR]', e.message));
     }
+
+    // Send WhatsApp confirmation (non-blocking)
+    sendRedemptionConfirmation(
+      vendor.mobileNumber,
+      vendor.companyName,
+      redeemAmt,
+      prefixedInvoiceNumber,
+      vendor.walletBalance,
+      referenceNo
+    ).then(r => console.log('[REDEMPTION MSG RESULT]', JSON.stringify(r)))
+     .catch(e => console.error('[REDEMPTION MSG ERROR]', e.message));
 
     res.status(201).json({
       success: true,
       data: {
         invoice,
-        ...(redeemAmt > 0 ? { newWalletBalance: vendor.walletBalance } : {}),
+        newWalletBalance: vendor.walletBalance,
+        walletDeductions,
       },
     });
   } catch (error) {

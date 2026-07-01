@@ -3,6 +3,7 @@ const multer = require('multer');
 const XLSX = require('xlsx');
 const Vendor = require('../models/Vendor');
 const WalletTransaction = require('../models/WalletTransaction');
+const MonthlyWallet = require('../models/MonthlyWallet');
 const IncentiveUpload = require('../models/IncentiveUpload');
 const OtpToken = require('../models/OtpToken');
 const { protect, authorize } = require('../middleware/auth');
@@ -10,6 +11,8 @@ const { sendOtpEmail } = require('../config/email');
 const { sendIncentiveCreditNotification } = require('../config/sms');
 
 const router = express.Router();
+
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 const generateOtp = () => String(Math.floor(100000 + Math.random() * 900000));
 
@@ -24,17 +27,14 @@ const upload = multer({
 });
 
 // @route   POST /api/incentives/send-otp
-// @desc    Send OTP to EMAIL_USER before upload
 // @access  Branch, Admin
 router.post('/send-otp', protect, authorize('branch', 'admin'), async (req, res) => {
   try {
     const otp = generateOtp();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-    // Invalidate old OTPs
     await OtpToken.deleteMany({ user: req.user._id, purpose: 'upload', used: false });
 
-    // Save OTP first — always
     await OtpToken.create({
       user: req.user._id,
       email: process.env.EMAIL_USER,
@@ -43,7 +43,6 @@ router.post('/send-otp', protect, authorize('branch', 'admin'), async (req, res)
       expiresAt,
     });
 
-    // Try to send email — if fails, log OTP in dev mode
     let emailSent = false;
     try {
       await sendOtpEmail(process.env.EMAIL_USER, otp, 'upload');
@@ -58,7 +57,6 @@ router.post('/send-otp', protect, authorize('branch', 'admin'), async (req, res)
         ? `OTP sent to ${process.env.EMAIL_USER}`
         : `Email send failed. Check backend console for OTP (dev mode).`,
       email: process.env.EMAIL_USER,
-      // Only expose OTP in development if email failed
       ...(process.env.NODE_ENV === 'development' && !emailSent ? { devOtp: otp } : {}),
     });
   } catch (error) {
@@ -67,14 +65,27 @@ router.post('/send-otp', protect, authorize('branch', 'admin'), async (req, res)
 });
 
 // @route   POST /api/incentives/upload
-// @desc    Verify OTP then parse CSV/Excel and credit vendor wallets
+// @desc    Verify OTP then parse CSV/Excel and credit monthly vendor wallets
 // @access  Branch, Admin
+// Body fields: otp, frequency, month (1-12), year (e.g. 2025)
 router.post('/upload', protect, authorize('branch', 'admin'), upload.single('file'), async (req, res) => {
   try {
-    const { otp, frequency } = req.body;
+    const { otp, frequency, month, year } = req.body;
 
     if (!req.file) return res.status(400).json({ success: false, message: 'File is required' });
-    if (!otp) return res.status(400).json({ success: false, message: 'OTP is required' });
+    if (!otp)      return res.status(400).json({ success: false, message: 'OTP is required' });
+
+    // month/year required
+    const uploadMonth = parseInt(month);
+    const uploadYear  = parseInt(year);
+    if (!uploadMonth || uploadMonth < 1 || uploadMonth > 12) {
+      return res.status(400).json({ success: false, message: 'Valid month (1-12) is required' });
+    }
+    if (!uploadYear || uploadYear < 2020 || uploadYear > 2100) {
+      return res.status(400).json({ success: false, message: 'Valid year is required' });
+    }
+
+    const walletLabel = `${MONTH_NAMES[uploadMonth - 1]} ${uploadYear}`;
 
     // Verify OTP
     const otpRecord = await OtpToken.findOne({
@@ -84,12 +95,9 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
       used: false,
       expiresAt: { $gt: new Date() },
     });
-
     if (!otpRecord) {
       return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
     }
-
-    // Mark OTP used
     otpRecord.used = true;
     await otpRecord.save();
 
@@ -130,35 +138,48 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
           { accountNumber: { $regex: `-${partCode}$`, $options: 'i' } },
         ]
       });
-      if (!vendor) { results.failed.push({ partCode, reason: 'Vendor not found' }); continue; }
+      if (!vendor)                  { results.failed.push({ partCode, reason: 'Vendor not found' }); continue; }
       if (vendor.status === 'blocked') { results.failed.push({ partCode, reason: 'Vendor is blocked' }); continue; }
 
+      // ── Credit monthly sub-wallet ──────────────────────────────────────
+      const monthlyWallet = await MonthlyWallet.getOrCreate(vendor._id, uploadMonth, uploadYear);
+      const newMonthBalance = parseFloat((monthlyWallet.balance + amount).toFixed(2));
+      await MonthlyWallet.findByIdAndUpdate(monthlyWallet._id, {
+        balance: newMonthBalance,
+        $inc: { creditedAmount: amount },
+      });
+
+      // ── Credit main vendor wallet ──────────────────────────────────────
       const newBalance = parseFloat((vendor.walletBalance + amount).toFixed(2));
       await Vendor.findByIdAndUpdate(vendor._id, { walletBalance: newBalance });
+
+      // ── WalletTransaction record ───────────────────────────────────────
       await WalletTransaction.create({
         vendor: vendor._id,
         type: 'credit',
         amount,
         balanceAfter: newBalance,
-        description: remark || 'Incentive credited via upload',
+        description: remark || `Incentive credited — ${walletLabel}`,
         processedBy: req.user._id,
+        monthlyWallet: monthlyWallet._id,
+        walletLabel,
       });
 
-      // Send WhatsApp notification to vendor (non-blocking)
+      // Send WhatsApp (non-blocking)
       if (vendor.mobileNumber) {
         sendIncentiveCreditNotification(
           vendor.mobileNumber,
           vendor.companyName,
           amount,
-          remark || 'Incentive upload'
+          remark || `Incentive — ${walletLabel}`
         ).catch((err) => console.error(`[CREDIT NOTIFY FAILED] ${vendor.mobileNumber}: ${err.message}`));
       }
 
       totalAmount += amount;
-      results.success.push({ partCode, vendorId: vendor._id, vendorName: vendor.companyName, amount, newBalance });
+      results.success.push({ partCode, vendorId: vendor._id, vendorName: vendor.companyName, amount, newBalance, walletLabel });
     }
 
-    // Save history — admin has no division, use null
+    // Save upload history
     const divisionId = req.user.division?._id || req.user.division || null;
     await IncentiveUpload.create({
       division: divisionId,
@@ -166,6 +187,9 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
       fileName: req.file.originalname,
       totalAmount,
       frequency: frequency || 'monthly',
+      month: uploadMonth,
+      year: uploadYear,
+      walletLabel,
       status: 'processed',
       items: results.success.map((r) => ({ vendor: r.vendorId, amount: r.amount })),
     });
@@ -175,6 +199,7 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
       message: `${results.success.length} vendors credited, ${results.failed.length} failed`,
       data: {
         totalAmount,
+        walletLabel,
         successCount: results.success.length,
         failedCount: results.failed.length,
         successList: results.success,
@@ -202,6 +227,23 @@ router.get('/history', protect, async (req, res) => {
       .populate('division', 'name');
 
     res.status(200).json({ success: true, data: history });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   GET /api/incentives/monthly-wallets/:vendorId
+// @desc    Get all monthly sub-wallets for a vendor (for invoice redemption selector)
+// @access  Branch, Admin
+router.get('/monthly-wallets/:vendorId', protect, async (req, res) => {
+  try {
+    const wallets = await MonthlyWallet.find({
+      vendor: req.params.vendorId,
+    })
+      .sort({ year: -1, month: -1 })
+      .lean();
+
+    res.status(200).json({ success: true, data: wallets });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

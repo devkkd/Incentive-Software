@@ -42,6 +42,21 @@ const incentiveUploadSchema = new mongoose.Schema(
       enum: ['daily', 'weekly', 'monthly'],
       required: true,
     },
+    month: {
+      type: Number,
+      min: 1,
+      max: 12,
+      default: null,
+    },
+    year: {
+      type: Number,
+      default: null,
+    },
+    walletLabel: {
+      type: String,
+      trim: true,
+      default: null, // e.g. "May 2025"
+    },
     status: {
       type: String,
       enum: ['pending', 'processed', 'failed'],
