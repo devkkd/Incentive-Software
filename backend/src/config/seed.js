@@ -53,7 +53,7 @@ const seed = async () => {
     email: 'friends.ftc.it@gmail.com',
     password: 'Admin@1234',
     role: 'admin',
-    division: null,
+    division: null, 
   });
 
   // Create branch user for HO (JOH)
