@@ -166,18 +166,70 @@ export default function BranchDashboard() {
   };
 
   // Computed: total allocated in splits
-  const totalSplitAmount = redemptionSplits.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+  const totalSplitAmount = useMemo(
+    () => parseFloat(redemptionSplits.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0).toFixed(2)),
+    [redemptionSplits]
+  );
 
-  // Add or update a split for a monthly wallet
+  // Add or update a split for a monthly wallet, then auto-sync redeemAmount
   const handleSplitChange = (walletId, label, available, value) => {
     const amt = parseFloat(value) || 0;
     setRedemptionSplits(prev => {
+      let updated;
       const existing = prev.find(r => r.monthlyWalletId === walletId);
-      if (amt <= 0) return prev.filter(r => r.monthlyWalletId !== walletId);
-      if (existing) return prev.map(r => r.monthlyWalletId === walletId ? { ...r, amount: amt } : r);
-      return [...prev, { monthlyWalletId: walletId, label, available, amount: amt }];
+      if (amt <= 0) {
+        updated = prev.filter(r => r.monthlyWalletId !== walletId);
+      } else if (existing) {
+        updated = prev.map(r => r.monthlyWalletId === walletId ? { ...r, amount: amt } : r);
+      } else {
+        updated = [...prev, { monthlyWalletId: walletId, label, available, amount: amt }];
+      }
+      // Auto-sync total redeem amount from splits
+      const newTotal = parseFloat(updated.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0).toFixed(2));
+      setRedeemAmount(newTotal > 0 ? String(newTotal) : '');
+      setOtpSent(false);
+      setOtpVerified(false);
+      return updated;
     });
     setWalletSelectError('');
+    setRedeemError('');
+  };
+
+  // "Use Full" — fill entire available balance of a wallet into its split
+  const handleUseFullWallet = (mw) => {
+    if (mw.balance <= 0) return;
+    handleSplitChange(mw._id, mw.label, mw.balance, String(mw.balance));
+  };
+
+  // "Use All Wallets" — fill all non-zero wallets to max, capped at invoice amount if set
+  const handleUseAllWallets = () => {
+    const cap = invoiceAmt > 0 ? invoiceAmt : Infinity;
+    let remaining = cap;
+    const splits = [];
+    const sorted = [...monthlyWallets].sort((a, b) => a.year !== b.year ? a.year - b.year : a.month - b.month);
+    for (const mw of sorted) {
+      if (mw.balance <= 0 || remaining <= 0) continue;
+      const use = parseFloat(Math.min(mw.balance, remaining).toFixed(2));
+      splits.push({ monthlyWalletId: mw._id, label: mw.label, available: mw.balance, amount: use });
+      remaining = parseFloat((remaining - use).toFixed(2));
+    }
+    setRedemptionSplits(splits);
+    const newTotal = parseFloat(splits.reduce((s, r) => s + r.amount, 0).toFixed(2));
+    setRedeemAmount(newTotal > 0 ? String(newTotal) : '');
+    setOtpSent(false);
+    setOtpVerified(false);
+    setWalletSelectError('');
+    setRedeemError('');
+  };
+
+  // Clear all splits
+  const handleClearSplits = () => {
+    setRedemptionSplits([]);
+    setRedeemAmount('');
+    setOtpSent(false);
+    setOtpVerified(false);
+    setWalletSelectError('');
+    setRedeemError('');
   };
 
   // --- Invoice creation moved to handleSubmit ---
@@ -186,14 +238,19 @@ export default function BranchDashboard() {
   const handleSendOTP = async () => {
     setRedeemError('');
     setInvoiceError('');
-    if (!redeemAmount || redeemAmt <= 0) { setRedeemError('Please enter a valid amount'); return; }
+    // If splits are selected, auto-sync redeemAmount from splits
+    if (redemptionSplits.length > 0 && totalSplitAmount > 0 && redeemAmt !== totalSplitAmount) {
+      setRedeemAmount(String(totalSplitAmount));
+    }
+    const effectiveRedeem = redemptionSplits.length > 0 ? totalSplitAmount : redeemAmt;
+    if (!effectiveRedeem || effectiveRedeem <= 0) { setRedeemError('Please select wallet(s) or enter a valid amount'); return; }
     if (!invoiceAmt || invoiceAmt <= 0) { setRedeemError('Enter invoice amount before redeeming wallet'); return; }
     if (!isValidInvoiceNumber(invoiceForm.number)) {
       setInvoiceError('Invoice number must be in format 1/RS/26001200 or 5/CSI/15001623');
       return;
     }
-    if (exceedsInvoiceAmount) { setRedeemError('Wallet redemption amount cannot exceed invoice amount'); return; }
-    if (isInsufficientBalance) return;
+    if (effectiveRedeem > invoiceAmt) { setRedeemError('Wallet redemption amount cannot exceed invoice amount'); return; }
+    if (effectiveRedeem > walletBalance) return;
 
     setSubmitLoading(true);
     try {
@@ -201,7 +258,7 @@ export default function BranchDashboard() {
         method: 'POST',
         headers: authHeaders(),
         credentials: 'include',
-        body: JSON.stringify({ vendorId: selectedVendor._id, redeemAmount: redeemAmt, invoiceAmount: invoiceAmt }),
+        body: JSON.stringify({ vendorId: selectedVendor._id, redeemAmount: effectiveRedeem, invoiceAmount: invoiceAmt }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -429,6 +486,8 @@ export default function BranchDashboard() {
     setWalletSelectError('');
     if (cooldownRef.current) clearInterval(cooldownRef.current);
     setInvoiceForm({ date: '', number: '', amount: '', location: '', remark: '' });
+    // Refresh monthly wallets to show updated balances
+    if (selectedVendor) fetchMonthlyWallets(selectedVendor._id);
   };
 
   return (
@@ -662,30 +721,80 @@ export default function BranchDashboard() {
                   {/* ── Monthly Sub-Wallet Selector ───────────────────────── */}
                   {monthlyWallets.length > 0 && (
                     <div className="mb-5">
-                      <p className="text-[13px] font-semibold text-gray-700 mb-2">
-                        Select Month Wallet(s) to Redeem From
-                      </p>
-                      <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                      <div className="flex items-center justify-between mb-2.5">
+                        <p className="text-[13px] font-semibold text-gray-700">
+                          Incentive Wallets
+                          <span className="ml-1.5 text-[11px] font-normal text-gray-400">
+                            ({monthlyWallets.filter(w => w.balance > 0).length} with balance)
+                          </span>
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleUseAllWallets}
+                            disabled={!monthlyWallets.some(w => w.balance > 0)}
+                            className="text-[11px] font-semibold text-[#2B3B8A] bg-[#EEF2FF] hover:bg-[#E0E7FF] border border-[#2B3B8A]/20 px-2.5 py-1 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            Use All →
+                          </button>
+                          {redemptionSplits.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={handleClearSplits}
+                              className="text-[11px] font-semibold text-gray-500 hover:text-red-500 bg-gray-100 hover:bg-red-50 border border-gray-200 hover:border-red-200 px-2.5 py-1 rounded-lg transition-colors"
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
                         {monthlyWallets.map((mw) => {
                           const split = redemptionSplits.find(r => r.monthlyWalletId === mw._id);
-                          const splitAmt = split?.amount || '';
+                          const splitAmt = split?.amount ?? '';
                           const isZero = mw.balance <= 0;
+                          const isSelected = !!split && parseFloat(split.amount) > 0;
                           return (
                             <div key={mw._id}
-                              className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${
-                                isZero ? 'bg-gray-50 border-gray-100 opacity-50' : 'bg-white border-gray-200'
+                              className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
+                                isZero
+                                  ? 'bg-gray-50 border-gray-100 opacity-40'
+                                  : isSelected
+                                    ? 'bg-[#EEF2FF] border-[#2B3B8A]/30 shadow-sm'
+                                    : 'bg-white border-gray-200 hover:border-gray-300'
                               }`}>
+                              {/* Checkbox indicator */}
+                              <div className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${
+                                isSelected ? 'bg-[#2B3B8A] border-[#2B3B8A]' : 'border-gray-300'
+                              }`}>
+                                {isSelected && (
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" className="w-2.5 h-2.5">
+                                    <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                                  </svg>
+                                )}
+                              </div>
                               {/* Month label + available */}
                               <div className="flex-1 min-w-0">
-                                <p className={`text-[13px] font-semibold ${isZero ? 'text-gray-400' : 'text-gray-800'}`}>
+                                <p className={`text-[13px] font-semibold leading-tight ${isZero ? 'text-gray-400' : isSelected ? 'text-[#2B3B8A]' : 'text-gray-800'}`}>
                                   {mw.label}
                                 </p>
-                                <p className={`text-[11px] font-medium ${isZero ? 'text-gray-300' : 'text-[#2ECC71]'}`}>
+                                <p className={`text-[11px] font-medium ${isZero ? 'text-gray-300' : 'text-[#16a34a]'}`}>
                                   Available: ₹{Number(mw.balance).toFixed(2)}
                                 </p>
                               </div>
-                              {/* Amount input — disabled if zero */}
-                              <div className="w-[110px] shrink-0">
+                              {/* "Use Full" quick-fill button */}
+                              {!isZero && !isSelected && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUseFullWallet(mw)}
+                                  className="text-[10px] font-semibold text-gray-500 hover:text-[#2B3B8A] bg-gray-100 hover:bg-[#EEF2FF] px-2 py-1 rounded-md transition-colors whitespace-nowrap shrink-0"
+                                >
+                                  Use Full
+                                </button>
+                              )}
+                              {/* Amount input */}
+                              <div className="w-[100px] shrink-0">
                                 <input
                                   type="number"
                                   disabled={isZero}
@@ -695,12 +804,14 @@ export default function BranchDashboard() {
                                   min="0"
                                   max={mw.balance}
                                   step="0.01"
-                                  className={`w-full px-3 py-2 rounded-lg border text-sm text-right focus:outline-none focus:ring-1 focus:ring-[#2B3B8A] transition-colors ${
+                                  className={`w-full px-3 py-1.5 rounded-lg border text-sm text-right focus:outline-none focus:ring-1 transition-colors ${
                                     isZero
                                       ? 'bg-gray-100 border-gray-100 text-gray-300 cursor-not-allowed'
                                       : parseFloat(splitAmt) > mw.balance
-                                        ? 'border-red-400 bg-red-50'
-                                        : 'border-gray-200'
+                                        ? 'border-red-400 bg-red-50 focus:ring-red-400'
+                                        : isSelected
+                                          ? 'border-[#2B3B8A]/40 bg-white focus:ring-[#2B3B8A]'
+                                          : 'border-gray-200 focus:ring-[#2B3B8A]'
                                   }`}
                                 />
                               </div>
@@ -708,15 +819,16 @@ export default function BranchDashboard() {
                           );
                         })}
                       </div>
-                      {/* Split total vs redeem amount indicator */}
+
+                      {/* Split summary bar */}
                       {redemptionSplits.length > 0 && (
-                        <div className={`mt-2 px-3 py-2 rounded-lg text-[12px] font-medium flex items-center justify-between ${
-                          Math.abs(totalSplitAmount - redeemAmt) < 0.01
-                            ? 'bg-[#E4F8ED] text-[#16a34a]'
-                            : 'bg-[#FEF9C3] text-[#B45309]'
+                        <div className={`mt-2.5 px-3 py-2 rounded-lg text-[12px] font-semibold flex items-center justify-between ${
+                          invoiceAmt > 0 && totalSplitAmount > invoiceAmt
+                            ? 'bg-[#FDEDEC] text-[#E74C3C]'
+                            : 'bg-[#EEF2FF] text-[#2B3B8A]'
                         }`}>
-                          <span>Split total</span>
-                          <span>₹{totalSplitAmount.toFixed(2)} {redeemAmt > 0 && `/ ₹${redeemAmt.toFixed(2)}`}</span>
+                          <span>{redemptionSplits.length} wallet{redemptionSplits.length > 1 ? 's' : ''} selected</span>
+                          <span className="font-mono">Total: ₹{totalSplitAmount.toFixed(2)}</span>
                         </div>
                       )}
                       {walletSelectError && (
@@ -733,7 +845,12 @@ export default function BranchDashboard() {
 
                   <div className="space-y-1.5 mb-6">
                     <div className="flex items-center justify-between">
-                      <label className="text-[13px] font-medium text-gray-800">Total Redeem Amount (₹)</label>
+                      <label className="text-[13px] font-medium text-gray-800">
+                        Total Redeem Amount (₹)
+                        {redemptionSplits.length > 0 && (
+                          <span className="ml-1.5 text-[11px] font-normal text-[#2B3B8A]">(auto from wallets)</span>
+                        )}
+                      </label>
                       {/* OTP attempt counter — dots */}
                       {otpCount > 0 && !isOtpBlocked && (
                         <div className="flex items-center gap-1.5">
@@ -756,15 +873,21 @@ export default function BranchDashboard() {
                         type="number"
                         value={redeemAmount}
                         onChange={(e) => {
+                          if (redemptionSplits.length > 0) return; // auto-mode: ignore manual changes
                           setRedeemAmount(e.target.value);
                           setRedeemError('');
                           setOtpSent(false);
                           setOtpVerified(false);
                         }}
-                        placeholder="5680.00"
+                        readOnly={redemptionSplits.length > 0}
+                        placeholder={redemptionSplits.length > 0 ? 'Auto from wallets above' : '5680.00'}
                         disabled={isOtpBlocked}
                         className={`flex-1 px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-1 transition-colors ${
-                          isInsufficientBalance ? 'border-red-400 focus:ring-red-400' : 'border-gray-200 focus:ring-[#2B3B8A]'
+                          isInsufficientBalance
+                            ? 'border-red-400 focus:ring-red-400'
+                            : redemptionSplits.length > 0
+                              ? 'border-[#2B3B8A]/30 bg-[#EEF2FF] text-[#2B3B8A] font-semibold focus:ring-[#2B3B8A]'
+                              : 'border-gray-200 focus:ring-[#2B3B8A]'
                         } ${isOtpBlocked ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
                       />
                       <button
