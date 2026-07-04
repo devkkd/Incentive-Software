@@ -233,17 +233,193 @@ router.get('/history', protect, async (req, res) => {
 });
 
 // @route   GET /api/incentives/monthly-wallets/:vendorId
-// @desc    Get all monthly sub-wallets for a vendor (for invoice redemption selector)
+// @desc    Get all monthly sub-wallets for a vendor.
+//          If a MonthlyWallet document exists → return it as-is.
+//          If IncentiveUpload has items for this vendor but MonthlyWallet is
+//          missing → auto-create the MonthlyWallet document now (on first fetch)
+//          so it shows up immediately without any manual admin action.
 // @access  Branch, Admin
 router.get('/monthly-wallets/:vendorId', protect, async (req, res) => {
   try {
-    const wallets = await MonthlyWallet.find({
-      vendor: req.params.vendorId,
-    })
+    const vendorId = req.params.vendorId;
+
+    // 1. Fetch all existing MonthlyWallet docs for this vendor
+    const existingWallets = await MonthlyWallet.find({ vendor: vendorId })
       .sort({ year: -1, month: -1 })
       .lean();
 
-    res.status(200).json({ success: true, data: wallets });
+    // Build a set of month+year combos already covered
+    const covered = new Set(existingWallets.map(w => `${w.year}-${w.month}`));
+
+    // 2. Find all IncentiveUpload records that contain this vendor in items
+    const uploads = await IncentiveUpload.find({ 'items.vendor': vendorId }).lean();
+
+    const newlyCreated = [];
+
+    for (const upload of uploads) {
+      // Derive month/year from upload fields, fallback to createdAt
+      const month = upload.month || (new Date(upload.createdAt).getMonth() + 1);
+      const year  = upload.year  || new Date(upload.createdAt).getFullYear();
+      const key   = `${year}-${month}`;
+
+      if (covered.has(key)) continue; // wallet already exists for this month
+
+      // Find this vendor's amount in the upload items
+      const item = upload.items.find(i => String(i.vendor) === String(vendorId));
+      if (!item || !item.amount) continue;
+
+      const label = upload.walletLabel || `${MONTH_NAMES[month - 1]} ${year}`;
+
+      // Auto-create MonthlyWallet — no vendor balance change, no transaction
+      const created = await MonthlyWallet.create({
+        vendor: vendorId,
+        month,
+        year,
+        label,
+        creditedAmount: item.amount,
+        balance: item.amount,
+      });
+
+      // Also patch the IncentiveUpload with month/year/label if missing
+      if (!upload.month || !upload.year) {
+        await IncentiveUpload.findByIdAndUpdate(upload._id, { month, year, walletLabel: label });
+      }
+
+      covered.add(key);
+      newlyCreated.push(created.toObject());
+    }
+
+    // 3. Re-fetch all wallets (including newly created ones) sorted newest first
+    const allWallets = await MonthlyWallet.find({ vendor: vendorId })
+      .sort({ year: -1, month: -1 })
+      .lean();
+
+    res.status(200).json({ success: true, data: allWallets });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @route   GET /api/incentives/uploads-without-wallets
+// @desc    Returns all IncentiveUpload records that have items but no
+//          corresponding MonthlyWallet documents — read-only, no data change
+// @access  Admin only
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/uploads-without-wallets', protect, authorize('admin'), async (req, res) => {
+  try {
+    // All uploads that have items
+    const uploads = await IncentiveUpload.find({ 'items.0': { $exists: true } })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const result = [];
+
+    for (const upload of uploads) {
+      // For each upload, check if any vendor in items is missing a MonthlyWallet
+      // Use upload.month/year if set, otherwise use createdAt month/year
+      const month = upload.month || (new Date(upload.createdAt).getMonth() + 1);
+      const year  = upload.year  || new Date(upload.createdAt).getFullYear();
+      const label = upload.walletLabel || `${MONTH_NAMES[month - 1]} ${year}`;
+
+      const vendorIds = upload.items.map(i => i.vendor);
+      const existingWallets = await MonthlyWallet.find({
+        vendor: { $in: vendorIds },
+        month,
+        year,
+      }).select('vendor').lean();
+
+      const existingVendorIds = new Set(existingWallets.map(w => String(w.vendor)));
+      const missingCount = vendorIds.filter(id => !existingVendorIds.has(String(id))).length;
+
+      result.push({
+        _id: upload._id,
+        fileName: upload.fileName,
+        createdAt: upload.createdAt,
+        month,
+        year,
+        label,
+        totalVendors: vendorIds.length,
+        walletsExist: existingWallets.length,
+        walletsMissing: missingCount,
+        totalAmount: upload.totalAmount,
+        walletLabelStored: upload.walletLabel || null,
+      });
+    }
+
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @route   POST /api/incentives/create-wallets-from-upload/:uploadId
+// @desc    Takes an existing IncentiveUpload record and creates MonthlyWallet
+//          documents for each item that doesn't already have one.
+//          Does NOT touch vendor.walletBalance or WalletTransaction records.
+//          Body: { month, year }  — override month/year if upload has null
+// @access  Admin only
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/create-wallets-from-upload/:uploadId', protect, authorize('admin'), async (req, res) => {
+  try {
+    const uploadRecord = await IncentiveUpload.findById(req.params.uploadId).lean();
+    if (!uploadRecord) {
+      return res.status(404).json({ success: false, message: 'Upload record not found' });
+    }
+
+    // Determine month/year — from body override, then from upload, then from createdAt
+    const month = parseInt(req.body.month) || uploadRecord.month || (new Date(uploadRecord.createdAt).getMonth() + 1);
+    const year  = parseInt(req.body.year)  || uploadRecord.year  || new Date(uploadRecord.createdAt).getFullYear();
+
+    if (!month || month < 1 || month > 12) {
+      return res.status(400).json({ success: false, message: 'Valid month required (1-12)' });
+    }
+    if (!year || year < 2020 || year > 2100) {
+      return res.status(400).json({ success: false, message: 'Valid year required' });
+    }
+
+    const walletLabel = `${MONTH_NAMES[month - 1]} ${year}`;
+    let created = 0;
+    let skipped = 0;
+    const details = [];
+
+    for (const item of uploadRecord.items) {
+      const vendorId = item.vendor;
+      const amount   = item.amount;
+
+      // Check if wallet already exists — skip if yes
+      const existing = await MonthlyWallet.findOne({ vendor: vendorId, month, year });
+      if (existing) {
+        skipped++;
+        details.push({ vendorId, status: 'skipped', reason: `${walletLabel} wallet already exists (balance: ₹${existing.balance})` });
+        continue;
+      }
+
+      // Create MonthlyWallet ONLY — no vendor balance, no transaction
+      await MonthlyWallet.create({
+        vendor: vendorId,
+        month,
+        year,
+        label: walletLabel,
+        creditedAmount: amount,
+        balance: amount,
+      });
+
+      created++;
+      details.push({ vendorId, status: 'created', amount, walletLabel });
+    }
+
+    // Also patch the upload record's month/year/label if they were null
+    if (!uploadRecord.month || !uploadRecord.year) {
+      await IncentiveUpload.findByIdAndUpdate(uploadRecord._id, { month, year, walletLabel });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `${created} wallets created, ${skipped} already existed`,
+      data: { walletLabel, created, skipped, total: uploadRecord.items.length, details },
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

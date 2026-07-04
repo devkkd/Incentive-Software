@@ -82,19 +82,23 @@ router.get('/', protect, async (req, res) => {
         .populate('division', 'name location')
         .lean();
 
-      // Attach redemption amount from linked wallet debit transaction
+      // Attach redemption amount from linked wallet debit transactions (sum for split redemptions)
       const invoiceIds = invoices.map(inv => inv._id);
       const redemptions = await WalletTransaction.find({
         invoice: { $in: invoiceIds },
         type: 'debit',
       }).select('invoice amount').lean();
 
+      // Sum all debit transactions per invoice (handles split multi-wallet redemptions)
       const redemptionMap = {};
-      redemptions.forEach(r => { redemptionMap[String(r.invoice)] = r.amount; });
+      redemptions.forEach(r => {
+        const key = String(r.invoice);
+        redemptionMap[key] = (redemptionMap[key] || 0) + (r.amount || 0);
+      });
 
       data = invoices.map(inv => ({
         ...inv,
-        redeemAmount: redemptionMap[String(inv._id)] || 0,
+        redeemAmount: parseFloat((redemptionMap[String(inv._id)] || 0).toFixed(2)),
       }));
     }
 

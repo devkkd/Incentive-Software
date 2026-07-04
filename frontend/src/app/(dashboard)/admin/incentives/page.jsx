@@ -22,6 +22,150 @@ const downloadTemplate = () => {
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
+// ── Fix Missing Wallets Panel — reads existing uploads, creates MonthlyWallet docs only ──
+function FixMissingWalletsPanel({ API, authHeaders }) {
+  const [loading, setLoading] = useState(false);
+  const [uploads, setUploads] = useState(null);
+  const [fixing, setFixing] = useState(null); // uploadId being fixed
+  const [fixResults, setFixResults] = useState({}); // { [uploadId]: result }
+  const [error, setError] = useState('');
+
+  const loadUploads = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`${API}/api/incentives/uploads-without-wallets`, {
+        headers: authHeaders(), credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.message || 'Failed to load'); return; }
+      setUploads(data.data);
+    } catch (err) {
+      setError('Server error: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFix = async (uploadId, month, year) => {
+    setFixing(uploadId);
+    try {
+      const res = await fetch(`${API}/api/incentives/create-wallets-from-upload/${uploadId}`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ month, year }),
+      });
+      const data = await res.json();
+      setFixResults(prev => ({ ...prev, [uploadId]: data }));
+      // Refresh list
+      loadUploads();
+    } catch (err) {
+      setFixResults(prev => ({ ...prev, [uploadId]: { success: false, message: err.message } }));
+    } finally {
+      setFixing(null);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-orange-100 p-6 md:p-8">
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <h2 className="text-[16px] font-bold text-gray-900 flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-orange-500">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0zm-9 3.75h.008v.008H12v-.008z" />
+            </svg>
+            Fix Missing Monthly Wallets
+          </h2>
+          <p className="text-[13px] text-gray-500 mt-1">
+            Agar kisi purane upload ka monthly wallet nahi bana — yahan se directly fix karo. Koi vendor balance ya transaction change nahi hoga.
+          </p>
+        </div>
+        <button
+          onClick={loadUploads}
+          disabled={loading}
+          className="shrink-0 flex items-center gap-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white font-semibold px-4 py-2.5 rounded-xl text-[13px] transition-colors"
+        >
+          {loading ? (
+            <>
+              <svg className="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+              </svg>
+              Loading...
+            </>
+          ) : 'Check Uploads →'}
+        </button>
+      </div>
+
+      {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-[13px] text-red-600 mb-4">{error}</div>}
+
+      {uploads && (
+        <div className="space-y-3">
+          {uploads.length === 0 && (
+            <div className="p-4 bg-[#E4F8ED] border border-green-200 rounded-xl text-[13px] text-green-800 font-medium">
+              ✓ Sab uploads ke monthly wallets already exist hain — kuch fix karne ki zaroorat nahi
+            </div>
+          )}
+          {uploads.map((u) => {
+            const fixResult = fixResults[u._id];
+            const allFixed = u.walletsMissing === 0;
+            return (
+              <div key={u._id} className={`p-4 rounded-xl border text-[13px] ${allFixed ? 'bg-[#F0FDF4] border-green-200' : 'bg-orange-50 border-orange-200'}`}>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-gray-900 truncate">{u.fileName}</span>
+                      <span className="inline-flex items-center bg-[#EEF2FF] text-[#2B3B8A] text-[11px] font-bold px-2 py-0.5 rounded-lg">
+                        {u.label}
+                      </span>
+                      <span className="text-gray-400 text-[11px]">{new Date(u.createdAt).toLocaleDateString('en-IN')}</span>
+                    </div>
+                    <div className="flex items-center gap-4 mt-1">
+                      <span className="text-gray-500">Total: <b className="text-gray-800">{u.totalVendors} parties</b></span>
+                      {allFixed ? (
+                        <span className="text-[#16a34a] font-semibold">✓ All {u.walletsExist} wallets exist</span>
+                      ) : (
+                        <span className="text-orange-700 font-semibold">{u.walletsMissing} wallets missing</span>
+                      )}
+                    </div>
+                  </div>
+                  {!allFixed && (
+                    <button
+                      onClick={() => handleFix(u._id, u.month, u.year)}
+                      disabled={fixing === u._id}
+                      className="shrink-0 flex items-center gap-1.5 bg-[#2B3B8A] hover:bg-[#1a2d6b] disabled:opacity-50 text-white font-semibold px-4 py-2 rounded-xl text-[12px] transition-colors whitespace-nowrap"
+                    >
+                      {fixing === u._id ? (
+                        <>
+                          <svg className="animate-spin w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                          </svg>
+                          Fixing...
+                        </>
+                      ) : `Create ${u.walletsMissing} Wallets →`}
+                    </button>
+                  )}
+                </div>
+                {/* Fix result */}
+                {fixResult && (
+                  <div className={`mt-3 p-3 rounded-lg text-[12px] font-medium ${fixResult.success ? 'bg-[#E4F8ED] text-green-800' : 'bg-red-50 text-red-700'}`}>
+                    {fixResult.message}
+                    {fixResult.success && fixResult.data && (
+                      <span className="ml-2 text-gray-600">({fixResult.data.created} created, {fixResult.data.skipped} already existed)</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminIncentivesPage() {
   const [uploadState, setUploadState] = useState('idle'); // idle | otp | success | error
   const [selectedFile, setSelectedFile] = useState(null);
@@ -420,6 +564,10 @@ export default function AdminIncentivesPage() {
           </table>
         </div>
       </div>
+
+      {/* ── Fix Missing Wallets Panel ─────────────────────────────── */}
+      <FixMissingWalletsPanel API={API} authHeaders={authHeaders} />
+
     </div>
   );
 }
