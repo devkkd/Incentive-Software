@@ -719,7 +719,7 @@ export default function BranchDashboard() {
                   <h3 className="text-xl font-bold text-gray-900 mb-2">Incentives Wallet Redemption</h3>
 
                   {/* ── Monthly Sub-Wallet Selector ───────────────────────── */}
-                  {monthlyWallets.length > 0 && (
+                  {monthlyWallets.filter(mw => mw.balance > 0).length > 0 && (
                     <div className="mb-5">
                       <div className="flex items-center justify-between mb-2.5">
                         <p className="text-[13px] font-semibold text-gray-700">
@@ -750,17 +750,14 @@ export default function BranchDashboard() {
                       </div>
 
                       <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
-                        {monthlyWallets.map((mw) => {
+                        {monthlyWallets.filter(mw => mw.balance > 0).map((mw) => {
                           const split = redemptionSplits.find(r => r.monthlyWalletId === mw._id);
                           const splitAmt = split?.amount ?? '';
-                          const isZero = mw.balance <= 0;
                           const isSelected = !!split && parseFloat(split.amount) > 0;
                           return (
                             <div key={mw._id}
                               className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
-                                isZero
-                                  ? 'bg-gray-50 border-gray-100 opacity-40'
-                                  : isSelected
+                                isSelected
                                     ? 'bg-[#EEF2FF] border-[#2B3B8A]/30 shadow-sm'
                                     : 'bg-white border-gray-200 hover:border-gray-300'
                               }`}>
@@ -776,15 +773,15 @@ export default function BranchDashboard() {
                               </div>
                               {/* Month label + available */}
                               <div className="flex-1 min-w-0">
-                                <p className={`text-[13px] font-semibold leading-tight ${isZero ? 'text-gray-400' : isSelected ? 'text-[#2B3B8A]' : 'text-gray-800'}`}>
+                                <p className={`text-[13px] font-semibold leading-tight ${isSelected ? 'text-[#2B3B8A]' : 'text-gray-800'}`}>
                                   {mw.label}
                                 </p>
-                                <p className={`text-[11px] font-medium ${isZero ? 'text-gray-300' : 'text-[#16a34a]'}`}>
+                                <p className="text-[11px] font-medium text-[#16a34a]">
                                   Available: ₹{Number(mw.balance).toFixed(2)}
                                 </p>
                               </div>
                               {/* "Use Full" quick-fill button */}
-                              {!isZero && !isSelected && (
+                              {!isSelected && (
                                 <button
                                   type="button"
                                   onClick={() => handleUseFullWallet(mw)}
@@ -797,7 +794,6 @@ export default function BranchDashboard() {
                               <div className="w-[100px] shrink-0">
                                 <input
                                   type="number"
-                                  disabled={isZero}
                                   value={splitAmt}
                                   onChange={(e) => handleSplitChange(mw._id, mw.label, mw.balance, e.target.value)}
                                   placeholder="0.00"
@@ -805,13 +801,11 @@ export default function BranchDashboard() {
                                   max={mw.balance}
                                   step="0.01"
                                   className={`w-full px-3 py-1.5 rounded-lg border text-sm text-right focus:outline-none focus:ring-1 transition-colors ${
-                                    isZero
-                                      ? 'bg-gray-100 border-gray-100 text-gray-300 cursor-not-allowed'
-                                      : parseFloat(splitAmt) > mw.balance
-                                        ? 'border-red-400 bg-red-50 focus:ring-red-400'
-                                        : isSelected
-                                          ? 'border-[#2B3B8A]/40 bg-white focus:ring-[#2B3B8A]'
-                                          : 'border-gray-200 focus:ring-[#2B3B8A]'
+                                    parseFloat(splitAmt) > mw.balance
+                                      ? 'border-red-400 bg-red-50 focus:ring-red-400'
+                                      : isSelected
+                                        ? 'border-[#2B3B8A]/40 bg-white focus:ring-[#2B3B8A]'
+                                        : 'border-gray-200 focus:ring-[#2B3B8A]'
                                   }`}
                                 />
                               </div>
@@ -837,7 +831,7 @@ export default function BranchDashboard() {
                     </div>
                   )}
 
-                  {monthlyWallets.length === 0 && (
+                  {monthlyWallets.filter(mw => mw.balance > 0).length === 0 && (
                     <div className="mb-5 p-3 bg-[#FEF9C3] border border-yellow-200 rounded-xl">
                       <p className="text-[12px] text-yellow-700 font-medium">No incentive months found. Upload incentives first.</p>
                     </div>

@@ -30,6 +30,10 @@ function FixMissingWalletsPanel({ API, authHeaders }) {
   const [fixResults, setFixResults] = useState({}); // { [uploadId]: result }
   const [error, setError] = useState('');
 
+  // Sync state
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState(null);
+
   const loadUploads = async () => {
     setLoading(true);
     setError('');

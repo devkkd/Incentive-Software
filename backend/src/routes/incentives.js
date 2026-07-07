@@ -243,6 +243,13 @@ router.get('/monthly-wallets/:vendorId', protect, async (req, res) => {
   try {
     const vendorId = req.params.vendorId;
 
+    // 0. Check vendor's main wallet balance first.
+    //    If it's 0 (fully redeemed), there's nothing to redeem — return empty immediately.
+    const vendorCheck = await Vendor.findById(vendorId).select('walletBalance').lean();
+    if (!vendorCheck || parseFloat(vendorCheck.walletBalance || 0) <= 0) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
     // 1. Fetch all existing MonthlyWallet docs for this vendor
     const existingWallets = await MonthlyWallet.find({ vendor: vendorId })
       .sort({ year: -1, month: -1 })
@@ -270,14 +277,26 @@ router.get('/monthly-wallets/:vendorId', protect, async (req, res) => {
 
       const label = upload.walletLabel || `${MONTH_NAMES[month - 1]} ${year}`;
 
+      // Fetch current vendor balance to set correct sub-wallet balance
+      // For old uploads: the vendor's walletBalance IS the remaining balance
+      // creditedAmount = what was originally uploaded, balance = what's left now
+      const vendor = await Vendor.findById(vendorId).select('walletBalance').lean();
+      const currentVendorBalance = vendor ? parseFloat((vendor.walletBalance || 0).toFixed(2)) : 0;
+
       // Auto-create MonthlyWallet — no vendor balance change, no transaction
+      // Only create if the credited amount would result in a positive balance
+      if (currentVendorBalance <= 0) {
+        covered.add(key); // mark as handled — don't show a zero-balance wallet
+        continue;
+      }
+
       const created = await MonthlyWallet.create({
         vendor: vendorId,
         month,
         year,
         label,
         creditedAmount: item.amount,
-        balance: item.amount,
+        balance: Math.min(item.amount, currentVendorBalance), // cap at vendor's remaining balance
       });
 
       // Also patch the IncentiveUpload with month/year/label if missing
@@ -289,10 +308,26 @@ router.get('/monthly-wallets/:vendorId', protect, async (req, res) => {
       newlyCreated.push(created.toObject());
     }
 
-    // 3. Re-fetch all wallets (including newly created ones) sorted newest first
-    const allWallets = await MonthlyWallet.find({ vendor: vendorId })
-      .sort({ year: -1, month: -1 })
+    // 3. Re-fetch all wallets (including newly created ones)
+    //    Only return wallets with balance > 0 — zero balance wallets are hidden.
+    //    Also cap sub-wallet balances so their total never exceeds vendor.walletBalance
+    //    (handles legacy data where sub-wallets weren't decremented on redemption).
+    const mainBalance = parseFloat((vendorCheck.walletBalance || 0).toFixed(2));
+    const rawWallets = await MonthlyWallet.find({ vendor: vendorId, balance: { $gt: 0 } })
+      .sort({ year: 1, month: 1 }) // oldest first for FIFO cap
       .lean();
+
+    let remaining = mainBalance;
+    const allWallets = [];
+    for (const mw of rawWallets) {
+      if (remaining <= 0) break;
+      const cappedBalance = parseFloat(Math.min(mw.balance, remaining).toFixed(2));
+      allWallets.push({ ...mw, balance: cappedBalance });
+      remaining = parseFloat((remaining - cappedBalance).toFixed(2));
+    }
+
+    // Sort newest first for display
+    allWallets.sort((a, b) => b.year !== a.year ? b.year - a.year : b.month - a.month);
 
     res.status(200).json({ success: true, data: allWallets });
   } catch (error) {
@@ -419,6 +454,66 @@ router.post('/create-wallets-from-upload/:uploadId', protect, authorize('admin')
       success: true,
       message: `${created} wallets created, ${skipped} already existed`,
       data: { walletLabel, created, skipped, total: uploadRecord.items.length, details },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @route   POST /api/incentives/sync-wallet-balances
+// @desc    Admin utility — for each vendor's MonthlyWallet documents, if the
+//          total MonthlyWallet balances exceed vendor.walletBalance (meaning
+//          vendor already redeemed but sub-wallet wasn't deducted), cap the
+//          sub-wallet balances proportionally to match vendor.walletBalance.
+//          Safe to run multiple times. No WalletTransaction created.
+// @access  Admin only
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/sync-wallet-balances', protect, authorize('admin'), async (req, res) => {
+  try {
+    // Get all vendors who have MonthlyWallet documents
+    const walletVendorIds = await MonthlyWallet.distinct('vendor');
+    let fixed = 0;
+    let ok = 0;
+    const details = [];
+
+    for (const vendorId of walletVendorIds) {
+      const vendor = await Vendor.findById(vendorId).select('walletBalance companyName').lean();
+      if (!vendor) continue;
+
+      const actualBalance = parseFloat((vendor.walletBalance || 0).toFixed(2));
+      const subWallets = await MonthlyWallet.find({ vendor: vendorId, balance: { $gt: 0 } })
+        .sort({ year: 1, month: 1 }).lean();
+
+      const subTotal = parseFloat(subWallets.reduce((s, w) => s + w.balance, 0).toFixed(2));
+
+      if (subTotal <= actualBalance) {
+        ok++;
+        continue; // already in sync or sub-wallets under-represent (fine)
+      }
+
+      // Sub-wallets over-represent — need to reduce
+      // Strategy: drain from oldest wallets first (FIFO), set excess to 0
+      let remaining = actualBalance;
+      for (const mw of subWallets) {
+        const newBal = parseFloat(Math.min(mw.balance, remaining).toFixed(2));
+        await MonthlyWallet.findByIdAndUpdate(mw._id, { balance: newBal });
+        remaining = parseFloat((remaining - newBal).toFixed(2));
+      }
+
+      fixed++;
+      details.push({
+        vendorId,
+        vendorName: vendor.companyName,
+        actualBalance,
+        wasSubTotal: subTotal,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `${fixed} vendors synced, ${ok} already correct`,
+      data: { fixed, ok, details },
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
