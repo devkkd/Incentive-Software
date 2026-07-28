@@ -180,12 +180,13 @@ export default function AdminInvoicesPage() {
 
   // ── Edit Modal ─────────────────────────────────────────────────────
   const [editModal, setEditModal]   = useState({ isOpen: false, invoice: null });
-  const [editForm, setEditForm]     = useState({ invoiceAmount: '', invoiceDate: '', remark: '', location: '' });
+  const [editForm, setEditForm]     = useState({ invoiceNumber: '', invoiceAmount: '', invoiceDate: '', remark: '', location: '' });
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError]   = useState('');
 
   const openEditModal = (invoice) => {
     setEditForm({
+      invoiceNumber: invoice.invoiceNumber || '',
       invoiceAmount: invoice.invoiceAmount,
       invoiceDate: invoice.invoiceDate ? new Date(invoice.invoiceDate).toISOString().split('T')[0] : '',
       remark: invoice.remark || '',
@@ -195,16 +196,37 @@ export default function AdminInvoicesPage() {
     setEditModal({ isOpen: true, invoice });
   };
 
+  // Detect if prefix (branch code) has changed
+  const getInvoicePrefix = (invNo) => String(invNo || '').split('/')[0].trim();
+  const invoicePrefixChanged = editModal.invoice
+    ? getInvoicePrefix(editForm.invoiceNumber) !== getInvoicePrefix(editModal.invoice.invoiceNumber)
+    : false;
+
   const handleEditSave = async () => {
     setEditError('');
     const amt = parseFloat(editForm.invoiceAmount);
     if (isNaN(amt) || amt <= 0) { setEditError('Invoice amount must be greater than 0'); return; }
     if (!editForm.invoiceDate)  { setEditError('Invoice date is required'); return; }
+    if (!editForm.invoiceNumber?.trim()) { setEditError('Invoice number is required'); return; }
+
+    // Validate invoice number format
+    const invoiceFormatRegex = /^\d+\/(?:RS|CSI)\/\d{8}$/i;
+    if (!invoiceFormatRegex.test(editForm.invoiceNumber.trim())) {
+      setEditError('Invoice number must be in format 1/RS/26001200 or 5/CSI/15001623');
+      return;
+    }
+
     setEditLoading(true);
     try {
       const res  = await fetch(`${API}/api/invoices/${editModal.invoice._id}`, {
         method: 'PATCH', headers: authHeaders(), credentials: 'include',
-        body: JSON.stringify({ invoiceAmount: amt, invoiceDate: editForm.invoiceDate, remark: editForm.remark, location: editForm.location }),
+        body: JSON.stringify({
+          invoiceNumber: editForm.invoiceNumber.trim(),
+          invoiceAmount: amt,
+          invoiceDate: editForm.invoiceDate,
+          remark: editForm.remark,
+          location: editForm.location,
+        }),
       });
       const data = await res.json();
       if (!res.ok) { setEditError(data.message || 'Failed to update invoice'); return; }
@@ -289,6 +311,23 @@ export default function AdminInvoicesPage() {
             {editError && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-[13px] text-red-600">{editError}</div>}
             <div className="space-y-4">
               <div className="space-y-1.5">
+                <label className="text-[13px] font-medium text-gray-800">Invoice Number</label>
+                <input type="text" value={editForm.invoiceNumber}
+                  onChange={(e) => setEditForm(f => ({ ...f, invoiceNumber: e.target.value.toUpperCase() }))}
+                  placeholder="e.g. 7/RS/26001200"
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#2B3B8A]/20 focus:border-[#2B3B8A] transition-all" />
+                {invoicePrefixChanged && (
+                  <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-amber-500 shrink-0 mt-0.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                    </svg>
+                    <p className="text-[12px] text-amber-700 font-medium">
+                      Branch code changed — this invoice will automatically move to the branch matching the new prefix.
+                    </p>
+                  </div>
+                )}
+              </div>
+              <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Invoice Amount (₹)</label>
                 <input type="number" value={editForm.invoiceAmount}
                   onChange={(e) => setEditForm(f => ({ ...f, invoiceAmount: e.target.value }))}
@@ -347,7 +386,7 @@ export default function AdminInvoicesPage() {
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
               </svg>
-              <input type="text" placeholder="Party name, invoice no..."
+              <input type="text" placeholder="Party name, code, invoice no..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') setSearchQuery(searchInput); }}
@@ -381,24 +420,15 @@ export default function AdminInvoicesPage() {
 
           {/* Division */}
           <div>
-            <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Division / Branch</label>
-            <CustomDropdown id="division" label="All Divisions"
+            <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Branch</label>
+            <CustomDropdown id="division" label="All Branches"
               options={divisions.map(d => ({ value: d._id, label: d.name }))}
               value={divisionFilter} onChange={setDivisionFilter}
               activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} minWidth="160px" />
           </div>
 
-          {/* Location/City */}
-          <div>
-            <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Location / City</label>
-            <CustomDropdown id="location" label="All Locations"
-              options={locationOptions}
-              value={locationFilter} onChange={setLocationFilter}
-              activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} minWidth="150px" />
-          </div>
-
           {/* Apply search button */}
-          <button onClick={() => { setSearchQuery(searchInput); fetchInvoices(1); }}
+          <button onClick={() => setSearchQuery(searchInput)}
             className="px-5 py-2 bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white text-[13px] font-semibold rounded-xl transition-colors">
             Apply
           </button>
@@ -456,12 +486,6 @@ export default function AdminInvoicesPage() {
               <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#EEF2FF] text-[#2B3B8A] text-[12px] font-semibold rounded-full">
                 Division: {divisions.find(d => d._id === divisionFilter)?.name}
                 <button onClick={() => setDivisionFilter('')} className="hover:text-red-500">×</button>
-              </span>
-            )}
-            {locationFilter && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#EEF2FF] text-[#2B3B8A] text-[12px] font-semibold rounded-full">
-                City: {locationFilter}
-                <button onClick={() => setLocationFilter('')} className="hover:text-red-500">×</button>
               </span>
             )}
           </div>

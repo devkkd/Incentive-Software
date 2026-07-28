@@ -221,7 +221,7 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* Bottom Invoices */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+      {/* <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
           <h3 className="text-[22px] font-bold text-black tracking-tight">All Invoices</h3>
           <div className="flex flex-wrap items-center gap-3">
@@ -251,7 +251,7 @@ export default function AdminDashboardPage() {
         <div className="mt-8 border-t border-gray-100 pt-8 text-center text-sm text-gray-500">
           Invoice data will populate here based on filters.
         </div>
-      </div>
+      </div> */}
     </div>
   );
 }

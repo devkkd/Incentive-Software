@@ -514,11 +514,23 @@ router.get('/', protect, async (req, res) => {
 
     if (location) filter.location = { $regex: location, $options: 'i' };
     if (startDate && endDate) filter.invoiceDate = { $gte: new Date(startDate), $lte: new Date(endDate + 'T23:59:59.999Z') };
-    if (q) filter.$or = [
-      { invoiceNumber: { $regex: q, $options: 'i' } },
-      { location: { $regex: q, $options: 'i' } },
-      { referenceNo: { $regex: q, $options: 'i' } },
-    ];
+    if (q) {
+      // Search by vendor company name or account number (party name/code)
+      const matchingVendors = await Vendor.find({
+        $or: [
+          { companyName: { $regex: q, $options: 'i' } },
+          { accountNumber: { $regex: q, $options: 'i' } },
+        ],
+      }).select('_id').lean();
+      const vendorIds = matchingVendors.map(v => v._id);
+
+      filter.$or = [
+        { invoiceNumber: { $regex: q, $options: 'i' } },
+        { location: { $regex: q, $options: 'i' } },
+        { referenceNo: { $regex: q, $options: 'i' } },
+        ...(vendorIds.length > 0 ? [{ vendor: { $in: vendorIds } }] : []),
+      ];
+    }
 
     const total = await Invoice.countDocuments(filter);
     const invoices = await Invoice.find(filter)
@@ -545,13 +557,60 @@ router.get('/', protect, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/:id', protect, authorize('admin'), async (req, res) => {
   try {
-    const { invoiceAmount, invoiceDate, remark, location } = req.body;
+    const { invoiceAmount, invoiceDate, remark, location, invoiceNumber } = req.body;
 
     const invoice = await Invoice.findById(req.params.id);
     if (!invoice) {
       return res.status(404).json({ success: false, message: 'Invoice not found' });
     }
 
+    // ── Invoice Number update (with division re-assignment) ────────────────
+    if (invoiceNumber !== undefined) {
+      const newInvoiceNumber = String(invoiceNumber).trim();
+
+      const invoiceFormatRegex = /^\d+\/(?:RS|CSI)\/\d{8}$/i;
+      if (!invoiceFormatRegex.test(newInvoiceNumber)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invoice number must be in format 1/RS/26001200 or 5/CSI/15001623',
+        });
+      }
+
+      // Check for duplicate invoice number (excluding current invoice)
+      if (newInvoiceNumber !== invoice.invoiceNumber) {
+        const existing = await Invoice.findOne({ invoiceNumber: newInvoiceNumber, _id: { $ne: invoice._id } });
+        if (existing) {
+          return res.status(409).json({ success: false, message: 'This invoice number already exists' });
+        }
+
+        // Extract prefix and re-assign division if prefix changed
+        const prefixMatch = newInvoiceNumber.match(/^([^/]+)\//);
+        if (prefixMatch) {
+          const newPrefix = prefixMatch[1].trim();
+          const oldPrefix = (invoice.invoiceNumber || '').split('/')[0].trim();
+
+          if (newPrefix !== oldPrefix) {
+            // Prefix changed — find the division matching new prefix
+            const newDivision = await Division.findOne({ locationCode: newPrefix });
+            if (!newDivision) {
+              return res.status(400).json({
+                success: false,
+                message: `No branch/division found for prefix "${newPrefix}". The invoice cannot be moved.`,
+              });
+            }
+            invoice.division = newDivision._id;
+            // Auto-update location from the new division if not explicitly provided
+            if (location === undefined || location === '') {
+              invoice.location = newDivision.location || invoice.location;
+            }
+          }
+        }
+
+        invoice.invoiceNumber = newInvoiceNumber;
+      }
+    }
+
+    // ── Other fields ───────────────────────────────────────────────────────
     if (invoiceAmount !== undefined) {
       const amt = parseFloat(invoiceAmount);
       if (isNaN(amt) || amt <= 0) {
@@ -572,7 +631,7 @@ router.patch('/:id', protect, authorize('admin'), async (req, res) => {
       invoice.remark = String(remark).trim();
     }
 
-    if (location !== undefined) {
+    if (location !== undefined && location !== '') {
       invoice.location = String(location).trim();
     }
 

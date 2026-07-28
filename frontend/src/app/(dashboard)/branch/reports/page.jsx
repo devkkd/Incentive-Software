@@ -16,7 +16,7 @@ const statusStyles = {
 };
 
 export default function ReportsPage() {
-  const [reportType, setReportType] = useState('vendors');
+  const [reportType, setReportType] = useState('incentives');
   const [timeline, setTimeline] = useState('today');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -58,6 +58,7 @@ export default function ReportsPage() {
         debit: null,
         credit: null,
         invoiceAmount: inv.invoiceAmount,
+        division: inv.division?.name || vendor?.division?.name || '—',
         location: inv.location || '—',
         balanceAfter: '—',
         isCredit: null,
@@ -72,6 +73,7 @@ export default function ReportsPage() {
         debit: trx.type === 'debit' ? trx.amount : null,
         credit: trx.type === 'credit' ? trx.amount : null,
         invoiceAmount: trx.invoice?.invoiceAmount ?? null,
+        division: trx.invoice?.division?.name || vendor?.division?.name || '—',
         location: trx.invoice?.location || '—',
         balanceAfter: trx.balanceAfter,
         isCredit: trx.type === 'credit',
@@ -133,7 +135,7 @@ export default function ReportsPage() {
     doc.text(`Generated    : ${genDate}`, 200, 35);
     autoTable(doc, {
       startY: 66,
-      head: [['#', 'Date', 'Particulars', 'Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited (Rs)', 'Debited (Rs)', 'Wallet Balance (Rs)', 'Location']],
+      head: [['#', 'Date', 'Particulars', 'Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited (Rs)', 'Debited (Rs)', 'Wallet Balance (Rs)', 'Division']],
       body: filteredStatementData.map((row, i) => [
         i + 1,
         row.date.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }),
@@ -142,7 +144,7 @@ export default function ReportsPage() {
         row.credit != null ? Number(row.credit).toFixed(2) : '—',
         row.debit != null ? Number(row.debit).toFixed(2) : '—',
         row.balanceAfter !== '—' ? `Rs. ${Number(row.balanceAfter).toFixed(2)}` : '—',
-        row.location,
+        row.division || '—',
       ]),
       styles: { fontSize: 8, cellPadding: 3 },
       headStyles: { fillColor: [43, 59, 138], textColor: 255, fontStyle: 'bold' },
@@ -162,7 +164,7 @@ export default function ReportsPage() {
       [`Wallet Balance: Rs. ${Number(v?.walletBalance || 0).toFixed(2)}`, '', `Generated: ${genDate}`],
       [],
     ];
-    const head = ['#', 'Date', 'Particulars', 'Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited (Rs)', 'Debited (Rs)', 'Wallet Balance (Rs)', 'Location'];
+    const head = ['#', 'Date', 'Particulars', 'Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited (Rs)', 'Debited (Rs)', 'Wallet Balance (Rs)', 'Division'];
     const body = filteredStatementData.map((row, i) => [
       i + 1,
       row.date.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }),
@@ -171,7 +173,7 @@ export default function ReportsPage() {
       row.credit != null ? Number(row.credit).toFixed(2) : '—',
       row.debit != null ? Number(row.debit).toFixed(2) : '—',
       row.balanceAfter !== '—' ? Number(row.balanceAfter).toFixed(2) : '—',
-      row.location,
+      row.division || '—',
     ]);
     const ws = XLSX.utils.aoa_to_sheet([...info, head, ...body]);
     const wb = XLSX.utils.book_new();
@@ -413,7 +415,6 @@ export default function ReportsPage() {
                   <p className="text-[15px] text-gray-800 mb-4">Select a Report to Download</p>
                   <div className="flex flex-wrap gap-3">
                     {[
-                      { id: 'vendors', label: 'Vendors' },
                       { id: 'incentives', label: 'Incentives Wallet' },
                       { id: 'invoices', label: 'Invoices' },
                     ].map((r) => (
@@ -625,7 +626,7 @@ export default function ReportsPage() {
                             <th className="py-3.5 px-4 font-semibold text-right" style={{color:'#86efac'}}>Credited (₹)</th>
                             <th className="py-3.5 px-4 font-semibold text-right" style={{color:'#fca5a5'}}>Debited (₹)</th>
                             <th className="py-3.5 px-4 font-semibold text-right">Wallet Bal. (₹)</th>
-                            <th className="py-3.5 px-4 font-semibold">Location</th>
+                            <th className="py-3.5 px-4 font-semibold">Division</th>
                           </tr>
                         </thead>
                         <tbody className="text-[13px]">
@@ -660,7 +661,7 @@ export default function ReportsPage() {
                               <td className="py-3.5 px-4 text-right font-bold text-gray-900">
                                 {row.balanceAfter !== '—' ? `₹${Number(row.balanceAfter).toFixed(2)}` : <span className="text-gray-300 font-normal">—</span>}
                               </td>
-                              <td className="py-3.5 px-4 text-gray-600">{row.location}</td>
+                              <td className="py-3.5 px-4 text-gray-600">{row.division || '—'}</td>
                             </tr>
                           )) : (
                             <tr>

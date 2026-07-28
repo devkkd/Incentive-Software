@@ -366,7 +366,14 @@ router.get('/:id/transactions', protect, async (req, res) => {
     const WalletTransaction = require('../models/WalletTransaction');
     const transactions = await WalletTransaction.find({ vendor: req.params.id })
       .sort({ createdAt: -1 })
-      .populate('invoice', 'invoiceNumber referenceNo invoiceDate invoiceAmount location remark');
+      .populate({
+        path: 'invoice',
+        select: 'invoiceNumber referenceNo invoiceDate invoiceAmount location remark division',
+        populate: {
+          path: 'division',
+          select: 'name location'
+        }
+      });
 
     res.status(200).json({ success: true, data: transactions });
   } catch (error) {

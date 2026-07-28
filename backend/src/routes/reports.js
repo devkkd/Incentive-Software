@@ -47,6 +47,61 @@ router.get('/', protect, async (req, res) => {
 
     let data = [];
 
+    // ---- WALLET BALANCES REPORT ----
+    if (type === 'wallet_balances') {
+      const filter = { ...divisionFilter };
+      if (status) filter.status = status;
+      if (q) {
+        filter.$or = [
+          { companyName: { $regex: q, $options: 'i' } },
+          { mobileNumber: { $regex: q, $options: 'i' } },
+          { accountNumber: { $regex: q, $options: 'i' } },
+        ];
+      }
+      const vendors = await Vendor.find(filter)
+        .sort({ companyName: 1 })
+        .populate('division', 'name location')
+        .lean();
+
+      const MonthlyWallet = require('../models/MonthlyWallet');
+      const vendorIds = vendors.map(v => v._id);
+
+      let walletQuery = { vendor: { $in: vendorIds } };
+      if (dateFilter) {
+        const start = dateFilter.$gte;
+        const end = dateFilter.$lte;
+        const startYear = start.getFullYear();
+        const startMonth = start.getMonth() + 1;
+        const endYear = end.getFullYear();
+        const endMonth = end.getMonth() + 1;
+
+        if (startYear === endYear) {
+          walletQuery.year = startYear;
+          walletQuery.month = { $gte: startMonth, $lte: endMonth };
+        } else {
+          walletQuery.$or = [
+            { year: { $gt: startYear, $lt: endYear } },
+            { year: startYear, month: { $gte: startMonth } },
+            { year: endYear, month: { $lte: endMonth } }
+          ];
+        }
+      }
+
+      const monthlyWallets = await MonthlyWallet.find(walletQuery).lean();
+
+      const walletMap = {};
+      monthlyWallets.forEach(mw => {
+        const vid = String(mw.vendor);
+        if (!walletMap[vid]) walletMap[vid] = [];
+        walletMap[vid].push(mw);
+      });
+
+      data = vendors.map(v => ({
+        ...v,
+        monthlyWallets: walletMap[String(v._id)] || [],
+      }));
+    }
+
     // ---- VENDORS REPORT ----
     if (type === 'vendors') {
       const filter = { ...divisionFilter };
@@ -63,6 +118,47 @@ router.get('/', protect, async (req, res) => {
         .sort({ createdAt: -1 })
         .limit(500)
         .populate('division', 'name location');
+    }
+
+    // ---- WALLET BALANCES REPORT (all parties + wallet + month-wise) ----
+    if (type === 'wallet_balances') {
+      const MonthlyWallet = require('../models/MonthlyWallet');
+      const filter = { ...divisionFilter };
+      if (status) filter.status = status;
+      if (q) {
+        filter.$or = [
+          { companyName: { $regex: q, $options: 'i' } },
+          { mobileNumber: { $regex: q, $options: 'i' } },
+          { accountNumber: { $regex: q, $options: 'i' } },
+        ];
+      }
+      const vendors = await Vendor.find(filter)
+        .sort({ companyName: 1 })
+        .limit(1000)
+        .populate('division', 'name location')
+        .lean();
+
+      // Attach monthly wallet balances for each vendor
+      const vendorIds = vendors.map(v => v._id);
+      const monthlyWallets = await MonthlyWallet.find({
+        vendor: { $in: vendorIds },
+        balance: { $gt: 0 },
+      }).lean();
+
+      // Group by vendor
+      const walletsByVendor = {};
+      monthlyWallets.forEach(mw => {
+        const key = String(mw.vendor);
+        if (!walletsByVendor[key]) walletsByVendor[key] = [];
+        walletsByVendor[key].push({ label: mw.label, balance: mw.balance, month: mw.month, year: mw.year });
+      });
+
+      data = vendors.map(v => ({
+        ...v,
+        monthlyWallets: (walletsByVendor[String(v._id)] || []).sort((a, b) =>
+          a.year !== b.year ? a.year - b.year : a.month - b.month
+        ),
+      }));
     }
 
     // ---- INVOICES REPORT ----

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -15,12 +15,40 @@ const statusStyles = {
   blocked:  'text-[#64748B] bg-[#F1F5F9] border-[#64748B]/20',
 };
 
+// Sort icon component
+const SortIcon = ({ column, sortConfig }) => {
+  const isActive = sortConfig.key === column;
+  const isAsc = isActive && sortConfig.dir === 'asc';
+  const isDesc = isActive && sortConfig.dir === 'desc';
+  return (
+    <span className="inline-flex flex-col ml-1.5 gap-[1px] align-middle">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 6" className={`w-2 h-2 ${isAsc ? 'text-[#2B3B8A]' : 'text-gray-300'}`} fill="currentColor">
+        <path d="M5 0l5 6H0z"/>
+      </svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 6" className={`w-2 h-2 ${isDesc ? 'text-[#2B3B8A]' : 'text-gray-300'}`} fill="currentColor">
+        <path d="M5 6L0 0h10z"/>
+      </svg>
+    </span>
+  );
+};
+
 export default function VendorsPage() {
   const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [pagination, setPagination] = useState({ total: 0, page: 1, pages: 1 });
+
+  // Sorting state — client-side on current page data
+  const [sortConfig, setSortConfig] = useState({ key: null, dir: 'asc' });
+
+  const handleSort = (key) => {
+    setSortConfig(prev =>
+      prev.key === key
+        ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: 'asc' }
+    );
+  };
 
   const fetchVendors = useCallback(async (page = 1) => {
     setLoading(true);
@@ -42,6 +70,35 @@ export default function VendorsPage() {
   }, [searchQuery, statusFilter]);
 
   useEffect(() => { fetchVendors(1); }, [fetchVendors]);
+
+  // Client-side sort of current page data
+  const sortedVendors = useMemo(() => {
+    if (!sortConfig.key) return vendors;
+    return [...vendors].sort((a, b) => {
+      let aVal, bVal;
+      switch (sortConfig.key) {
+        case 'companyName': aVal = a.companyName?.toLowerCase() || ''; bVal = b.companyName?.toLowerCase() || ''; break;
+        case 'mobileNumber': aVal = a.mobileNumber || ''; bVal = b.mobileNumber || ''; break;
+        case 'accountNumber': aVal = a.accountNumber?.toLowerCase() || ''; bVal = b.accountNumber?.toLowerCase() || ''; break;
+        case 'walletBalance': aVal = Number(a.walletBalance) || 0; bVal = Number(b.walletBalance) || 0; break;
+        case 'lastRedemption': aVal = a.lastRedemptionDate ? new Date(a.lastRedemptionDate).getTime() : 0; bVal = b.lastRedemptionDate ? new Date(b.lastRedemptionDate).getTime() : 0; break;
+        case 'status': aVal = a.status || ''; bVal = b.status || ''; break;
+        default: return 0;
+      }
+      if (aVal < bVal) return sortConfig.dir === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortConfig.dir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [vendors, sortConfig]);
+
+  const SortTh = ({ col, label, className = '' }) => (
+    <th
+      onClick={() => handleSort(col)}
+      className={`pb-4 pt-2 px-2 font-bold cursor-pointer select-none hover:text-[#2B3B8A] transition-colors ${className}`}
+    >
+      {label}<SortIcon column={col} sortConfig={sortConfig} />
+    </th>
+  );
 
   return (
     <main className="w-full flex-1 p-8 md:p-10 overflow-auto">
@@ -84,18 +141,18 @@ export default function VendorsPage() {
             <thead>
               <tr className="border-b border-gray-200 text-gray-900">
                 <th className="pb-4 pt-2 px-2 font-bold">#</th>
-                <th className="pb-4 pt-2 px-2 font-bold">Party Name</th>
-                <th className="pb-4 pt-2 px-2 font-bold">Mobile Number</th>
-                <th className="pb-4 pt-2 px-2 font-bold">Party Code</th>
-                <th className="pb-4 pt-2 px-2 font-bold">Wallet Balance</th>
-                <th className="pb-4 pt-2 px-2 font-bold">Last Redemption</th>
-                <th className="pb-4 pt-2 px-2 font-bold">Status</th>
+                <SortTh col="companyName" label="Party Name" />
+                <SortTh col="mobileNumber" label="Mobile Number" />
+                <SortTh col="accountNumber" label="Party Code" />
+                <SortTh col="walletBalance" label="Wallet Balance" />
+                <SortTh col="lastRedemption" label="Last Redemption" />
+                <SortTh col="status" label="Status" />
               </tr>
             </thead>
             <tbody className="text-gray-700 font-medium">
               {loading ? (
                 <tr><td colSpan="7" className="py-10 text-center text-gray-400">Loading...</td></tr>
-              ) : vendors.length > 0 ? vendors.map((vendor, i) => (
+              ) : sortedVendors.length > 0 ? sortedVendors.map((vendor, i) => (
                 <tr key={vendor._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
                   <td className="py-5 px-2">{String((pagination.page - 1) * 10 + i + 1).padStart(2, '0')}</td>
                   <td className="py-5 px-2">{vendor.companyName}</td>
@@ -133,7 +190,7 @@ export default function VendorsPage() {
         {/* Pagination */}
         <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-gray-100 pt-6">
           <p className="text-[13px] text-gray-600 font-medium">
-            Showing {vendors.length} of {pagination.total} vendors
+            Showing {sortedVendors.length} of {pagination.total} vendors
           </p>
           {pagination.pages > 1 && (() => {
             const current = pagination.page;

@@ -68,7 +68,7 @@ const getDateRange = (timeline) => {
 };
 
 export default function AdminReportsPage() {
-  const [reportType, setReportType] = useState('Party');
+  const [reportType, setReportType] = useState('invoices');
   const [timeline, setTimeline] = useState('today');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -117,12 +117,12 @@ export default function AdminReportsPage() {
         _id: inv._id,
         date: new Date(inv.invoiceDate),
         type: 'Invoice / Bill',
-        particulars: inv.referenceNo 
-          ? `${sanitize(inv.invoiceNumber)} (Ref: ${inv.referenceNo})` 
-          : sanitize(inv.invoiceNumber),
+        particulars: inv.referenceNo ? `Ref: ${inv.referenceNo}` : '—',
+        invoiceNo: sanitize(inv.invoiceNumber),
         debit: null,
         credit: null,
         invoiceAmount: inv.invoiceAmount,
+        division: inv.division?.name || vendor?.division?.name || '—',
         location: inv.location || '—',
         balanceAfter: '—',
         isCredit: null,
@@ -133,9 +133,11 @@ export default function AdminReportsPage() {
         date: new Date(trx.createdAt),
         type: trx.type === 'credit' ? 'Incentive Credited' : 'Wallet Redemption',
         particulars: sanitize(trx.description || (trx.type === 'credit' ? 'Incentive Credited' : 'Wallet Redeemed')),
+        invoiceNo: trx.invoice?.invoiceNumber || null,
         debit: trx.type === 'debit' ? trx.amount : null,
         credit: trx.type === 'credit' ? trx.amount : null,
-        invoiceAmount: null,
+        invoiceAmount: trx.invoice?.invoiceAmount ?? null,
+        division: trx.invoice?.division?.name || vendor?.division?.name || '—',
         location: trx.invoice?.location || '—',
         balanceAfter: trx.balanceAfter,
         isCredit: trx.type === 'credit',
@@ -293,7 +295,7 @@ export default function AdminReportsPage() {
 
   // Client-side filtered data — no extra API call
   const filteredData = reportData.filter((row) => {
-    if (reportType === 'Party') {
+    if (reportType === 'wallet_balances') {
       if (statusFilter && row.status !== statusFilter.toLowerCase()) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
@@ -323,7 +325,7 @@ export default function AdminReportsPage() {
     let redeemTotal = 0;
     let incentiveTotal = 0;
     filteredData.forEach((r) => {
-      if (reportType === 'Party') {
+      if (reportType === 'wallet_balances') {
         walletTotal += Number(r.walletBalance) || 0;
       }
       if (reportType === 'invoices') {
@@ -342,7 +344,7 @@ export default function AdminReportsPage() {
     const { default: autoTable } = await import('jspdf-autotable');
     const doc = new jsPDF({ orientation: 'landscape' });
     doc.setFontSize(14);
-    doc.text(`${reportType === 'Party' ? 'Party' : reportType === 'invoices' ? 'Invoices' : 'Incentives Wallet'} Report — Admin`, 14, 18);
+    doc.text(`${reportType === 'wallet_balances' ? 'Wallet Balances' : reportType === 'invoices' ? 'Invoices' : 'Incentives Wallet'} Report — Admin`, 14, 18);
     doc.setFontSize(9); doc.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 26);
     const { head, body } = getTableData();
     autoTable(doc, { startY: 32, head: [head], body, styles: { fontSize: 8 }, headStyles: { fillColor: [43, 59, 138] } });
@@ -359,10 +361,18 @@ export default function AdminReportsPage() {
   };
 
   const getTableData = () => {
-    if (reportType === 'Party') return {
-      head: ['#', 'Company Name', 'Mobile', 'Account No', 'Wallet Balance', 'Status', 'Division', 'Created'],
-      body: filteredData.map((v, i) => [i+1, v.companyName, v.mobileNumber, v.accountNumber, `Rs. ${Number(v.walletBalance).toFixed(2)}`, v.status, v.division?.name||'', new Date(v.createdAt).toLocaleDateString('en-IN')]),
-    };
+    if (reportType === 'wallet_balances') {
+      const allMonths = [...new Set(filteredData.flatMap(v => (v.monthlyWallets || []).map(w => w.label)))].sort();
+      const head = ['#', 'Party Name', 'Party Code', 'Mobile', 'Division', 'Status', 'Total Wallet (Rs)', ...allMonths];
+      const body = filteredData.map((v, i) => {
+        const monthCols = allMonths.map(month => {
+          const mw = (v.monthlyWallets || []).find(w => w.label === month);
+          return mw && mw.balance > 0 ? Number(mw.balance).toFixed(2) : '0.00';
+        });
+        return [i+1, v.companyName, v.accountNumber, v.mobileNumber, v.division?.name||'', v.status, `Rs. ${Number(v.walletBalance).toFixed(2)}`, ...monthCols];
+      });
+      return { head, body };
+    }
     if (reportType === 'invoices') return {
       head: ['#', 'Invoice No', 'Reference No', 'Vendor', 'Account No', 'Invoice Amount', 'Amount Redeemed', 'Location', 'Division', 'Date', 'Remark'],
       body: filteredData.map((inv, i) => [i+1, inv.invoiceNumber, inv.referenceNo || '—', inv.vendor?.companyName||'N/A', inv.vendor?.accountNumber||'N/A', `Rs. ${Number(inv.invoiceAmount).toFixed(2)}`, inv.redeemAmount > 0 ? `Rs. ${Number(inv.redeemAmount).toFixed(2)}` : '—', inv.location, inv.division?.name||'', new Date(inv.invoiceDate).toLocaleDateString('en-IN'), inv.remark || '—']),
@@ -391,7 +401,7 @@ export default function AdminReportsPage() {
             <p className="text-[15px] text-gray-800 mb-4">Select a Report to Download</p>
             <div className="flex flex-wrap gap-3 mb-6">
               {[
-                { id: 'Party', label: 'Party' },
+                { id: 'wallet_balances', label: 'Wallet Balances' },
                 { id: 'invoices', label: 'Invoices' },
                 { id: 'incentives', label: 'Incentives Wallet' },
               ].map((r) => (
@@ -506,7 +516,7 @@ export default function AdminReportsPage() {
 
           <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-8 gap-4 border-b border-gray-100 pb-6">
             <h2 className="text-[26px] font-bold text-gray-900 tracking-tight flex items-center gap-2">
-              {reportType === 'invoices' ? 'Invoices' : reportType === 'Party' ? 'Party' : 'Incentives Wallet'}
+              {reportType === 'invoices' ? 'Invoices' : reportType === 'wallet_balances' ? 'Wallet Balances' : 'Incentives Wallet'}
             </h2>
 
             <div className="flex flex-wrap items-center gap-3">
@@ -516,7 +526,7 @@ export default function AdminReportsPage() {
                 <button onClick={downloadExcel} className="bg-[#2ECC71] hover:bg-green-600 text-white text-[10px] font-bold px-1.5 py-1 rounded transition-colors">XLS</button>
               </div>
 
-              {reportType === 'Party' && (
+              {reportType === 'wallet_balances' && (
                 <CustomDropdown id="statusFilter" label="Status" options={['Active', 'Inactive', 'Blocked']}
                   value={statusFilter} onChange={setStatusFilter} activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} />
               )}
@@ -541,16 +551,19 @@ export default function AdminReportsPage() {
               <thead>
                 <tr className="border-b-2 border-gray-100 text-gray-900 text-[13px]">
                   <th className="pb-4 font-bold px-2">#</th>
-                  {reportType === 'Party' && <>
-                    <th className="pb-4 font-bold px-2">Party Name</th>
-                    <th className="pb-4 font-bold px-2">Mobile</th>
-                    <th className="pb-4 font-bold px-2">Party Code</th>
-                    <th className="pb-4 font-bold px-2">Wallet Balance</th>
-                    <th className="pb-4 font-bold px-2">Status</th>
-                    <th className="pb-4 font-bold px-2">Location</th>
-                    <th className="pb-4 font-bold px-2">Created</th>
-                    <th className="pb-4 font-bold px-2 text-center">Action</th>
-                  </>}
+                  {reportType === 'wallet_balances' && (() => {
+                    const allMonths = [...new Set(filteredData.flatMap(v => (v.monthlyWallets || []).map(w => w.label)))].sort();
+                    return <>
+                      <th className="pb-4 font-bold px-2">Party Name</th>
+                      <th className="pb-4 font-bold px-2">Party Code</th>
+                      <th className="pb-4 font-bold px-2">Mobile</th>
+                      <th className="pb-4 font-bold px-2">Division</th>
+                      <th className="pb-4 font-bold px-2">Status</th>
+                      <th className="pb-4 font-bold px-2">Total Wallet (₹)</th>
+                      {allMonths.map(m => <th key={m} className="pb-4 font-bold px-2 text-right">{m} (₹)</th>)}
+                      <th className="pb-4 font-bold px-2 text-center">Action</th>
+                    </>;
+                  })()}
                   {reportType === 'invoices' && <>
                     <th className="pb-4 font-bold px-2">Invoice Number</th>
                     <th className="pb-4 font-bold px-2">Reference No</th>
@@ -577,22 +590,31 @@ export default function AdminReportsPage() {
                 {filteredData.length > 0 ? filteredData.map((row, i) => (
                   <tr key={row._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
                     <td className="py-5 px-2">{String(i+1).padStart(2,'0')}</td>
-                    {reportType === 'Party' && <>
-                      <td className="py-5 px-2">{row.companyName}</td>
-                      <td className="py-5 px-2">{row.mobileNumber}</td>
-                      <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{row.accountNumber}</td>
-                      <td className="py-5 px-2">₹{Number(row.walletBalance).toFixed(2)}</td>
-                      <td className="py-5 px-2">
-                        <span className={`px-3 py-1.5 rounded-lg border text-[13px] font-semibold capitalize ${statusStyles[row.status] || ''}`}>{row.status}</span>
-                      </td>
-                      <td className="py-5 px-2">{row.division?.name || '—'}</td>
-                      <td className="py-5 px-2">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
-                      <td className="py-5 px-2 text-center">
-                        <button onClick={() => handleOpenStatement(row)} className="px-3 py-1.5 bg-[#2B3B8A] text-white text-[12px] font-medium rounded hover:bg-[#1e2a61] transition-colors">
-                          Statement
-                        </button>
-                      </td>
-                    </>}
+                    {reportType === 'wallet_balances' && (() => {
+                      const allMonths = [...new Set(filteredData.flatMap(v => (v.monthlyWallets || []).map(w => w.label)))].sort();
+                      return <>
+                        <td className="py-5 px-2">{row.companyName}</td>
+                        <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{row.accountNumber}</td>
+                        <td className="py-5 px-2">{row.mobileNumber}</td>
+                        <td className="py-5 px-2">{row.division?.name || '—'}</td>
+                        <td className="py-5 px-2">
+                          <span className={`px-3 py-1.5 rounded-lg border text-[13px] font-semibold capitalize ${statusStyles[row.status] || ''}`}>{row.status}</span>
+                        </td>
+                        <td className="py-5 px-2 font-semibold text-[#2B3B8A]">₹{Number(row.walletBalance).toFixed(2)}</td>
+                        {allMonths.map(month => {
+                          const mw = (row.monthlyWallets || []).find(w => w.label === month);
+                          const bal = mw ? Number(mw.balance) : 0;
+                          return <td key={month} className={`py-5 px-2 text-right font-medium ${bal > 0 ? 'text-gray-800' : 'text-gray-300'}`}>
+                            {bal > 0 ? `₹${bal.toFixed(2)}` : '—'}
+                          </td>;
+                        })}
+                        <td className="py-5 px-2 text-center">
+                          <button onClick={() => handleOpenStatement(row)} className="px-3 py-1.5 bg-[#2B3B8A] text-white text-[12px] font-medium rounded hover:bg-[#1e2a61] transition-colors">
+                            Statement
+                          </button>
+                        </td>
+                      </>;
+                    })()}
                     {reportType === 'invoices' && <>
                       <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{row.invoiceNumber}</td>
                       <td className="py-5 px-2 font-mono font-medium text-gray-800">{row.referenceNo || '—'}</td>
@@ -639,18 +661,21 @@ export default function AdminReportsPage() {
               {/* Totals footer */}
               {filteredData.length > 0 && (
                 <tfoot className="bg-gray-50 font-semibold text-[13px]">
-                  {reportType === 'Party' && (
-                    <tr className="border-t border-gray-100">
-                      <td className="py-3 px-2" />
-                      <td colSpan="2" className="py-3 px-2 text-right">Total Wallet</td>
-                      <td className="py-3 px-2">₹{Number(totals.walletTotal).toFixed(2)}</td>
-                      <td className="py-3 px-2" />
-                      <td className="py-3 px-2" />
-                      <td className="py-3 px-2" />
-                      <td className="py-3 px-2" />
-                      <td className="py-3 px-2" />
-                    </tr>
-                  )}
+                  {reportType === 'wallet_balances' && (() => {
+                    const allMonths = [...new Set(filteredData.flatMap(v => (v.monthlyWallets || []).map(w => w.label)))].sort();
+                    return (
+                      <tr className="border-t border-gray-100">
+                        <td className="py-3 px-2" />
+                        <td colSpan="5" className="py-3 px-2 text-right font-semibold">Total Wallet Balance</td>
+                        <td className="py-3 px-2 font-semibold text-[#2B3B8A]">₹{Number(totals.walletTotal).toFixed(2)}</td>
+                        {allMonths.map(m => {
+                          const t = filteredData.reduce((s, v) => { const mw = (v.monthlyWallets||[]).find(w=>w.label===m); return s+(mw?Number(mw.balance):0); }, 0);
+                          return <td key={m} className="py-3 px-2 text-right font-semibold text-[#2B3B8A]">{t>0?`₹${t.toFixed(2)}`:'—'}</td>;
+                        })}
+                        <td className="py-3 px-2" />
+                      </tr>
+                    );
+                  })()}
                   {reportType === 'invoices' && (
                     <tr className="border-t border-gray-100">
                       <td className="py-3 px-2" />
@@ -781,7 +806,7 @@ export default function AdminReportsPage() {
                           <th className="py-3.5 px-4 font-semibold text-right" style={{color:'#86efac'}}>Credited (₹)</th>
                           <th className="py-3.5 px-4 font-semibold text-right" style={{color:'#fca5a5'}}>Debited (₹)</th>
                           <th className="py-3.5 px-4 font-semibold text-right">Wallet Bal. (₹)</th>
-                          <th className="py-3.5 px-4 font-semibold">Location</th>
+                          <th className="py-3.5 px-4 font-semibold">Division</th>
                         </tr>
                       </thead>
                       <tbody className="text-[13px]">
@@ -811,7 +836,7 @@ export default function AdminReportsPage() {
                             <td className="py-3.5 px-4 text-right font-bold text-gray-900">
                               {row.balanceAfter !== '—' ? `₹${Number(row.balanceAfter).toFixed(2)}` : <span className="text-gray-300 font-normal">—</span>}
                             </td>
-                            <td className="py-3.5 px-4 text-gray-600">{row.location}</td>
+                            <td className="py-3.5 px-4 text-gray-600">{row.division || '—'}</td>
                           </tr>
                         )) : (
                           <tr>
