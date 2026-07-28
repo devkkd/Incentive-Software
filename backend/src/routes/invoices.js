@@ -3,6 +3,7 @@ const Invoice = require('../models/Invoice');
 const Vendor = require('../models/Vendor');
 const WalletTransaction = require('../models/WalletTransaction');
 const MonthlyWallet = require('../models/MonthlyWallet');
+const Wallet = require('../models/Wallet');
 const OtpToken = require('../models/OtpToken');
 const Division = require('../models/Division');
 const { protect, authorize } = require('../middleware/auth');
@@ -342,12 +343,25 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
       });
     }
 
-    // Validate monthly wallet balances if redemption list provided
+    // Validate monthly wallet balances & hold status if redemption list provided
     if (redemptionList) {
       for (const r of redemptionList) {
         const mw = await MonthlyWallet.findById(r.monthlyWalletId);
         if (!mw || String(mw.vendor) !== String(vendorId)) {
           return res.status(400).json({ success: false, message: `Monthly wallet not found: ${r.monthlyWalletId}` });
+        }
+        if (mw.isHold) {
+          return res.status(400).json({
+            success: false,
+            message: `Redemption blocked: Party balance in ${mw.label || 'wallet'} is on hold (${mw.holdReason || 'Held by admin'})`,
+          });
+        }
+        const parentWallet = mw.wallet ? await Wallet.findById(mw.wallet) : await Wallet.findOne({ name: mw.label });
+        if (parentWallet && parentWallet.isHold) {
+          return res.status(400).json({
+            success: false,
+            message: `Redemption blocked: Entire wallet "${parentWallet.name}" is on hold (${parentWallet.holdReason || 'Held by admin'})`,
+          });
         }
         const amt = parseFloat(r.amount);
         if (amt > mw.balance) {
@@ -356,6 +370,22 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
             message: `Insufficient balance in ${mw.label} wallet. Available: ₹${mw.balance}`,
           });
         }
+      }
+    } else {
+      // For auto-deduct, check if available non-held balance is sufficient
+      const activeWallets = await MonthlyWallet.find({ vendor: vendorId, balance: { $gt: 0 } }).lean();
+      let usableBalance = 0;
+      for (const mw of activeWallets) {
+        if (mw.isHold) continue;
+        const parentWallet = mw.wallet ? await Wallet.findById(mw.wallet) : await Wallet.findOne({ name: mw.label });
+        if (parentWallet && parentWallet.isHold) continue;
+        usableBalance += mw.balance;
+      }
+      if (redeemAmt > usableBalance) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot redeem ₹${redeemAmt.toFixed(2)}. Available unheld balance is ₹${usableBalance.toFixed(2)} (some wallets/balances are on hold).`,
+        });
       }
     }
 
@@ -378,11 +408,15 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
         remainingToDeduct = parseFloat((remainingToDeduct - amt).toFixed(2));
       }
     } else {
-      // Auto-deduct: oldest months first (FIFO)
+      // Auto-deduct: oldest months first (FIFO), skipping held wallets
       const allWallets = await MonthlyWallet.find({ vendor: vendorId, balance: { $gt: 0 } })
         .sort({ year: 1, month: 1 });
       for (const mw of allWallets) {
         if (remainingToDeduct <= 0) break;
+        if (mw.isHold) continue;
+        const parentWallet = mw.wallet ? await Wallet.findById(mw.wallet) : await Wallet.findOne({ name: mw.label });
+        if (parentWallet && parentWallet.isHold) continue;
+
         const deduct = Math.min(mw.balance, remainingToDeduct);
         const newMwBalance = parseFloat((mw.balance - deduct).toFixed(2));
         await MonthlyWallet.findByIdAndUpdate(mw._id, { balance: newMwBalance });

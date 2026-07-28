@@ -57,6 +57,11 @@ const incentiveUploadSchema = new mongoose.Schema(
       trim: true,
       default: null, // e.g. "May 2025"
     },
+    wallet: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Wallet',
+      default: null,
+    },
     status: {
       type: String,
       enum: ['pending', 'processed', 'failed'],

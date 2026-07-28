@@ -54,6 +54,7 @@ const translations = {
     allBranchesSidebar: 'Create Account',
     allDivisionsSidebar: 'All Location',
     incentivesSidebar: 'Incentives',
+    walletManagementSidebar: 'Wallet Management',
     reportsSidebar: 'All Reports',
     settingsSidebar: 'Account Settings',
 

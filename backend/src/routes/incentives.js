@@ -4,6 +4,7 @@ const XLSX = require('xlsx');
 const Vendor = require('../models/Vendor');
 const WalletTransaction = require('../models/WalletTransaction');
 const MonthlyWallet = require('../models/MonthlyWallet');
+const Wallet = require('../models/Wallet');
 const IncentiveUpload = require('../models/IncentiveUpload');
 const OtpToken = require('../models/OtpToken');
 const { protect, authorize } = require('../middleware/auth');
@@ -70,7 +71,7 @@ router.post('/send-otp', protect, authorize('branch', 'admin'), async (req, res)
 // Body fields: otp, frequency, month (1-12), year (e.g. 2025)
 router.post('/upload', protect, authorize('branch', 'admin'), upload.single('file'), async (req, res) => {
   try {
-    const { otp, frequency, month, year } = req.body;
+    const { otp, frequency, month, year, walletId } = req.body;
 
     if (!req.file) return res.status(400).json({ success: false, message: 'File is required' });
     if (!otp)      return res.status(400).json({ success: false, message: 'OTP is required' });
@@ -85,7 +86,27 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
       return res.status(400).json({ success: false, message: 'Valid year is required' });
     }
 
-    const walletLabel = `${MONTH_NAMES[uploadMonth - 1]} ${uploadYear}`;
+    let masterWallet = null;
+    if (walletId) {
+      masterWallet = await Wallet.findById(walletId);
+    }
+
+    let walletLabel = `${MONTH_NAMES[uploadMonth - 1]} ${uploadYear}`;
+    if (masterWallet) {
+      walletLabel = masterWallet.name;
+    } else {
+      // Find or create master Wallet for label
+      masterWallet = await Wallet.findOne({ name: walletLabel });
+      if (!masterWallet) {
+        masterWallet = await Wallet.create({
+          name: walletLabel,
+          month: uploadMonth,
+          year: uploadYear,
+          description: 'Auto-created during incentive upload',
+          createdBy: req.user._id,
+        });
+      }
+    }
 
     // Verify OTP
     const otpRecord = await OtpToken.findOne({
@@ -146,6 +167,8 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
       const newMonthBalance = parseFloat((monthlyWallet.balance + amount).toFixed(2));
       await MonthlyWallet.findByIdAndUpdate(monthlyWallet._id, {
         balance: newMonthBalance,
+        label: walletLabel,
+        wallet: masterWallet ? masterWallet._id : monthlyWallet.wallet,
         $inc: { creditedAmount: amount },
       });
 
@@ -190,6 +213,7 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
       month: uploadMonth,
       year: uploadYear,
       walletLabel,
+      wallet: masterWallet ? masterWallet._id : null,
       status: 'processed',
       items: results.success.map((r) => ({ vendor: r.vendorId, amount: r.amount })),
     });

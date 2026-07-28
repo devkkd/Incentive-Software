@@ -191,16 +191,38 @@ export default function AdminIncentivesPage() {
   const otpInputRefs = useRef([]);
   const fileInputRef = useRef(null);
 
+  // History state
   const [history, setHistory] = useState([]);
 
-  useEffect(() => { fetchHistory(); }, []);
+  // Wallets selection for destination
+  const [wallets, setWallets] = useState([]);
+  const [selectedWalletId, setSelectedWalletId] = useState('');
+
+  useEffect(() => {
+    fetchHistory();
+    fetchWalletsList();
+  }, []);
+
+  const fetchWalletsList = async () => {
+    try {
+      const res = await fetch(`${API}/api/wallets`, { headers: authHeaders(), credentials: 'include' });
+      const data = await res.json();
+      if (res.ok) setWallets(data.data || []);
+    } catch { /* silent */ }
+  };
 
   const fetchHistory = async () => {
     try {
       const res = await fetch(`${API}/api/incentives/history`, { headers: authHeaders(), credentials: 'include' });
       const data = await res.json();
-      if (res.ok) setHistory(data.data);
-    } catch { /* silent */ }
+      if (res.ok && Array.isArray(data.data)) {
+        setHistory(data.data);
+      } else {
+        setHistory([]);
+      }
+    } catch {
+      setHistory([]);
+    }
   };
 
   const handleFileChange = (e) => {
@@ -260,6 +282,9 @@ export default function AdminIncentivesPage() {
       formData.append('frequency', 'monthly');
       formData.append('month', uploadMonth);
       formData.append('year', uploadYear);
+      if (selectedWalletId) {
+        formData.append('walletId', selectedWalletId);
+      }
 
       const res = await fetch(`${API}/api/incentives/upload`, {
         method: 'POST', headers: authHeaders(), credentials: 'include', body: formData,
@@ -344,6 +369,23 @@ export default function AdminIncentivesPage() {
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A]"
                 />
               </div>
+            </div>
+
+            {/* Destination Wallet Selector */}
+            <div className="space-y-1">
+              <label className="text-[13px] font-medium text-gray-700">Destination Wallet</label>
+              <select
+                value={selectedWalletId}
+                onChange={(e) => setSelectedWalletId(e.target.value)}
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] bg-white font-medium"
+              >
+                <option value="">Auto-create / Auto-select for Month ({MONTH_NAMES[parseInt(uploadMonth) - 1]} {uploadYear})</option>
+                {wallets.map((w) => (
+                  <option key={w._id} value={w._id}>
+                    {w.name} {w.isHold ? '(ON HOLD)' : ''} — Bal: ₹{w.totalBalance.toLocaleString('en-IN')}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {monthYearError && (
@@ -529,7 +571,7 @@ export default function AdminIncentivesPage() {
               </tr>
             </thead>
             <tbody className="text-gray-700 font-medium">
-              {history.length > 0 ? history.map((row, i) => (
+              {Array.isArray(history) && history.length > 0 ? history.map((row, i) => (
                 <tr key={row._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
                   <td className="py-5 px-2">{String(i+1).padStart(2,'0')}</td>
                   <td className="py-5 px-2">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>

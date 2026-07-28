@@ -14,6 +14,7 @@ const settingsRoutes = require('./routes/settings');
 const divisionRoutes = require('./routes/divisions');
 const dashboardRoutes = require('./routes/dashboard');
 const userRoutes = require('./routes/users');
+const walletRoutes = require('./routes/wallets');
 
 const app = express();
 
@@ -45,6 +46,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/vendors', vendorRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/incentives', incentiveRoutes);
+app.use('/api/wallets', walletRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/divisions', divisionRoutes);

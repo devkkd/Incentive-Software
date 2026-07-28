@@ -38,6 +38,20 @@ const monthlyWalletSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    wallet: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Wallet',
+      default: null,
+    },
+    isHold: {
+      type: Boolean,
+      default: false,
+    },
+    holdReason: {
+      type: String,
+      trim: true,
+      default: null,
+    },
   },
   { timestamps: true }
 );
