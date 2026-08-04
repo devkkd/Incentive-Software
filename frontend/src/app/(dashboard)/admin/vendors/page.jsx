@@ -116,6 +116,21 @@ export default function AdminVendorsPage() {
       .catch(() => {});
   }, []);
 
+  // If modal is open and divisionId is set but not yet matched (divisions loaded after modal opened),
+  // re-sync divisionId from vendorToEdit to ensure the select pre-selects correctly
+  useEffect(() => {
+    if (isEditModalOpen && vendorToEdit && divisions.length > 0 && !editForm.divisionId) {
+      const divId = vendorToEdit.division?._id
+        ? String(vendorToEdit.division._id)
+        : typeof vendorToEdit.division === 'string'
+          ? vendorToEdit.division
+          : '';
+      if (divId) {
+        setEditForm(p => ({ ...p, divisionId: divId }));
+      }
+    }
+  }, [divisions, isEditModalOpen, vendorToEdit]);
+
   // Fetch all for download
   const fetchAll = async () => {
     const res = await fetch(`${API}/api/vendors?limit=10000`, { headers: authHeaders(), credentials: 'include' });
@@ -171,9 +186,8 @@ export default function AdminVendorsPage() {
   // Edit
   const openEditModal = (vendor) => {
     setVendorToEdit(vendor);
-    // Extract accountNumber suffix (after first dash) and division id
+    // Keep full accountNumber — backend handles prefix reconstruction
     const rawAccount = vendor.accountNumber || '';
-    const accSuffix = rawAccount.includes('-') ? rawAccount.split('-').slice(1).join('-') : rawAccount;
     setEditForm({
       companyName: vendor.companyName,
       personName: vendor.personName,
@@ -182,8 +196,12 @@ export default function AdminVendorsPage() {
       address: vendor.address || '',
       salesPerson: vendor.salesPerson || '',
       status: vendor.status,
-      accountNumber: accSuffix,
-      divisionId: vendor.division?._id || '',
+      accountNumber: rawAccount,          // full code e.g. "AJM-WRJ0230348"
+      divisionId: vendor.division?._id
+                    ? String(vendor.division._id)
+                    : typeof vendor.division === 'string'
+                      ? vendor.division
+                      : '',
       partyCity: vendor.partyCity || '',
       partyType: vendor.partyType || '',
     });
@@ -193,8 +211,12 @@ export default function AdminVendorsPage() {
 
   const handleEditSubmit = async () => {
     if (!editForm.companyName?.trim()) { setEditError('Party name is required'); return; }
+    if (!editForm.divisionId) { setEditError('Please select a location / branch'); return; }
     setEditLoading(true); setEditError('');
     try {
+      // Extract suffix from full accountNumber (backend prepends division prefix)
+      const fullAcc = editForm.accountNumber || '';
+      const accSuffix = fullAcc.includes('-') ? fullAcc.substring(fullAcc.indexOf('-') + 1) : fullAcc;
       const res = await fetch(`${API}/api/vendors/${vendorToEdit._id}`, {
         method: 'PUT', headers: authHeaders(), credentials: 'include',
         body: JSON.stringify({
@@ -205,7 +227,7 @@ export default function AdminVendorsPage() {
           address:       editForm.address,
           salesPerson:   editForm.salesPerson,
           status:        editForm.status,
-          accountNumber: editForm.accountNumber,
+          accountNumber: accSuffix,
           divisionId:    editForm.divisionId,
           partyCity:     editForm.partyCity,
           partyType:     editForm.partyType,
@@ -330,13 +352,15 @@ export default function AdminVendorsPage() {
                   value={editForm.divisionId || ''}
                   onChange={(e) => {
                     const selDiv = divisions.find(d => d._id === e.target.value);
-                    const suffix = editForm.accountNumber?.includes('-')
-                      ? editForm.accountNumber.split('-').slice(1).join('-')
-                      : editForm.accountNumber || '';
+                    // Extract just the suffix from current full account number
+                    const acc = editForm.accountNumber || '';
+                    const currentPrefix = vendorToEdit?.division?.name || '';
+                    const suffix = acc.includes('-')
+                      ? acc.substring(acc.indexOf('-') + 1)
+                      : acc;
                     setEditForm(p => ({
                       ...p,
                       divisionId: e.target.value,
-                      // update accountNumber prefix automatically
                       accountNumber: selDiv ? `${selDiv.name}-${suffix}` : suffix,
                     }));
                   }}
@@ -361,7 +385,7 @@ export default function AdminVendorsPage() {
                       value={
                         (() => {
                           const acc = editForm.accountNumber || '';
-                          return acc.includes('-') ? acc.split('-').slice(1).join('-') : acc;
+                          return acc.includes('-') ? acc.substring(acc.indexOf('-') + 1) : acc;
                         })()
                       }
                       onChange={(e) => {

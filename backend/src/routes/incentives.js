@@ -345,6 +345,16 @@ router.get('/monthly-wallets/:vendorId', protect, async (req, res) => {
     const allWallets = [];
     for (const mw of rawWallets) {
       if (remaining <= 0) break;
+
+      // Skip party-level held wallets
+      if (mw.isHold) continue;
+
+      // Skip wallets whose parent master Wallet is on hold
+      const parentWallet = mw.wallet
+        ? await Wallet.findById(mw.wallet).select('isHold').lean()
+        : await Wallet.findOne({ name: mw.label }).select('isHold').lean();
+      if (parentWallet && parentWallet.isHold) continue;
+
       const cappedBalance = parseFloat(Math.min(mw.balance, remaining).toFixed(2));
       allWallets.push({ ...mw, balance: cappedBalance });
       remaining = parseFloat((remaining - cappedBalance).toFixed(2));

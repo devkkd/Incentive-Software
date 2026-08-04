@@ -567,17 +567,45 @@ router.get('/', protect, async (req, res) => {
     }
 
     const total = await Invoice.countDocuments(filter);
+
+    // Sum of all filtered invoices (across all pages)
+    const totalAmountAgg = await Invoice.aggregate([
+      { $match: filter },
+      { $group: { _id: null, totalAmount: { $sum: '$invoiceAmount' } } },
+    ]);
+    const totalAmount = totalAmountAgg[0]?.totalAmount || 0;
+
     const invoices = await Invoice.find(filter)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(parseInt(limit))
       .populate('vendor', 'companyName accountNumber mobileNumber')
-      .populate('division', 'name location');
+      .populate('division', 'name location')
+      .lean();
+
+    // Attach redemption amount (sum of debit wallet transactions per invoice)
+    const invoiceIds = invoices.map(inv => inv._id);
+    const redemptions = await WalletTransaction.find({
+      invoice: { $in: invoiceIds },
+      type: 'debit',
+    }).select('invoice amount').lean();
+
+    const redemptionMap = {};
+    redemptions.forEach(r => {
+      const key = String(r.invoice);
+      redemptionMap[key] = (redemptionMap[key] || 0) + (r.amount || 0);
+    });
+
+    const invoicesWithRedeem = invoices.map(inv => ({
+      ...inv,
+      redeemAmount: parseFloat((redemptionMap[String(inv._id)] || 0).toFixed(2)),
+    }));
 
     res.status(200).json({
       success: true,
-      data: invoices,
+      data: invoicesWithRedeem,
       pagination: { total, page: parseInt(page), limit: parseInt(limit), pages: Math.ceil(total / limit) },
+      totalAmount: parseFloat(totalAmount.toFixed(2)),
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

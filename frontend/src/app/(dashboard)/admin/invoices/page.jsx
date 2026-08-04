@@ -88,6 +88,7 @@ export default function AdminInvoicesPage() {
   const [invoices, setInvoices]         = useState([]);
   const [loading, setLoading]           = useState(true);
   const [pagination, setPagination]     = useState({ total: 0, page: 1, pages: 1 });
+  const [totalAmount, setTotalAmount]   = useState(0);
   const [pageStart, setPageStart]       = useState(1);
   const [activeDropdown, setActiveDropdown] = useState(null);
 
@@ -157,6 +158,7 @@ export default function AdminInvoicesPage() {
       if (res.ok) {
         setInvoices(data.data);
         setPagination(data.pagination);
+        setTotalAmount(data.totalAmount || 0);
         // Collect unique locations from results for the location dropdown
         const locs = [...new Set(data.data.map(inv => inv.location).filter(Boolean))];
         setLocationOptions(prev => [...new Set([...prev, ...locs])]);
@@ -258,12 +260,14 @@ export default function AdminInvoicesPage() {
     doc.setFontSize(9);  doc.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 26);
     autoTable(doc, {
       startY: 32,
-      head: [['#', 'Party Name', 'Party Code', 'Mobile', 'Invoice No', 'Reference No', 'Invoice Date', 'Amount (Rs)', 'Location', 'Division', 'Remark']],
+      head: [['#', 'Party Name', 'Party Code', 'Mobile', 'Invoice No', 'Reference No', 'Invoice Date', 'Amount (Rs)', 'Redeemed (Rs)', 'Location', 'Division', 'Remark']],
       body: all.map((inv, i) => [
         i + 1, inv.vendor?.companyName || 'N/A', inv.vendor?.accountNumber || 'N/A',
         inv.vendor?.mobileNumber || 'N/A', inv.invoiceNumber, inv.referenceNo || '—',
         new Date(inv.invoiceDate).toLocaleDateString('en-IN'),
-        `Rs. ${inv.invoiceAmount}`, inv.location, inv.division?.name || 'N/A', inv.remark || '—',
+        `Rs. ${inv.invoiceAmount}`,
+        inv.redeemAmount > 0 ? `Rs. ${inv.redeemAmount}` : '—',
+        inv.location, inv.division?.name || 'N/A', inv.remark || '—',
       ]),
       styles: { fontSize: 7.5 }, headStyles: { fillColor: [43, 59, 138] },
     });
@@ -274,12 +278,14 @@ export default function AdminInvoicesPage() {
     const all  = await fetchAll();
     const XLSX = await import('xlsx');
     const ws = XLSX.utils.aoa_to_sheet([
-      ['#', 'Party Name', 'Party Code', 'Mobile', 'Invoice No', 'Reference No', 'Invoice Date', 'Amount (Rs)', 'Location', 'Division', 'Remark', 'Created At'],
+      ['#', 'Party Name', 'Party Code', 'Mobile', 'Invoice No', 'Reference No', 'Invoice Date', 'Amount (Rs)', 'Redeemed (Rs)', 'Location', 'Division', 'Remark', 'Created At'],
       ...all.map((inv, i) => [
         i + 1, inv.vendor?.companyName || 'N/A', inv.vendor?.accountNumber || 'N/A',
         inv.vendor?.mobileNumber || 'N/A', inv.invoiceNumber, inv.referenceNo || '—',
         new Date(inv.invoiceDate).toLocaleDateString('en-IN'),
-        inv.invoiceAmount, inv.location, inv.division?.name || 'N/A',
+        inv.invoiceAmount,
+        inv.redeemAmount > 0 ? inv.redeemAmount : 0,
+        inv.location, inv.division?.name || 'N/A',
         inv.remark || '—', new Date(inv.createdAt).toLocaleDateString('en-IN'),
       ]),
     ]);
@@ -501,6 +507,17 @@ export default function AdminInvoicesPage() {
             Invoices
             <span className="ml-2 text-[14px] font-normal text-gray-400">({pagination.total} total)</span>
           </h2>
+          {!loading && pagination.total > 0 && (
+            <div className="flex items-center gap-2 bg-[#EEF2FF] border border-[#2B3B8A]/15 px-4 py-2 rounded-xl">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-[#2B3B8A]">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-[13px] text-gray-500 font-medium">Total Amount:</span>
+              <span className="text-[15px] font-bold text-[#2B3B8A]">
+                ₹{Number(totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -515,6 +532,7 @@ export default function AdminInvoicesPage() {
                 <th className="pb-3 font-semibold px-2">Reference No</th>
                 <th className="pb-3 font-semibold px-2">Invoice Date</th>
                 <th className="pb-3 font-semibold px-2">Amount (₹)</th>
+                <th className="pb-3 font-semibold px-2">Redeemed (₹)</th>
                 <th className="pb-3 font-semibold px-2">Location</th>
                 <th className="pb-3 font-semibold px-2">Division</th>
                 <th className="pb-3 font-semibold px-2">Remark</th>
@@ -524,7 +542,7 @@ export default function AdminInvoicesPage() {
             <tbody className="text-gray-700 font-medium text-[13px]">
               {loading ? (
                 <tr>
-                  <td colSpan="12" className="py-16 text-center">
+                  <td colSpan="13" className="py-16 text-center">
                     <div className="flex items-center justify-center gap-2 text-gray-400">
                       <svg className="animate-spin w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
@@ -546,6 +564,11 @@ export default function AdminInvoicesPage() {
                   <td className="py-4 px-2 font-mono font-medium text-gray-800">{row.referenceNo || '—'}</td>
                   <td className="py-4 px-2">{new Date(row.invoiceDate).toLocaleDateString('en-IN')}</td>
                   <td className="py-4 px-2 font-semibold text-gray-900">₹{Number(row.invoiceAmount).toLocaleString('en-IN')}</td>
+                  <td className="py-4 px-2 font-semibold text-[#E74C3C]">
+                    {row.redeemAmount > 0
+                      ? `₹${Number(row.redeemAmount).toLocaleString('en-IN')}`
+                      : <span className="text-gray-300">—</span>}
+                  </td>
                   <td className="py-4 px-2 text-gray-500">{row.location || '—'}</td>
                   <td className="py-4 px-2">
                     <span className="px-2.5 py-1 bg-[#EEF2FF] text-[#2B3B8A] text-[11px] font-semibold rounded-lg">
@@ -574,7 +597,7 @@ export default function AdminInvoicesPage() {
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan="12" className="py-16 text-center">
+                  <td colSpan="13" className="py-16 text-center">
                     <div className="flex flex-col items-center gap-3 text-gray-400">
                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor" className="w-14 h-14 opacity-20">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
