@@ -2,6 +2,7 @@ const express = require('express');
 const Wallet = require('../models/Wallet');
 const MonthlyWallet = require('../models/MonthlyWallet');
 const Vendor = require('../models/Vendor');
+const WalletTransaction = require('../models/WalletTransaction');
 const { protect, authorize } = require('../middleware/auth');
 
 const router = express.Router();
@@ -12,7 +13,7 @@ const MONTH_NAMES = [
 ];
 
 /**
- * Helper to ensure legacy MonthlyWallet labels have corresponding Wallet documents
+ * Ensure legacy MonthlyWallet labels have corresponding Wallet documents
  */
 async function syncLegacyWallets() {
   const distinctLabels = await MonthlyWallet.distinct('label');
@@ -20,7 +21,6 @@ async function syncLegacyWallets() {
     if (!label) continue;
     let wallet = await Wallet.findOne({ name: label });
     if (!wallet) {
-      // Try to parse month/year from label if "Month Year" pattern
       let month = null;
       let year = null;
       const parts = label.split(' ');
@@ -39,8 +39,6 @@ async function syncLegacyWallets() {
         description: 'Auto-synchronized wallet',
       });
     }
-
-    // Link unlinked MonthlyWallet records to this master Wallet
     await MonthlyWallet.updateMany(
       { label, wallet: null },
       { wallet: wallet._id }
@@ -57,37 +55,61 @@ router.get('/', protect, async (req, res) => {
 
     const wallets = await Wallet.find().sort({ createdAt: -1 }).lean();
 
-    // Calculate aggregated balances per wallet
-    const result = await Promise.all(
+    // ── System-wide totals from WalletTransaction (ground truth) ─────────────
+    const creditAgg = await WalletTransaction.aggregate([
+      { $match: { type: 'credit' } },
+      { $group: { _id: null, total: { $sum: '$amount' } } }
+    ]);
+    const totalCreditedFromTxn = parseFloat((creditAgg[0]?.total || 0).toFixed(2));
+
+    const redeemAgg = await WalletTransaction.aggregate([
+      { $match: { type: 'debit' } },
+      { $group: { _id: null, total: { $sum: '$amount' } } }
+    ]);
+    const totalRedeemed = parseFloat((redeemAgg[0]?.total || 0).toFixed(2));
+
+    // Total System Balance = Credited - ALL Redeemed
+    const trueSystemBalance = parseFloat((totalCreditedFromTxn - totalRedeemed).toFixed(2));
+
+    // ── Per-wallet stats ──────────────────────────────────────────────────────
+    const rawResult = await Promise.all(
       wallets.map(async (w) => {
-        // Query by wallet ID or label for robustness
-        const filter = {
-          $or: [{ wallet: w._id }, { label: w.name }],
-        };
+        const filter = { $or: [{ wallet: w._id }, { label: w.name }] };
+        const partyWallets = await MonthlyWallet.find(filter)
+          .select('_id balance creditedAmount isHold')
+          .lean();
 
-        const partyWallets = await MonthlyWallet.find(filter).select('balance creditedAmount isHold').lean();
-
-        const totalBalance = partyWallets.reduce((acc, curr) => acc + (curr.balance || 0), 0);
-        const totalCredited = partyWallets.reduce((acc, curr) => acc + (curr.creditedAmount || 0), 0);
-        const partiesWithBalance = partyWallets.filter((pw) => (pw.balance || 0) > 0).length;
+        const totalCredited = parseFloat(partyWallets.reduce((acc, curr) => acc + (curr.creditedAmount || 0), 0).toFixed(2));
         const totalParties = partyWallets.length;
         const heldPartiesCount = partyWallets.filter((pw) => pw.isHold).length;
+        const partiesWithBalance = partyWallets.filter((pw) => (pw.balance || 0) > 0).length;
 
-        return {
-          ...w,
-          totalBalance: parseFloat(totalBalance.toFixed(2)),
-          totalCredited: parseFloat(totalCredited.toFixed(2)),
-          partiesWithBalance,
-          totalParties,
-          heldPartiesCount,
-        };
+        return { ...w, totalCredited, totalParties, heldPartiesCount, partiesWithBalance };
       })
     );
+
+    // Distribute trueSystemBalance proportionally across wallets by creditedAmount
+    const totalAllCredited = rawResult.reduce((s, w) => s + (w.totalCredited || 0), 0);
+    const result = rawResult.map((w, i) => {
+      const share = totalAllCredited > 0
+        ? parseFloat(((w.totalCredited / totalAllCredited) * trueSystemBalance).toFixed(2))
+        : 0;
+      return { ...w, totalBalance: Math.max(0, share) };
+    });
+
+    // Fix rounding on last wallet so sum is exact
+    if (result.length > 0) {
+      const sumExceptLast = result.slice(0, -1).reduce((s, w) => s + w.totalBalance, 0);
+      result[result.length - 1].totalBalance = Math.max(0, parseFloat((trueSystemBalance - sumExceptLast).toFixed(2)));
+    }
 
     res.status(200).json({
       success: true,
       count: result.length,
       data: result,
+      trueSystemBalance,
+      totalCreditedFromTxn,
+      totalRedeemed,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -152,7 +174,7 @@ router.get('/:id/parties', protect, async (req, res) => {
       .lean();
 
     const parties = monthlyWallets
-      .filter((mw) => mw.vendor) // Ensure vendor exists
+      .filter((mw) => mw.vendor)
       .map((mw) => ({
         monthlyWalletId: mw._id,
         vendorId: mw.vendor._id,
@@ -246,6 +268,68 @@ router.patch('/party-hold', protect, authorize('branch', 'admin'), async (req, r
         ? `Balance held for ${mw.vendor?.companyName || 'party'}`
         : `Balance released for ${mw.vendor?.companyName || 'party'}`,
       data: mw,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   GET /api/wallets/diagnostics
+// @desc    Cross-check all balance sources to find mismatches
+// @access  Admin only
+router.get('/diagnostics', protect, authorize('admin'), async (req, res) => {
+  try {
+    const vendorAgg = await Vendor.aggregate([
+      { $group: { _id: null, total: { $sum: '$walletBalance' }, count: { $sum: 1 } } }
+    ]);
+    const vendorBalanceSum = parseFloat((vendorAgg[0]?.total || 0).toFixed(2));
+    const vendorCount = vendorAgg[0]?.count || 0;
+
+    const creditAgg = await WalletTransaction.aggregate([
+      { $match: { type: 'credit' } },
+      { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+    ]);
+    const totalCredits = parseFloat((creditAgg[0]?.total || 0).toFixed(2));
+    const creditCount = creditAgg[0]?.count || 0;
+
+    const debitAgg = await WalletTransaction.aggregate([
+      { $match: { type: 'debit' } },
+      { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+    ]);
+    const totalDebits = parseFloat((debitAgg[0]?.total || 0).toFixed(2));
+    const debitCount = debitAgg[0]?.count || 0;
+
+    const expectedBalance = parseFloat((totalCredits - totalDebits).toFixed(2));
+
+    const orphanDebits = await WalletTransaction.aggregate([
+      { $match: { type: 'debit', monthlyWallet: null } },
+      { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+    ]);
+    const orphanDebitTotal = parseFloat((orphanDebits[0]?.total || 0).toFixed(2));
+    const orphanDebitCount = orphanDebits[0]?.count || 0;
+
+    const newFlowDebitTotal = parseFloat((totalDebits - orphanDebitTotal).toFixed(2));
+    const adjustedExpectedBalance = parseFloat((totalCredits - newFlowDebitTotal).toFixed(2));
+
+    res.status(200).json({
+      success: true,
+      data: {
+        vendorBalanceSum,
+        vendorCount,
+        totalCredits,
+        creditCount,
+        totalDebits,
+        debitCount,
+        expectedBalance,
+        orphanDebitTotal,
+        orphanDebitCount,
+        newFlowDebitTotal,
+        adjustedExpectedBalance,
+        isReconciled: Math.abs(vendorBalanceSum - expectedBalance) < 1,
+        wouldReconcileAfterCleanup: Math.abs(vendorBalanceSum - adjustedExpectedBalance) < 1,
+        discrepancy: parseFloat((vendorBalanceSum - expectedBalance).toFixed(2)),
+        discrepancyAfterCleanup: parseFloat((vendorBalanceSum - adjustedExpectedBalance).toFixed(2)),
+      }
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
