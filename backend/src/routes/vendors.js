@@ -364,18 +364,46 @@ router.put('/:id/block', protect, authorize('branch', 'admin'), async (req, res)
 router.get('/:id/transactions', protect, async (req, res) => {
   try {
     const WalletTransaction = require('../models/WalletTransaction');
-    const transactions = await WalletTransaction.find({ vendor: req.params.id })
-      .sort({ createdAt: -1 })
-      .populate({
-        path: 'invoice',
-        select: 'invoiceNumber referenceNo invoiceDate invoiceAmount location remark division',
-        populate: {
-          path: 'division',
-          select: 'name location'
-        }
-      });
+    const Vendor = require('../models/Vendor');
 
-    res.status(200).json({ success: true, data: transactions });
+    const [transactions, vendor] = await Promise.all([
+      WalletTransaction.find({ vendor: req.params.id })
+        .sort({ createdAt: 1 }) // ascending — oldest first for recalculation
+        .populate({
+          path: 'invoice',
+          select: 'invoiceNumber referenceNo invoiceDate invoiceAmount location remark division',
+          populate: { path: 'division', select: 'name location' }
+        })
+        .lean(),
+      Vendor.findById(req.params.id).select('walletBalance').lean(),
+    ]);
+
+    // Recalculate balanceAfter for each transaction using vendor.walletBalance
+    // as the anchor (ground truth). Work backwards from current balance.
+    // This corrects any stale/zero balanceAfter values saved by old code.
+    const currentBalance = parseFloat((vendor?.walletBalance || 0).toFixed(2));
+
+    // Walk backwards: start from currentBalance and reverse each transaction
+    // to find what balance was before each one, then assign correct balanceAfter.
+    let balance = currentBalance;
+    const corrected = [];
+    for (let i = transactions.length - 1; i >= 0; i--) {
+      const trx = transactions[i];
+      const amount = parseFloat((trx.amount || 0).toFixed(2));
+      // balanceAfter for this transaction = current balance in our backward pass
+      corrected[i] = { ...trx, balanceAfter: parseFloat(balance.toFixed(2)) };
+      // Move balance backwards: undo this transaction
+      if (trx.type === 'credit') {
+        balance = parseFloat((balance - amount).toFixed(2));
+      } else {
+        balance = parseFloat((balance + amount).toFixed(2));
+      }
+    }
+
+    // Return in descending order (newest first) as frontend expects
+    corrected.reverse();
+
+    res.status(200).json({ success: true, data: corrected });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

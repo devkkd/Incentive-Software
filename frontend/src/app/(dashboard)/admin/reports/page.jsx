@@ -139,13 +139,33 @@ export default function AdminReportsPage() {
         invoiceAmount: trx.invoice?.invoiceAmount ?? null,
         division: trx.invoice?.division?.name || vendor?.division?.name || '—',
         location: trx.invoice?.location || '—',
-        balanceAfter: trx.balanceAfter,
+        balanceAfter: trx.balanceAfter,   // DB snapshot — ground truth
         isCredit: trx.type === 'credit',
       }));
 
-      const combined = [...mappedInvoices, ...mappedTransactions].sort((a, b) => a.date - b.date);
+      const combined = [...mappedInvoices, ...mappedTransactions].sort((a, b) => {
+        if (a.date.getTime() !== b.date.getTime()) return a.date - b.date;
+        // On same date: transactions after invoices
+        if (a.type === 'Invoice / Bill' && b.type !== 'Invoice / Bill') return -1;
+        if (a.type !== 'Invoice / Bill' && b.type === 'Invoice / Bill') return 1;
+        return 0;
+      });
 
-      setStatementModal(prev => ({ ...prev, data: combined, loading: false }));
+      // Use DB balanceAfter as the running balance snapshot for transaction rows.
+      // Invoice rows (no balanceAfter) carry-forward the last known balance.
+      // vendor.walletBalance is the authoritative current balance — do NOT recalculate.
+      let lastKnownBalance = null;
+      const withBalance = combined.map((row) => {
+        if (row.balanceAfter != null && row.balanceAfter !== '—') {
+          // Transaction row — DB has the snapshot, use it directly
+          lastKnownBalance = Number(row.balanceAfter);
+          return row;
+        }
+        // Invoice row — carry forward last known balance (or null if no transactions yet)
+        return { ...row, balanceAfter: lastKnownBalance };
+      });
+
+      setStatementModal(prev => ({ ...prev, data: withBalance, loading: false }));
     } catch {
       setStatementModal(prev => ({ ...prev, loading: false }));
     }
@@ -834,7 +854,9 @@ export default function AdminReportsPage() {
                               {row.debit != null ? `-₹${Number(row.debit).toFixed(2)}` : <span className="text-gray-300 font-normal">—</span>}
                             </td>
                             <td className="py-3.5 px-4 text-right font-bold text-gray-900">
-                              {row.balanceAfter !== '—' ? `₹${Number(row.balanceAfter).toFixed(2)}` : <span className="text-gray-300 font-normal">—</span>}
+                              {row.balanceAfter != null && row.balanceAfter !== '—'
+                                ? `₹${Number(row.balanceAfter).toFixed(2)}`
+                                : <span className="text-gray-300 font-normal">—</span>}
                             </td>
                             <td className="py-3.5 px-4 text-gray-600">{row.division || '—'}</td>
                           </tr>
