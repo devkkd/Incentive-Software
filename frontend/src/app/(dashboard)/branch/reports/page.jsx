@@ -87,9 +87,8 @@ export default function ReportsPage() {
         return 0;
       });
 
-      // Use DB balanceAfter as the running balance snapshot for transaction rows.
-      // Invoice rows (no balanceAfter) carry-forward the last known balance.
-      // vendor.walletBalance is the authoritative current balance — do NOT recalculate.
+      // Backend returns correctly recalculated balanceAfter for each transaction.
+      // Invoice rows carry-forward the last known balance.
       let lastKnownBalance = null;
       const withBalance = combined.map((row) => {
         if (row.balanceAfter != null && row.balanceAfter !== '—') {

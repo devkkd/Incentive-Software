@@ -364,18 +364,45 @@ router.put('/:id/block', protect, authorize('branch', 'admin'), async (req, res)
 router.get('/:id/transactions', protect, async (req, res) => {
   try {
     const WalletTransaction = require('../models/WalletTransaction');
-    const transactions = await WalletTransaction.find({ vendor: req.params.id })
-      .sort({ createdAt: -1 })
-      .populate({
-        path: 'invoice',
-        select: 'invoiceNumber referenceNo invoiceDate invoiceAmount location remark division',
-        populate: {
-          path: 'division',
-          select: 'name location'
-        }
-      });
+    const Vendor = require('../models/Vendor');
 
-    res.status(200).json({ success: true, data: transactions });
+    // Fetch transactions oldest-first so we can do a clean forward pass
+    const [rawTransactions, vendor] = await Promise.all([
+      WalletTransaction.find({ vendor: req.params.id })
+        .sort({ createdAt: 1 })
+        .populate({
+          path: 'invoice',
+          select: 'invoiceNumber referenceNo invoiceDate invoiceAmount location remark division',
+          populate: { path: 'division', select: 'name location' }
+        })
+        .lean(),
+      Vendor.findById(req.params.id).select('walletBalance').lean(),
+    ]);
+
+    if (!rawTransactions.length) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    // Forward-pass: recalculate balanceAfter for every transaction from scratch.
+    // Start from 0, apply each credit/debit in chronological order.
+    // This gives correct running balance regardless of what was stored in DB.
+    // The final computed balance may differ from vendor.walletBalance if DB is stale,
+    // but the running balance column will always be internally consistent.
+    let running = 0;
+    const corrected = rawTransactions.map(trx => {
+      const amount = parseFloat((trx.amount || 0).toFixed(2));
+      if (trx.type === 'credit') {
+        running = parseFloat((running + amount).toFixed(2));
+      } else {
+        running = parseFloat((running - amount).toFixed(2));
+      }
+      return { ...trx, balanceAfter: running };
+    });
+
+    // Return newest-first as frontend expects
+    corrected.reverse();
+
+    res.status(200).json({ success: true, data: corrected });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -388,6 +415,69 @@ router.delete('/:id', protect, authorize('admin'), async (req, res) => {
     const vendor = await Vendor.findByIdAndDelete(req.params.id);
     if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
     res.status(200).json({ success: true, data: {} });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   POST /api/vendors/sync-wallet-balances
+// @desc    Admin utility — recalculate every vendor's walletBalance from their
+//          WalletTransaction records (forward pass: credits add, debits subtract).
+//          This safely corrects stale walletBalance values in DB without touching
+//          any transaction records. Safe to run multiple times (idempotent).
+// @access  Admin only
+router.post('/sync-wallet-balances', protect, authorize('admin'), async (req, res) => {
+  try {
+    const WalletTransaction = require('../models/WalletTransaction');
+
+    // Get all unique vendor IDs that have transactions
+    const vendorIds = await WalletTransaction.distinct('vendor');
+    let updated = 0;
+    let skipped = 0;
+    const details = [];
+
+    for (const vendorId of vendorIds) {
+      const vendor = await Vendor.findById(vendorId).select('companyName walletBalance').lean();
+      if (!vendor) continue;
+
+      // Forward pass: oldest first, sum credits minus debits
+      const transactions = await WalletTransaction.find({ vendor: vendorId })
+        .sort({ createdAt: 1 })
+        .select('type amount')
+        .lean();
+
+      let calculatedBalance = 0;
+      for (const trx of transactions) {
+        const amount = parseFloat((trx.amount || 0).toFixed(2));
+        if (trx.type === 'credit') calculatedBalance += amount;
+        else calculatedBalance -= amount;
+      }
+      calculatedBalance = parseFloat(calculatedBalance.toFixed(2));
+
+      const currentBalance = parseFloat((vendor.walletBalance || 0).toFixed(2));
+
+      if (Math.abs(calculatedBalance - currentBalance) < 0.01) {
+        skipped++;
+        continue; // already correct
+      }
+
+      // Update DB
+      await Vendor.findByIdAndUpdate(vendorId, { walletBalance: calculatedBalance });
+      details.push({
+        vendorId,
+        name: vendor.companyName,
+        was: currentBalance,
+        now: calculatedBalance,
+        diff: parseFloat((calculatedBalance - currentBalance).toFixed(2)),
+      });
+      updated++;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `${updated} vendors updated, ${skipped} already correct`,
+      data: { updated, skipped, details },
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
