@@ -884,7 +884,7 @@ export default function BranchDashboard() {
                               : 'border-gray-200 focus:ring-[#2B3B8A]'
                         } ${isOtpBlocked ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''}`}
                       />
-                      <button
+                      {/* <button
                         onClick={handleSendOTP}
                         disabled={isOtpBlocked || isInsufficientBalance || !redeemAmount || !invoiceAmt || exceedsInvoiceAmount || submitLoading}
                         className={`font-semibold px-6 py-2.5 rounded-xl whitespace-nowrap flex items-center gap-2 transition-colors ${
@@ -908,7 +908,7 @@ export default function BranchDashboard() {
                         ) : (
                           'Send OTP →'
                         )}
-                      </button>
+                      </button> */}
                     </div>
 
                     {/* ── Cooldown banner ────────────────────────────────────── */}
