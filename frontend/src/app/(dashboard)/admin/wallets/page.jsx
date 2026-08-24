@@ -788,10 +788,11 @@ export default function WalletManagementPage() {
       {/* Modal / Drawer: Wallet Parties List */}
       {selectedWallet && (
         <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/50 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white h-full max-w-4xl w-full p-6 shadow-2xl flex flex-col justify-between border-l border-gray-200 overflow-y-auto">
-            <div className="space-y-5">
-              {/* Drawer Header */}
-              <div className="flex items-start justify-between border-b border-gray-100 pb-4">
+          <div className="bg-white h-full max-w-4xl w-full shadow-2xl flex flex-col border-l border-gray-200">
+
+            {/* Sticky Header */}
+            <div className="flex-shrink-0 p-6 border-b border-gray-100 bg-white">
+              <div className="flex items-start justify-between pb-0">
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="text-xl font-bold text-gray-900">{selectedWallet.name}</h2>
@@ -805,12 +806,10 @@ export default function WalletManagementPage() {
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Parties holding balances in this wallet
-                  </p>
+                  <p className="text-xs text-gray-500 mt-1">Parties holding balances in this wallet</p>
                 </div>
                 <button
-                  onClick={() => setSelectedWallet(null)}
+                  onClick={() => { setSelectedWallet(null); setParties([]); setPartySearch(''); }}
                   className="p-2 text-gray-400 hover:text-gray-600 rounded-xl hover:bg-gray-100 transition-colors"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6">
@@ -819,26 +818,87 @@ export default function WalletManagementPage() {
                 </button>
               </div>
 
-              {/* Drawer Search */}
-              <div className="flex items-center justify-between gap-4">
+              {/* Search + Download buttons */}
+              <div className="flex items-center gap-3 mt-4">
                 <input
                   type="text"
                   placeholder="Search party by name, code, mobile..."
                   value={partySearch}
                   onChange={(e) => setPartySearch(e.target.value)}
-                  className="w-full pl-4 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:bg-white"
+                  className="flex-1 pl-4 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:bg-white"
                 />
+                {/* PDF Download */}
+                <button
+                  onClick={async () => {
+                    const { default: jsPDF } = await import('jspdf');
+                    const { default: autoTable } = await import('jspdf-autotable');
+                    const doc = new jsPDF({ orientation: 'landscape' });
+                    doc.setFontSize(14); doc.setFont('helvetica', 'bold');
+                    doc.text(`${selectedWallet.name} — Party Wallet Balances`, 14, 18);
+                    doc.setFontSize(9); doc.setFont('helvetica', 'normal');
+                    doc.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 26);
+                    autoTable(doc, {
+                      startY: 32,
+                      head: [['Party Name', 'Party Code', 'Mobile', 'Credited (Rs)', 'Wallet Balance (Rs)', 'Status']],
+                      body: filteredParties.map(p => [
+                        p.companyName,
+                        p.accountNumber,
+                        p.mobileNumber,
+                        Number(p.creditedAmount).toFixed(2),
+                        Number(p.balance).toFixed(2),
+                        p.isHold ? 'Party Hold' : p.walletIsHold ? 'Wallet Hold' : 'Active',
+                      ]),
+                      styles: { fontSize: 8 },
+                      headStyles: { fillColor: [43, 59, 138], textColor: 255, fontStyle: 'bold' },
+                      alternateRowStyles: { fillColor: [248, 250, 252] },
+                    });
+                    doc.save(`${selectedWallet.name.replace(/\s+/g, '_')}_parties.pdf`);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-[#E74C3C] hover:bg-red-600 text-white text-[12px] font-bold rounded-xl transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m.75 12l3 3m0 0l3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                  </svg>
+                  PDF
+                </button>
+                {/* Excel Download */}
+                <button
+                  onClick={async () => {
+                    const XLSX = await import('xlsx');
+                    const head = ['Party Name', 'Party Code', 'Mobile', 'Credited (Rs)', 'Wallet Balance (Rs)', 'Status'];
+                    const body = filteredParties.map(p => [
+                      p.companyName, p.accountNumber, p.mobileNumber,
+                      Number(p.creditedAmount).toFixed(2),
+                      Number(p.balance).toFixed(2),
+                      p.isHold ? 'Party Hold' : p.walletIsHold ? 'Wallet Hold' : 'Active',
+                    ]);
+                    const ws = XLSX.utils.aoa_to_sheet([
+                      [`${selectedWallet.name} — Party Wallet Balances`],
+                      [`Generated: ${new Date().toLocaleDateString('en-IN')}`],
+                      [],
+                      head,
+                      ...body,
+                    ]);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, 'Parties');
+                    XLSX.writeFile(wb, `${selectedWallet.name.replace(/\s+/g, '_')}_parties.xlsx`);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-[#2ECC71] hover:bg-green-600 text-white text-[12px] font-bold rounded-xl transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                  </svg>
+                  Excel
+                </button>
               </div>
+            </div>
 
-              {/* Parties Table */}
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-6 pt-4">
               {loadingParties ? (
-                <div className="py-12 text-center text-gray-500">
-                  Loading party balances...
-                </div>
+                <div className="py-12 text-center text-gray-500">Loading party balances...</div>
               ) : filteredParties.length === 0 ? (
-                <div className="py-12 text-center text-gray-400 text-sm">
-                  No parties found in this wallet.
-                </div>
+                <div className="py-12 text-center text-gray-400 text-sm">No parties found in this wallet.</div>
               ) : (
                 <div className="overflow-x-auto border border-gray-100 rounded-xl">
                   <table className="w-full text-left text-xs">
@@ -859,9 +919,7 @@ export default function WalletManagementPage() {
                             {p.companyName}
                             <div className="text-[10px] text-gray-400 font-normal">{p.personName} • {p.mobileNumber}</div>
                           </td>
-                          <td className="px-4 py-3 font-mono font-medium text-gray-600">
-                            {p.accountNumber}
-                          </td>
+                          <td className="px-4 py-3 font-mono font-medium text-gray-600">{p.accountNumber}</td>
                           <td className="px-4 py-3 font-medium text-gray-600">
                             ₹{p.creditedAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </td>
@@ -870,17 +928,11 @@ export default function WalletManagementPage() {
                           </td>
                           <td className="px-4 py-3">
                             {p.isHold ? (
-                              <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-amber-100 text-amber-800">
-                                Party On Hold
-                              </span>
+                              <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-amber-100 text-amber-800">Party On Hold</span>
                             ) : p.walletIsHold ? (
-                              <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-red-100 text-red-800">
-                                Wallet On Hold
-                              </span>
+                              <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-red-100 text-red-800">Wallet On Hold</span>
                             ) : (
-                              <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-emerald-100 text-emerald-800">
-                                Active
-                              </span>
+                              <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-emerald-100 text-emerald-800">Active</span>
                             )}
                           </td>
                           <td className="px-4 py-3 text-right">
@@ -904,9 +956,10 @@ export default function WalletManagementPage() {
               )}
             </div>
 
-            <div className="pt-4 border-t border-gray-100 flex justify-end">
+            {/* Sticky Footer */}
+            <div className="flex-shrink-0 pt-4 pb-4 px-6 border-t border-gray-100 bg-white flex justify-end">
               <button
-                onClick={() => setSelectedWallet(null)}
+                onClick={() => { setSelectedWallet(null); setParties([]); setPartySearch(''); }}
                 className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl text-sm transition-colors"
               >
                 Close Drawer

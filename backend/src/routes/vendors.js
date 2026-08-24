@@ -202,11 +202,49 @@ router.get('/', protect, async (req, res) => {
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(parseInt(limit))
-      .populate('division', 'name location');
+      .populate('division', 'name location')
+      .lean();
+
+    // For branch users: calculate usableWalletBalance (excluding held wallets)
+    // Admin sees actual walletBalance; branch sees only unheld balance
+    const isBranch = req.user.role === 'branch';
+    let vendorsWithUsable = vendors;
+
+    if (isBranch) {
+      const MonthlyWallet = require('../models/MonthlyWallet');
+      const Wallet = require('../models/Wallet');
+      const vendorIds = vendors.map(v => v._id);
+
+      // Get all MonthlyWallets for these vendors
+      const monthlyWallets = await MonthlyWallet.find({
+        vendor: { $in: vendorIds },
+        balance: { $gt: 0 },
+      }).lean();
+
+      // Get all master wallets to check hold status
+      const walletIds = [...new Set(monthlyWallets.map(mw => mw.wallet).filter(Boolean).map(String))];
+      const masterWallets = await Wallet.find({ _id: { $in: walletIds } }).select('_id isHold').lean();
+      const masterWalletMap = {};
+      masterWallets.forEach(w => { masterWalletMap[String(w._id)] = w.isHold; });
+
+      // Group by vendor — sum only unheld balances
+      const usableMap = {};
+      monthlyWallets.forEach(mw => {
+        const vid = String(mw.vendor);
+        if (mw.isHold) return; // party-level hold
+        if (mw.wallet && masterWalletMap[String(mw.wallet)]) return; // wallet-level hold
+        usableMap[vid] = parseFloat(((usableMap[vid] || 0) + mw.balance).toFixed(2));
+      });
+
+      vendorsWithUsable = vendors.map(v => ({
+        ...v,
+        walletBalance: usableMap[String(v._id)] ?? 0, // show only usable balance to branch
+      }));
+    }
 
     res.status(200).json({
       success: true,
-      data: vendors,
+      data: vendorsWithUsable,
       pagination: { total, page: parseInt(page), limit: parseInt(limit), pages: Math.ceil(total / limit) },
     });
   } catch (error) {
@@ -477,6 +515,106 @@ router.post('/sync-wallet-balances', protect, authorize('admin'), async (req, re
       success: true,
       message: `${updated} vendors updated, ${skipped} already correct`,
       data: { updated, skipped, details },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   POST /api/vendors/manual-redeem-fix
+// @desc    One-time admin fix — create missing debit WalletTransactions for
+//          invoices that were created without redemption (old code bug).
+//          Vendor: JOH-WRJ0218060 (SHREE RAM MARUTI), balance to set: 0
+// @access  Admin only
+router.post('/manual-redeem-fix', protect, authorize('admin'), async (req, res) => {
+  try {
+    const WalletTransaction = require('../models/WalletTransaction');
+
+    const vendorId = '6a09a83816ace890a001aa4d'; // SHREE RAM MARUTI
+
+    // Check vendor exists and current balance
+    const vendor = await Vendor.findById(vendorId).select('companyName walletBalance');
+    if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
+
+    // Find the 3 invoices by referenceNo
+    const refs = ['13879219', '57299280', '86539963'];
+    const invoices = await Invoice.find({
+      vendor: vendorId,
+      referenceNo: { $in: refs }
+    }).lean();
+
+    if (invoices.length !== 3) {
+      return res.status(400).json({
+        success: false,
+        message: `Expected 3 invoices, found ${invoices.length}`,
+        found: invoices.map(i => i.referenceNo)
+      });
+    }
+
+    // Check if debit transactions already exist for these invoices
+    const existingDebits = await WalletTransaction.find({
+      vendor: vendorId,
+      invoice: { $in: invoices.map(i => i._id) },
+      type: 'debit'
+    }).lean();
+
+    if (existingDebits.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Debit transactions already exist for some of these invoices',
+        existing: existingDebits.map(t => ({ invoice: t.invoice, amount: t.amount }))
+      });
+    }
+
+    // Amounts: total must equal vendor.walletBalance (10600)
+    // 13879219 → 1075, 57299280 → 4884, 86539963 → 4641 (adjusted -10 to match total)
+    const redeemMap = {
+      '13879219': 1075,
+      '57299280': 4884,
+      '86539963': 4641,
+    };
+
+    const totalRedeem = Object.values(redeemMap).reduce((s, v) => s + v, 0); // 10600
+
+    if (totalRedeem !== vendor.walletBalance) {
+      return res.status(400).json({
+        success: false,
+        message: `Total redeem (${totalRedeem}) !== vendor balance (${vendor.walletBalance}). Cannot proceed.`
+      });
+    }
+
+    // Create debit transactions and set balanceAfter progressively
+    let runningBalance = vendor.walletBalance;
+    const created = [];
+
+    // Sort invoices by date to maintain chronological order
+    const sortedInvoices = invoices.sort((a, b) => new Date(a.invoiceDate) - new Date(b.invoiceDate));
+
+    for (const inv of sortedInvoices) {
+      const amount = redeemMap[inv.referenceNo];
+      runningBalance = parseFloat((runningBalance - amount).toFixed(2));
+
+      const trx = await WalletTransaction.create({
+        vendor: vendorId,
+        invoice: inv._id,
+        type: 'debit',
+        amount,
+        balanceAfter: runningBalance,
+        description: `Redemption Rs.${amount} from April 2026`,
+        processedBy: req.user._id,
+        walletLabel: 'April 2026',
+      });
+
+      created.push({ ref: inv.referenceNo, amount, balanceAfter: runningBalance, txnId: trx._id });
+    }
+
+    // Update vendor walletBalance to 0
+    await Vendor.findByIdAndUpdate(vendorId, { walletBalance: 0 });
+
+    res.status(200).json({
+      success: true,
+      message: `3 debit transactions created, vendor balance set to 0`,
+      data: { vendorName: vendor.companyName, created }
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

@@ -51,7 +51,8 @@ async function syncLegacyWallets() {
 // @access  Branch, Admin
 router.get('/', protect, async (req, res) => {
   try {
-    await syncLegacyWallets();
+    // Run legacy sync in background — don't await, don't block response
+    syncLegacyWallets().catch(err => console.error('[syncLegacyWallets]', err.message));
 
     const wallets = await Wallet.find().sort({ createdAt: -1 }).lean();
 

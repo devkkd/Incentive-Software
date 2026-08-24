@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar_admin from '@/components/Sidebar_admin';
 import Admin_header from '@/components/Admin_header';
-
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 export default function AdminLayout({ children }) {
