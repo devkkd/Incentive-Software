@@ -31,6 +31,7 @@ export default function BranchDashboard() {
 
   // Monthly sub-wallets
   const [monthlyWallets, setMonthlyWallets] = useState([]);
+  const [monthlyWalletsLoaded, setMonthlyWalletsLoaded] = useState(false);
   // redemptionSplits: [{monthlyWalletId, label, available, amount}]
   const [redemptionSplits, setRedemptionSplits] = useState([]);
   const [walletSelectError, setWalletSelectError] = useState('');
@@ -88,8 +89,21 @@ export default function BranchDashboard() {
   const redeemAmt = parseFloat(redeemAmount) || 0;
   const totalPayable = useMemo(() => Math.max(0, invoiceAmt - redeemAmt), [invoiceAmt, redeemAmt]);
 
-  // Insufficient balance check
-  const walletBalance = selectedVendor ? parseFloat(selectedVendor.walletBalance) : 0;
+  // Available (unhold) balance — sum of monthly wallet balances returned by backend
+  // Backend already excludes held MonthlyWallets and held master Wallets from the list,
+  // so this sum reflects only the amount the branch can actually redeem.
+  const walletBalance = useMemo(() => {
+    if (!selectedVendor) return 0;
+    if (!monthlyWalletsLoaded) {
+      // Still fetching — show vendor.walletBalance as placeholder
+      return parseFloat(selectedVendor.walletBalance) || 0;
+    }
+    // Fetch complete: sum only the unhold wallets returned by backend
+    return parseFloat(
+      monthlyWallets.reduce((s, mw) => s + (parseFloat(mw.balance) || 0), 0).toFixed(2)
+    );
+  }, [selectedVendor, monthlyWallets, monthlyWalletsLoaded]);
+
   const isInsufficientBalance = redeemAmt > 0 && redeemAmt > walletBalance;
   const exceedsInvoiceAmount = redeemAmt > 0 && invoiceAmt > 0 && redeemAmt > invoiceAmt;
 
@@ -103,6 +117,7 @@ export default function BranchDashboard() {
     setCreatedInvoice(null);
     setWalletHistory([]);
     setMonthlyWallets([]);
+    setMonthlyWalletsLoaded(false);
     setRedemptionSplits([]);
     setWalletSelectError('');
     setRedeemAmount('');
@@ -158,6 +173,7 @@ export default function BranchDashboard() {
       const data = await res.json();
       if (res.ok) {
         setMonthlyWallets(data.data || []);
+        setMonthlyWalletsLoaded(true);
         // Reset splits when vendor changes
         setRedemptionSplits([]);
         setWalletSelectError('');
@@ -487,7 +503,10 @@ export default function BranchDashboard() {
     if (cooldownRef.current) clearInterval(cooldownRef.current);
     setInvoiceForm({ date: '', number: '', amount: '', location: '', remark: '' });
     // Refresh monthly wallets to show updated balances
-    if (selectedVendor) fetchMonthlyWallets(selectedVendor._id);
+    if (selectedVendor) {
+      setMonthlyWalletsLoaded(false);
+      fetchMonthlyWallets(selectedVendor._id);
+    }
   };
 
   return (
