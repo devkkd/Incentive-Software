@@ -163,7 +163,15 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
       if (vendor.status === 'blocked') { results.failed.push({ partCode, reason: 'Vendor is blocked' }); continue; }
 
       // ── Credit monthly sub-wallet ──────────────────────────────────────
-      const monthlyWallet = await MonthlyWallet.getOrCreate(vendor._id, uploadMonth, uploadYear);
+      // Pass masterWallet._id so that two different named wallets uploaded in
+      // the same month each get their OWN MonthlyWallet document.
+      const monthlyWallet = await MonthlyWallet.getOrCreate(
+        vendor._id,
+        uploadMonth,
+        uploadYear,
+        masterWallet ? masterWallet._id : null,
+        walletLabel
+      );
       const newMonthBalance = parseFloat((monthlyWallet.balance + amount).toFixed(2));
       await MonthlyWallet.findByIdAndUpdate(monthlyWallet._id, {
         balance: newMonthBalance,

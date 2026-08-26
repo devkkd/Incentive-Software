@@ -56,17 +56,33 @@ const monthlyWalletSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Unique wallet per vendor per month/year
-monthlyWalletSchema.index({ vendor: 1, year: 1, month: 1 }, { unique: true });
+// Unique wallet per vendor per month/year per master wallet
+// walletId null means auto/legacy (month-year only uploads)
+monthlyWalletSchema.index({ vendor: 1, year: 1, month: 1, wallet: 1 }, { unique: true });
 monthlyWalletSchema.index({ vendor: 1, balance: 1 });
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-monthlyWalletSchema.statics.getOrCreate = async function(vendorId, month, year) {
-  const label = `${MONTH_NAMES[month - 1]} ${year}`;
-  let wallet = await this.findOne({ vendor: vendorId, month, year });
+/**
+ * getOrCreate — finds or creates a MonthlyWallet for a vendor+month+year.
+ * If masterWalletId is provided, it scopes the lookup to that wallet so that
+ * two different named wallets uploaded in the same month (e.g. MSGA + MSGP)
+ * each get their own MonthlyWallet document instead of sharing one.
+ */
+monthlyWalletSchema.statics.getOrCreate = async function(vendorId, month, year, masterWalletId = null, label = null) {
+  const walletLabel = label || `${MONTH_NAMES[month - 1]} ${year}`;
+  const query = { vendor: vendorId, month, year, wallet: masterWalletId || null };
+  let wallet = await this.findOne(query);
   if (!wallet) {
-    wallet = await this.create({ vendor: vendorId, month, year, label, creditedAmount: 0, balance: 0 });
+    wallet = await this.create({
+      vendor: vendorId,
+      month,
+      year,
+      label: walletLabel,
+      wallet: masterWalletId || null,
+      creditedAmount: 0,
+      balance: 0,
+    });
   }
   return wallet;
 };

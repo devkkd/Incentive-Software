@@ -73,36 +73,25 @@ router.get('/', protect, async (req, res) => {
     const trueSystemBalance = parseFloat((totalCreditedFromTxn - totalRedeemed).toFixed(2));
 
     // ── Per-wallet stats ──────────────────────────────────────────────────────
-    const rawResult = await Promise.all(
+    // Current Balance = direct sum of MonthlyWallet.balance for that wallet.
+    // This is the accurate remaining balance — no proportional estimation needed.
+    const result = await Promise.all(
       wallets.map(async (w) => {
         const filter = { $or: [{ wallet: w._id }, { label: w.name }] };
         const partyWallets = await MonthlyWallet.find(filter)
           .select('_id balance creditedAmount isHold')
           .lean();
 
-        const totalCredited = parseFloat(partyWallets.reduce((acc, curr) => acc + (curr.creditedAmount || 0), 0).toFixed(2));
-        const totalParties = partyWallets.length;
-        const heldPartiesCount = partyWallets.filter((pw) => pw.isHold).length;
+        const totalCredited   = parseFloat(partyWallets.reduce((acc, curr) => acc + (curr.creditedAmount || 0), 0).toFixed(2));
+        // Sum actual balances directly — this is what parties still have remaining
+        const totalBalance    = parseFloat(partyWallets.reduce((acc, curr) => acc + Math.max(0, curr.balance || 0), 0).toFixed(2));
+        const totalParties    = partyWallets.length;
+        const heldPartiesCount   = partyWallets.filter((pw) => pw.isHold).length;
         const partiesWithBalance = partyWallets.filter((pw) => (pw.balance || 0) > 0).length;
 
-        return { ...w, totalCredited, totalParties, heldPartiesCount, partiesWithBalance };
+        return { ...w, totalCredited, totalBalance, totalParties, heldPartiesCount, partiesWithBalance };
       })
     );
-
-    // Distribute trueSystemBalance proportionally across wallets by creditedAmount
-    const totalAllCredited = rawResult.reduce((s, w) => s + (w.totalCredited || 0), 0);
-    const result = rawResult.map((w, i) => {
-      const share = totalAllCredited > 0
-        ? parseFloat(((w.totalCredited / totalAllCredited) * trueSystemBalance).toFixed(2))
-        : 0;
-      return { ...w, totalBalance: Math.max(0, share) };
-    });
-
-    // Fix rounding on last wallet so sum is exact
-    if (result.length > 0) {
-      const sumExceptLast = result.slice(0, -1).reduce((s, w) => s + w.totalBalance, 0);
-      result[result.length - 1].totalBalance = Math.max(0, parseFloat((trueSystemBalance - sumExceptLast).toFixed(2)));
-    }
 
     res.status(200).json({
       success: true,
