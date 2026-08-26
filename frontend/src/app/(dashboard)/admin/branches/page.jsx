@@ -198,10 +198,8 @@ export default function BranchesPage() {
           </div>
         </div>
       )}
-
       {/* Page Header */}
       <div>
-        <h2 className="text-[14px] text-gray-700 mb-1">{t('welcomeMsg')}</h2>
         <h1 className="text-[28px] font-bold text-black tracking-tight">{t('adminPortal')}</h1>
       </div>
 

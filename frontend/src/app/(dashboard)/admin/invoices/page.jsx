@@ -377,7 +377,6 @@ export default function AdminInvoicesPage() {
 
       {/* ── PAGE HEADER ─────────────────────────────────────────────── */}
       <div className="mb-6">
-        <h2 className="text-[14px] text-gray-500 mb-1">Friends Trading Corporation — Incentive Management</h2>
         <h1 className="text-[28px] font-bold text-black tracking-tight">All Invoices</h1>
       </div>
 
