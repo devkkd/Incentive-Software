@@ -48,7 +48,7 @@ const translations = {
     welcomeMsg: 'Welcome to Faith Trust Commitment - Incentive Management',
 
     // Sidebar
-    dashboard: 'Dashboard',
+    dashboard: 'Dashboardddddssss',
     allInvoicesSidebar: 'All Invoices',
     allVendorsSidebar: 'Party List',
     allBranchesSidebar: 'Create Account',
