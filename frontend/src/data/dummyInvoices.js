@@ -1,0 +1,11 @@
+//frontend\src\data\dummyInvoices.js
+export const dummyInvoices = [
+  { id: "01", vendorName: "Abcd (Name)", vendorCode: "ABCD1234567", mobile: "1234567890", date: "20/03/2026", credited: "NA", debited: "-₹1060.90", wallet: "₹10560.90", invDate: "20/03/2026", invNum: "1234567890", invAmount: "₹5680.00", location: "Jodhpur" },
+  { id: "02", vendorName: "Abcd (Name)", vendorCode: "ABCD1234567", mobile: "1234567890", date: "20/03/2026", credited: "+₹560.90", debited: "NA", wallet: "₹10560.90", invDate: "20/03/2026", invNum: "1234567890", invAmount: "₹5680.00", location: "Jaipur" },
+  { id: "03", vendorName: "Abcd (Name)", vendorCode: "ABCD1234567", mobile: "1234567890", date: "20/03/2026", credited: "NA", debited: "-₹1060.90", wallet: "₹10560.90", invDate: "20/03/2026", invNum: "1234567890", invAmount: "₹5680.00", location: "Bikaner" },
+  { id: "04", vendorName: "Abcd (Name)", vendorCode: "ABCD1234567", mobile: "1234567890", date: "20/03/2026", credited: "+₹560.90", debited: "NA", wallet: "₹10560.90", invDate: "20/03/2026", invNum: "1234567890", invAmount: "₹5680.00", location: "Udaipur" },
+  { id: "05", vendorName: "Abcd (Name)", vendorCode: "ABCD1234567", mobile: "1234567890", date: "20/03/2026", credited: "NA", debited: "-₹1060.90", wallet: "₹10560.90", invDate: "20/03/2026", invNum: "1234567890", invAmount: "₹5680.00", location: "Jodhpur" },
+  { id: "06", vendorName: "Abcd (Name)", vendorCode: "ABCD1234567", mobile: "1234567890", date: "20/03/2026", credited: "+₹560.90", debited: "NA", wallet: "₹10560.90", invDate: "20/03/2026", invNum: "1234567890", invAmount: "₹5680.00", location: "Pali" },
+  { id: "07", vendorName: "Abcd (Name)", vendorCode: "ABCD1234567", mobile: "1234567890", date: "20/03/2026", credited: "NA", debited: "-₹1060.90", wallet: "₹10560.90", invDate: "20/03/2026", invNum: "1234567890", invAmount: "₹5680.00", location: "Jaipur" },
+  { id: "08", vendorName: "Abcd (Name)", vendorCode: "ABCD1234567", mobile: "1234567890", date: "20/03/2026", credited: "+₹560.90", debited: "NA", wallet: "₹10560.90", invDate: "20/03/2026", invNum: "1234567890", invAmount: "₹5680.00", location: "Jodhpur" },
+];
