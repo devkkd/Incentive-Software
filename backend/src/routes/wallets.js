@@ -160,9 +160,21 @@ router.get("/", protect, async (req, res) => {
         const negativeCount = live.filter((pw) => (pw.balance || 0) < 0).length;
 
         const totalParties = live.length;
-        const heldPartiesCount = live.filter((pw) => pw.isHold).length;
+        const heldPartiesCount = live.filter(
+          (pw) => w.isHold || pw.isHold,
+        ).length;
+
+        // Active = has balance, not on hold, and the party is not blocked
         const partiesWithBalance = live.filter(
-          (pw) => (pw.balance || 0) > 0,
+          (pw) =>
+            (pw.balance || 0) > 0 &&
+            !w.isHold &&
+            !pw.isHold &&
+            vendorMap.get(String(pw.vendor)) === "active",
+        ).length;
+
+        const blockedPartiesCount = live.filter(
+          (pw) => vendorMap.get(String(pw.vendor)) === "blocked",
         ).length;
 
         return {
@@ -172,6 +184,7 @@ router.get("/", protect, async (req, res) => {
           totalParties,
           heldPartiesCount,
           partiesWithBalance,
+          blockedPartiesCount,
           heldBalance,
           freeBalance,
           activeBalance,
@@ -202,6 +215,15 @@ router.get("/", protect, async (req, res) => {
     );
 
     const cardHeldBalance = t("heldBalance");
+    // Count of held monthly wallets — one party held in two months counts twice
+    const cardHeldWalletCount = result.reduce(
+      (a, w) => a + (w.heldPartiesCount || 0),
+      0,
+    );
+    const cardBlockedPartyCount = result.reduce(
+      (a, w) => a + (w.blockedPartiesCount || 0),
+      0,
+    );
     const cardBlockedBalance = t("blockedBalance");
 
     // Active = System - Held - Blocked  (what a party could spend today)
@@ -229,7 +251,9 @@ router.get("/", protect, async (req, res) => {
       cardSystemBalance,
       cardTotalRedeemed,
       cardHeldBalance,
+      cardHeldWalletCount,
       cardBlockedBalance,
+      cardBlockedPartyCount,
       cardActiveBalance,
       cardTotalBalance,
 
@@ -248,6 +272,113 @@ router.get("/", protect, async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 });
+
+// @route   GET /api/wallets/held-parties
+// @desc    Every party wallet currently on hold, with the wallet it belongs to
+// @access  Admin
+router.get("/held-parties", protect, authorize("admin"), async (req, res) => {
+  try {
+    const heldWalletIds = (
+      await Wallet.find({ isHold: true }).select("_id").lean()
+    ).map((w) => w._id);
+
+    const monthlyWallets = await MonthlyWallet.find({
+      $or: [{ isHold: true }, { wallet: { $in: heldWalletIds } }],
+    })
+      .populate("vendor", "companyName accountNumber mobileNumber status")
+      .populate("wallet", "name isHold holdReason")
+      .lean();
+
+    const data = monthlyWallets
+      .filter((mw) => mw.vendor)
+      .map((mw) => ({
+        monthlyWalletId: mw._id,
+        partyCode: mw.vendor.accountNumber,
+        partyName: mw.vendor.companyName,
+        mobileNumber: mw.vendor.mobileNumber,
+        partyStatus: mw.vendor.status,
+        walletName: mw.wallet?.name || mw.label || "—",
+        balance: mw.balance || 0,
+        holdType: mw.isHold ? "Party wallet" : "Whole scheme",
+        holdReason: mw.isHold ? mw.holdReason : mw.wallet?.holdReason || null,
+      }))
+      .sort((a, b) => b.balance - a.balance);
+
+    res.status(200).json({
+      success: true,
+      count: data.length,
+      totalBalance: parseFloat(
+        data.reduce((s, d) => s + d.balance, 0).toFixed(2),
+      ),
+      data,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   GET /api/wallets/blocked-parties
+// @desc    Every blocked party and the balance they are sitting on
+// @access  Admin
+router.get(
+  "/blocked-parties",
+  protect,
+  authorize("admin"),
+  async (req, res) => {
+    try {
+      const blocked = await Vendor.find({ status: "blocked" })
+        .select(
+          "_id companyName accountNumber mobileNumber blockReason partyCity",
+        )
+        .populate("division", "name")
+        .lean();
+
+      const wallets = await MonthlyWallet.find({
+        vendor: { $in: blocked.map((v) => v._id) },
+      })
+        .select("vendor balance label")
+        .lean();
+
+      const byVendor = new Map();
+      for (const mw of wallets) {
+        const k = String(mw.vendor);
+        if (!byVendor.has(k)) byVendor.set(k, { total: 0, wallets: [] });
+        const e = byVendor.get(k);
+        e.total += mw.balance || 0;
+        if ((mw.balance || 0) !== 0)
+          e.wallets.push({ label: mw.label, balance: mw.balance });
+      }
+
+      const data = blocked
+        .map((v) => {
+          const e = byVendor.get(String(v._id)) || { total: 0, wallets: [] };
+          return {
+            vendorId: v._id,
+            partyCode: v.accountNumber,
+            partyName: v.companyName,
+            mobileNumber: v.mobileNumber,
+            partyCity: v.partyCity,
+            location: v.division?.name || "—",
+            blockReason: v.blockReason || "—",
+            balance: parseFloat(e.total.toFixed(2)),
+            wallets: e.wallets,
+          };
+        })
+        .sort((a, b) => b.balance - a.balance);
+
+      res.status(200).json({
+        success: true,
+        count: data.length,
+        totalBalance: parseFloat(
+          data.reduce((s, d) => s + d.balance, 0).toFixed(2),
+        ),
+        data,
+      });
+    } catch (error) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  },
+);
 
 // @route   POST /api/wallets
 // @desc    Create a new wallet
