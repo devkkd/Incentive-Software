@@ -58,6 +58,14 @@ export default function WalletManagementPage() {
   const [listModal, setListModal] = useState(null);
   const [listRows, setListRows] = useState([]);
   const [listLoading, setListLoading] = useState(false);
+  const [expandedRows, setExpandedRows] = useState(new Set());
+
+  const toggleRow = (id) =>
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
 
   // Sync Balances
   const [syncing, setSyncing] = useState(false);
@@ -117,11 +125,18 @@ export default function WalletManagementPage() {
     setListRows([]);
     try {
       const path = kind === 'held' ? 'held-parties' : 'blocked-parties';
-      const res = await fetch(`${API}/api/wallets/${path}`, { credentials: 'include' });
+      const res = await fetch(`${API}/api/wallets/${path}`, {
+        headers: authHeaders(),
+        credentials: 'include',
+      });
       const json = await res.json();
-      if (json.success) setListRows(json.data || []);
+      if (json.success) {
+        setListRows(json.data || []);
+      } else {
+        console.error('[openList] request failed:', json.message);
+      }
     } catch (err) {
-      console.error(err);
+      console.error('[openList]', err);
     } finally {
       setListLoading(false);
     }
@@ -603,7 +618,7 @@ export default function WalletManagementPage() {
         <button
           type="button"
           onClick={() => openList('held')}
-          className="text-left bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex items-center justify-between hover:border-amber-300 hover:shadow-md transition-all"
+          className="text-left bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex items-center justify-between cursor-pointer hover:border-amber-300 hover:shadow-md transition-all"
         >
           <div>
             <p className="text-xs font-semibold uppercase text-gray-400 tracking-wider">Parties Wallet On Hold</p>
@@ -623,7 +638,7 @@ export default function WalletManagementPage() {
         <button
           type="button"
           onClick={() => openList('blocked')}
-          className="text-left bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex items-center justify-between hover:border-[#64748B]/40 hover:shadow-md transition-all"
+          className="text-left bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex items-center justify-between cursor-pointer hover:border-[#64748B]/40 hover:shadow-md transition-all"
         >
           <div>
             <p className="text-xs font-semibold uppercase text-gray-400 tracking-wider">Blocked Funds</p>
@@ -919,7 +934,8 @@ export default function WalletManagementPage() {
               </thead>
               <tbody className="divide-y divide-gray-100 text-gray-700">
                 {filteredWallets.map((w) => (
-                  <tr key={w._id} className="hover:bg-gray-50/80 transition-colors group">
+                  <React.Fragment key={w._id}>
+                  <tr className="hover:bg-gray-50/80 transition-colors group">
                     <td className="px-6 py-4">
                       <div className="font-semibold text-gray-900">{w.name}</div>
                       {w.description && <div className="text-xs text-gray-400 mt-0.5">{w.description}</div>}
@@ -929,36 +945,28 @@ export default function WalletManagementPage() {
                     </td>
                     <td className="px-6 py-4 text-right tabular-nums whitespace-nowrap">
                       {(w.heldBalance > 0 || w.blockedBalance > 0) ? (
-                        <div className="space-y-0.5 text-[13px]">
-                          <div className="flex justify-between gap-4">
-                            <span className="text-gray-500">Active</span>
-                            <span className="font-medium text-gray-900">
-                              ₹{(w.activeBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                            </span>
-                          </div>
-                          {w.heldBalance > 0 && (
-                            <div className="flex justify-between gap-4">
-                              <span className="text-amber-600">Hold</span>
-                              <span className="font-medium text-amber-700">
-                                ₹{w.heldBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                              </span>
-                            </div>
-                          )}
-                          {w.blockedBalance > 0 && (
-                            <div className="flex justify-between gap-4">
-                              <span className="text-[#64748B]">Blocked</span>
-                              <span className="font-medium text-[#64748B]">
-                                ₹{w.blockedBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                              </span>
-                            </div>
-                          )}
-                          <div className="flex justify-between gap-4 pt-0.5 border-t border-gray-200">
-                            <span className="text-gray-600 font-semibold">Total</span>
-                            <span className="font-bold text-gray-900">
-                              ₹{w.totalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                            </span>
-                          </div>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleRow(w._id)}
+                          className="inline-flex items-center gap-1.5 cursor-pointer hover:text-[#2B3B8A] transition-colors"
+                          title={expandedRows.has(w._id) ? 'Hide breakdown' : 'Show breakdown'}
+                        >
+                          <span className="font-bold text-gray-900">
+                            ₹{w.totalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </span>
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            strokeWidth={2.5}
+                            stroke="currentColor"
+                            className={`w-3.5 h-3.5 text-gray-400 transition-transform ${
+                              expandedRows.has(w._id) ? 'rotate-180' : ''
+                            }`}
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                          </svg>
+                        </button>
                       ) : (
                         <span className="font-bold text-gray-900">
                           ₹{w.totalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -1005,6 +1013,46 @@ export default function WalletManagementPage() {
                       </div>
                     </td>
                   </tr>
+                  {expandedRows.has(w._id) && (w.heldBalance > 0 || w.blockedBalance > 0) && (
+                    <tr key={`${w._id}-detail`} className="bg-gray-50/60">
+                      <td colSpan={6} className="px-6 py-4">
+                        <div className="max-w-sm ml-auto text-[13px] tabular-nums">
+                          <p className="text-[11px] uppercase tracking-wider text-gray-400 font-semibold mb-2">
+                            Current Balance breakdown
+                          </p>
+                          <div className="flex justify-between py-1">
+                            <span className="text-gray-600">Active</span>
+                            <span className="font-medium text-gray-900">
+                              ₹{(w.activeBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                          {w.heldBalance > 0 && (
+                            <div className="flex justify-between py-1">
+                              <span className="text-amber-600">On Hold</span>
+                              <span className="font-medium text-amber-700">
+                                ₹{w.heldBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                          )}
+                          {w.blockedBalance > 0 && (
+                            <div className="flex justify-between py-1">
+                              <span className="text-[#64748B]">Blocked parties</span>
+                              <span className="font-medium text-[#64748B]">
+                                ₹{w.blockedBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex justify-between py-1.5 mt-1 border-t border-gray-300">
+                            <span className="font-semibold text-gray-700">Total</span>
+                            <span className="font-bold text-gray-900">
+                              ₹{w.totalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
                 ))}
               </tbody>
               {filteredWallets.length > 0 && (
