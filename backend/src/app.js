@@ -58,7 +58,8 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ success: true, message: 'FTC Backend is running' });
 });
 
-app.get('/api/analysis', async (req, res) => {
+const { protect, authorize } = require('./middleware/auth');
+app.get('/api/analysis', protect, authorize('admin'), async (req, res) => {
   try {
     const Wallet = require('./models/Wallet');
     const MonthlyWallet = require('./models/MonthlyWallet');

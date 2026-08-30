@@ -79,18 +79,36 @@ router.get('/', protect, async (req, res) => {
       wallets.map(async (w) => {
         const filter = { $or: [{ wallet: w._id }, { label: w.name }] };
         const partyWallets = await MonthlyWallet.find(filter)
-          .select('_id balance creditedAmount isHold')
+          .select('_id balance creditedAmount isHold vendor')
           .lean();
 
-        const totalCredited   = parseFloat(partyWallets.reduce((acc, curr) => acc + (curr.creditedAmount || 0), 0).toFixed(2));
-        // Sum actual balances directly — this is what parties still have remaining
-        const totalBalance    = parseFloat(partyWallets.reduce((acc, curr) => acc + Math.max(0, curr.balance || 0), 0).toFixed(2));
-        const totalParties    = partyWallets.length;
-        const heldPartiesCount   = partyWallets.filter((pw) => pw.isHold).length;
-        const partiesWithBalance = partyWallets.filter((pw) => (pw.balance || 0) > 0).length;
+          // Point 1 — only count wallets whose party still exists, so this
+          // total matches the party list shown in the drawer.
+          const liveIds = new Set(
+            (await Vendor.find({ _id: { $in: partyWallets.map(p => p.vendor) } })
+            .select('_id').lean()).map(v => String(v._id))
+          );
+          
+          const live   = partyWallets.filter(pw => pw.vendor && liveIds.has(String(pw.vendor)));
+          const orphan = partyWallets.filter(pw => !pw.vendor || !liveIds.has(String(pw.vendor)));
 
-        return { ...w, totalCredited, totalBalance, totalParties, heldPartiesCount, partiesWithBalance };
-      })
+          const sum = (arr, f) => parseFloat(arr.reduce((a, c) => a + (c[f] || 0), 0).toFixed(2));
+
+          const totalCredited = sum(live, 'creditedAmount');
+          const totalBalance  = sum(live, 'balance');   // negatives no longer hidden
+
+          const orphanBalance = sum(orphan, 'balance');
+          const orphanCount   = orphan.length;
+          const negativeBalance = sum(live.filter(pw => (pw.balance || 0) < 0), 'balance');
+          const negativeCount   = live.filter(pw => (pw.balance || 0) < 0).length;
+
+          const totalParties       = live.length;
+          const heldPartiesCount   = live.filter((pw) => pw.isHold).length;
+          const partiesWithBalance = live.filter((pw) => (pw.balance || 0) > 0).length;
+          return { ...w, totalCredited, totalBalance, totalParties, heldPartiesCount, partiesWithBalance,
+          orphanBalance, orphanCount, negativeBalance, negativeCount };
+        }
+      )
     );
 
     res.status(200).json({
