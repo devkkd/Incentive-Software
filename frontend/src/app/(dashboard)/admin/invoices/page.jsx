@@ -89,6 +89,8 @@ export default function AdminInvoicesPage() {
   const [loading, setLoading]           = useState(true);
   const [pagination, setPagination]     = useState({ total: 0, page: 1, pages: 1 });
   const [totalAmount, setTotalAmount]   = useState(0);
+  const [totalInvoiced, setTotalInvoiced] = useState(0);
+  const [totalRedeemed, setTotalRedeemed] = useState(0);
   const [pageStart, setPageStart]       = useState(1);
   const [activeDropdown, setActiveDropdown] = useState(null);
 
@@ -103,6 +105,8 @@ export default function AdminInvoicesPage() {
 
   // ── Filter Option Lists (from DB) ─────────────────────────────────
   const [divisions, setDivisions]         = useState([]);
+  const [wallets, setWallets]             = useState([]);
+  const [walletFilter, setWalletFilter]   = useState('');
   const [locationOptions, setLocationOptions] = useState([]);
 
   // Load divisions once
@@ -111,10 +115,16 @@ export default function AdminInvoicesPage() {
       .then(r => r.json())
       .then(d => { if (d.success) setDivisions(d.data || []); })
       .catch(() => {});
+
+    // Point 10 — wallet list for the wallet filter
+    fetch(`${API}/api/wallets`, { headers: authHeaders(), credentials: 'include' })
+      .then(r => r.json())
+      .then(d => { if (d.success) setWallets(d.data || []); })
+      .catch(() => {});
   }, []);
 
   // ── Active filter count badge ──────────────────────────────────────
-  const activeFilters = [timeline, divisionFilter, locationFilter, startDate || endDate, searchQuery].filter(Boolean).length;
+  const activeFilters = [timeline, divisionFilter, locationFilter, walletFilter, startDate || endDate, searchQuery].filter(Boolean).length;
 
   const clearAllFilters = () => {
     setSearchQuery(''); setSearchInput('');
@@ -143,6 +153,7 @@ export default function AdminInvoicesPage() {
       if (searchQuery)    params.append('q', searchQuery);
       if (locationFilter) params.append('location', locationFilter);
       if (divisionFilter) params.append('divisionId', divisionFilter);
+      if (walletFilter) params.append('walletId', walletFilter);
 
       // Date range: manual dates override timeline preset
       if (startDate && endDate) {
@@ -159,13 +170,15 @@ export default function AdminInvoicesPage() {
         setInvoices(data.data);
         setPagination(data.pagination);
         setTotalAmount(data.totalAmount || 0);
+        setTotalInvoiced(data.totalInvoiced ?? data.totalAmount ?? 0);
+        setTotalRedeemed(data.totalRedeemed || 0);
         // Collect unique locations from results for the location dropdown
         const locs = [...new Set(data.data.map(inv => inv.location).filter(Boolean))];
         setLocationOptions(prev => [...new Set([...prev, ...locs])]);
       }
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
-  }, [searchQuery, timeline, divisionFilter, locationFilter, startDate, endDate]);
+  }, [searchQuery, timeline, divisionFilter, locationFilter, walletFilter, startDate, endDate]);
 
   useEffect(() => { fetchInvoices(1); }, [fetchInvoices]);
 
@@ -244,6 +257,7 @@ export default function AdminInvoicesPage() {
     if (searchQuery)    params.append('q', searchQuery);
     if (locationFilter) params.append('location', locationFilter);
     if (divisionFilter) params.append('divisionId', divisionFilter);
+      if (walletFilter) params.append('walletId', walletFilter);
     if (startDate && endDate) { params.append('startDate', startDate); params.append('endDate', endDate); }
     else if (timeline) { const r = getDateRange(timeline); if (r) { params.append('startDate', r.start); params.append('endDate', r.end); } }
     const res  = await fetch(`${API}/api/invoices?${params}`, { headers: authHeaders(), credentials: 'include' });
@@ -377,6 +391,7 @@ export default function AdminInvoicesPage() {
 
       {/* ── PAGE HEADER ─────────────────────────────────────────────── */}
       <div className="mb-6">
+        <h2 className="text-[14px] text-gray-500 mb-1">Friends Trading Corporation — Incentive Management</h2>
         <h1 className="text-[28px] font-bold text-black tracking-tight">All Invoices</h1>
       </div>
 
@@ -430,6 +445,15 @@ export default function AdminInvoicesPage() {
               options={divisions.map(d => ({ value: d._id, label: d.name }))}
               value={divisionFilter} onChange={setDivisionFilter}
               activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} minWidth="160px" />
+          </div>
+
+          {/* Wallet */}
+          <div>
+            <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Wallet</label>
+            <CustomDropdown id="wallet" label="All Wallets"
+              options={wallets.map(w => ({ value: w._id, label: w.name }))}
+              value={walletFilter} onChange={setWalletFilter}
+              activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} minWidth="170px" />
           </div>
 
           {/* Apply search button */}
@@ -493,6 +517,12 @@ export default function AdminInvoicesPage() {
                 <button onClick={() => setDivisionFilter('')} className="hover:text-red-500">×</button>
               </span>
             )}
+            {walletFilter && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#EEF2FF] text-[#2B3B8A] text-[12px] font-semibold rounded-full">
+                Wallet: {wallets.find(w => w._id === walletFilter)?.name}
+                <button onClick={() => setWalletFilter('')} className="hover:text-red-500">×</button>
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -507,14 +537,33 @@ export default function AdminInvoicesPage() {
             <span className="ml-2 text-[14px] font-normal text-gray-400">({pagination.total} total)</span>
           </h2>
           {!loading && pagination.total > 0 && (
-            <div className="flex items-center gap-2 bg-[#EEF2FF] border border-[#2B3B8A]/15 px-4 py-2 rounded-xl">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-[#2B3B8A]">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span className="text-[13px] text-gray-500 font-medium">Total Amount:</span>
-              <span className="text-[15px] font-bold text-[#2B3B8A]">
-                ₹{Number(totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Point 10 — Total Invoiced */}
+              <div className="flex items-center gap-2 bg-[#EEF2FF] border border-[#2B3B8A]/15 px-4 py-2 rounded-xl">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-[#2B3B8A]">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-[13px] text-gray-500 font-medium">Total Invoiced:</span>
+                <span className="text-[15px] font-bold text-[#2B3B8A] tabular-nums">
+                  ₹{Number(totalInvoiced).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+
+              {/* Point 10 — Total Redeemed */}
+              <div className="flex items-center gap-2 bg-[#FDEDEC] border border-[#E74C3C]/15 px-4 py-2 rounded-xl">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-[#E74C3C]">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-[13px] text-gray-500 font-medium">Total Redeemed:</span>
+                <span className="text-[15px] font-bold text-[#E74C3C] tabular-nums">
+                  ₹{Number(totalRedeemed).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                {totalInvoiced > 0 && (
+                  <span className="text-[11px] text-gray-500 font-medium">
+                    ({((totalRedeemed / totalInvoiced) * 100).toFixed(1)}%)
+                  </span>
+                )}
+              </div>
             </div>
           )}
         </div>
