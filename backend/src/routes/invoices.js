@@ -5,11 +5,32 @@ const WalletTransaction = require("../models/WalletTransaction");
 const MonthlyWallet = require("../models/MonthlyWallet");
 const Wallet = require("../models/Wallet");
 const OtpToken = require("../models/OtpToken");
+const SystemSetting = require("../models/SystemSetting");
 const Division = require("../models/Division");
 const { protect, authorize } = require("../middleware/auth");
 const { sendSmsOtp, sendRedemptionConfirmation } = require("../config/sms");
 
 const router = express.Router();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POINT 7 — server-side freeze check.
+// Enforced here, not only in the UI. Disabling a button in the browser is not
+// a control; anyone can bypass it. This is the control.
+// ─────────────────────────────────────────────────────────────────────────────
+async function redemptionFrozen(res) {
+  const doc = await SystemSetting.get("redemptionFreeze", false);
+  if (doc.value) {
+    res.status(423).json({
+      success: false,
+      frozen: true,
+      message: doc.reason
+        ? `Redemption is temporarily suspended: ${doc.reason}. Please contact head office.`
+        : "Redemption is temporarily suspended. Please contact head office.",
+    });
+    return true;
+  }
+  return false;
+}
 
 const generateOtp = () => String(Math.floor(100000 + Math.random() * 900000));
 
@@ -39,6 +60,7 @@ router.post(
   authorize("branch"),
   async (req, res) => {
     try {
+      if (await redemptionFrozen(res)) return;
       const { vendorId, redeemAmount, invoiceAmount } = req.body;
 
       if (!vendorId || !redeemAmount) {
@@ -198,6 +220,7 @@ router.post(
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/redeem", protect, authorize("branch"), async (req, res) => {
   try {
+    if (await redemptionFrozen(res)) return;
     const { vendorId, redeemAmount, invoiceAmount, invoiceId, otp } = req.body;
 
     if (!vendorId || !redeemAmount || !otp) {
@@ -334,6 +357,7 @@ router.post("/redeem", protect, authorize("branch"), async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.post("/", protect, authorize("branch"), async (req, res) => {
   try {
+    if (await redemptionFrozen(res)) return;
     const {
       vendorId,
       invoiceDate,

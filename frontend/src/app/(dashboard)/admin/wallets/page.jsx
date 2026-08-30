@@ -60,6 +60,49 @@ export default function WalletManagementPage() {
   const [listLoading, setListLoading] = useState(false);
   const [expandedRows, setExpandedRows] = useState(new Set());
 
+  // Point 7 — redemption freeze
+  const [freeze, setFreeze] = useState({ frozen: false, reason: null });
+  const [freezeModal, setFreezeModal] = useState(false);
+  const [freezeReason, setFreezeReason] = useState('');
+  const [freezeSaving, setFreezeSaving] = useState(false);
+
+  const loadFreeze = async () => {
+    try {
+      const res = await fetch(`${API}/api/settings/redemption-freeze`, {
+        headers: authHeaders(), credentials: 'include',
+      });
+      const json = await res.json();
+      if (json.success) setFreeze(json.data);
+    } catch (err) { console.error('[freeze]', err); }
+  };
+
+  useEffect(() => { loadFreeze(); }, []);
+
+  const applyFreeze = async (frozen) => {
+    if (frozen && !freezeReason.trim()) return;
+    setFreezeSaving(true);
+    try {
+      const res = await fetch(`${API}/api/settings/redemption-freeze`, {
+        method: 'PUT',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ frozen, reason: freezeReason }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setFreeze(json.data);
+        setFreezeModal(false);
+        setFreezeReason('');
+      } else {
+        alert(json.message);
+      }
+    } catch (err) {
+      console.error('[freeze]', err);
+    } finally {
+      setFreezeSaving(false);
+    }
+  };
+
   const toggleRow = (id) =>
     setExpandedRows((prev) => {
       const next = new Set(prev);
@@ -356,6 +399,38 @@ export default function WalletManagementPage() {
           <p className="text-sm text-gray-500 mt-1">
             Manage system wallets, view party balances, and control wallet & party hold status.
           </p>
+        </div>
+
+        {/* Point 7 — redemption freeze toggle */}
+        <div className={`rounded-xl border px-4 py-3 flex items-center gap-4 ${
+          freeze.frozen ? 'bg-red-50 border-red-300' : 'bg-white border-gray-200'
+        }`}>
+          <div className="min-w-0">
+            <p className={`text-[13px] font-bold ${freeze.frozen ? 'text-red-700' : 'text-gray-900'}`}>
+              {freeze.frozen ? 'Redemption FROZEN' : 'Redemption enabled'}
+            </p>
+            <p className="text-[11px] text-gray-500 mt-0.5 truncate max-w-[260px]">
+              {freeze.frozen
+                ? freeze.reason || 'No reason recorded'
+                : 'All branches can process redemptions'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (freeze.frozen) { applyFreeze(false); }
+              else { setFreezeReason(''); setFreezeModal(true); }
+            }}
+            disabled={freezeSaving}
+            className={`relative w-12 h-6 rounded-full transition-colors shrink-0 cursor-pointer disabled:opacity-50 ${
+              freeze.frozen ? 'bg-red-500' : 'bg-emerald-500'
+            }`}
+            title={freeze.frozen ? 'Resume redemption' : 'Freeze redemption'}
+          >
+            <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+              freeze.frozen ? 'translate-x-6' : 'translate-x-0.5'
+            }`} />
+          </button>
         </div>
 
         <div className="flex items-center gap-3">
@@ -702,6 +777,51 @@ export default function WalletManagementPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Freeze reason modal — Point 7 ──────────────────────────────────── */}
+      {freezeModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+             onClick={() => setFreezeModal(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4"
+               onClick={(e) => e.stopPropagation()}>
+            <div>
+              <h3 className="text-[18px] font-bold text-gray-900">Freeze redemption</h3>
+              <p className="text-[13px] text-gray-500 mt-1">
+                Every branch counter will be blocked immediately and shown your reason.
+                Because an invoice cannot be created without a redemption, this stops
+                counter activity entirely. Admin functions and reports are unaffected.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                Reason (shown to branch staff)
+              </label>
+              <textarea
+                value={freezeReason}
+                onChange={(e) => setFreezeReason(e.target.value)}
+                rows={3}
+                autoFocus
+                placeholder="e.g. Balance issue under investigation — do not redeem"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[13px] focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={() => setFreezeModal(false)}
+                className="px-4 py-2 text-[13px] font-semibold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer">
+                Cancel
+              </button>
+              <button
+                onClick={() => applyFreeze(true)}
+                disabled={!freezeReason.trim() || freezeSaving}
+                className="px-4 py-2 text-[13px] font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl cursor-pointer">
+                {freezeSaving ? 'Freezing…' : 'Freeze redemption'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Drill-down modal — Point 17 ────────────────────────────────────── */}
       {listModal && (

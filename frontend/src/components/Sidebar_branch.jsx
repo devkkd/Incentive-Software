@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import MarutiPartnerBadge from '@/components/MarutiPartnerBadge';
 
-export default function Sidebar_branch() {
+export default function Sidebar_branch({ frozen = false }) {
   const pathname = usePathname();
 
   // Define navigation items with their active checking logic
@@ -51,22 +51,46 @@ export default function Sidebar_branch() {
 
       {/* Sidebar Navigation */}
       <nav className="flex-1 py-4 flex flex-col gap-1 overflow-y-auto">
-        {navItems.map((item) => (
-          <Link 
-            key={item.name} 
-            href={item.href} 
-            className={`mx-3 flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-              item.isActive 
-                ? 'bg-[#2B3B8A] text-white' 
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-            }`}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-              {item.icon}
-            </svg>
-            <span className="text-sm font-medium">{item.name}</span>
-          </Link>
-        ))}
+        {navItems.map((item) => {
+          // Point 7 — while redemption is frozen only Account Settings is reachable
+          const isSettings = item.href.startsWith('/branch/settings');
+          const isDisabled = frozen && !isSettings;
+
+          if (isDisabled) {
+            return (
+              <div
+                key={item.name}
+                title="Unavailable while redemption is suspended"
+                className="mx-3 flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 cursor-not-allowed select-none"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                  {item.icon}
+                </svg>
+                <span className="text-sm font-medium">{item.name}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5 ml-auto">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                </svg>
+              </div>
+            );
+          }
+
+          return (
+            <Link
+              key={item.name}
+              href={item.href}
+              className={`mx-3 flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
+                item.isActive
+                  ? 'bg-[#2B3B8A] text-white'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+              }`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                {item.icon}
+              </svg>
+              <span className="text-sm font-medium">{item.name}</span>
+            </Link>
+          );
+        })}
       </nav>
 
       {/* Partner Badge */}
