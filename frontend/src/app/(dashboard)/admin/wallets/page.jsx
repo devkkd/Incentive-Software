@@ -44,6 +44,15 @@ export default function WalletManagementPage() {
   const [trueSystemBalance, setTrueSystemBalance] = useState(0);
   const [totalCreditedFromTxn, setTotalCreditedFromTxn] = useState(0);
   const [totalRedeemed, setTotalRedeemed] = useState(0);
+  // Point 17 — cards derived from the wallet list below
+  const [cardTotalCredited, setCardTotalCredited] = useState(0);
+  const [cardSystemBalance, setCardSystemBalance] = useState(0);
+  const [cardTotalRedeemed, setCardTotalRedeemed] = useState(0);
+  const [cardHeldBalance, setCardHeldBalance] = useState(0);
+  const [cardActiveBalance, setCardActiveBalance] = useState(0);
+  const [cardBlockedBalance, setCardBlockedBalance] = useState(0);
+  const [cardOrphanBalance, setCardOrphanBalance] = useState(0);
+  const [cardOrphanCount, setCardOrphanCount] = useState(0);
 
   // Sync Balances
   const [syncing, setSyncing] = useState(false);
@@ -107,6 +116,14 @@ export default function WalletManagementPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to fetch wallets');
       setWallets(data.data || []);
+      if (data.cardTotalCredited !== undefined) setCardTotalCredited(data.cardTotalCredited);
+      if (data.cardSystemBalance !== undefined) setCardSystemBalance(data.cardSystemBalance);
+      if (data.cardTotalRedeemed !== undefined) setCardTotalRedeemed(data.cardTotalRedeemed);
+      if (data.cardHeldBalance !== undefined) setCardHeldBalance(data.cardHeldBalance);
+      if (data.cardActiveBalance !== undefined) setCardActiveBalance(data.cardActiveBalance);
+      if (data.cardBlockedBalance !== undefined) setCardBlockedBalance(data.cardBlockedBalance);
+      if (data.cardOrphanBalance !== undefined) setCardOrphanBalance(data.cardOrphanBalance);
+      if (data.cardOrphanCount !== undefined) setCardOrphanCount(data.cardOrphanCount);
       if (data.trueSystemBalance !== undefined) {
         setTrueSystemBalance(data.trueSystemBalance);
       }
@@ -481,9 +498,9 @@ export default function WalletManagementPage() {
           <div>
             <p className="text-xs font-semibold uppercase text-gray-400 tracking-wider">Total Credited</p>
             <h3 className="text-2xl font-bold text-[#2B3B8A] mt-1">
-              ₹{totalCreditedFromTxn.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              ₹{cardTotalCredited.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </h3>
-            <p className="text-xs text-gray-500 mt-1">Total incentives uploaded</p>
+            <p className="text-xs text-gray-500 mt-1">Sum of credited amounts below</p>
           </div>
           <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-[#2B3B8A]">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
@@ -497,9 +514,9 @@ export default function WalletManagementPage() {
           <div>
             <p className="text-xs font-semibold uppercase text-gray-400 tracking-wider">Total Redeemed</p>
             <h3 className="text-2xl font-bold text-[#E74C3C] mt-1">
-              ₹{totalRedeemed.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              ₹{cardTotalRedeemed.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </h3>
-            <p className="text-xs text-gray-500 mt-1">Wallet redemptions (invoices)</p>
+            <p className="text-xs text-gray-500 mt-1">Credited minus current balance</p>
           </div>
           <div className="w-12 h-12 bg-red-50 rounded-xl flex items-center justify-center text-red-500">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
@@ -513,15 +530,95 @@ export default function WalletManagementPage() {
           <div>
             <p className="text-xs font-semibold uppercase text-emerald-600 tracking-wider">Total System Balance</p>
             <h3 className="text-2xl font-bold text-[#16a34a] mt-1">
-              ₹{trueSystemBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              ₹{cardSystemBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </h3>
             <p className="text-xs text-emerald-600 mt-1 font-medium">
-              Actual wallet balance (all parties)
+              Credited minus redeemed
             </p>
           </div>
           <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+        </div>
+
+        {/* Total Balance On Hold — Point 17 */}
+        <div className="bg-amber-50 rounded-2xl p-5 border border-amber-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase text-amber-700 tracking-wider">Total Balance On Hold</p>
+            <h3 className="text-2xl font-bold text-amber-700 mt-1">
+              ₹{cardHeldBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </h3>
+            <p className="text-xs text-amber-700 mt-1">Frozen wallets and frozen parties</p>
+          </div>
+          <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center text-amber-700">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+            </svg>
+          </div>
+        </div>
+
+        {/* Total Active Balance — Point 17 */}
+        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase text-gray-400 tracking-wider">Total Active Balance</p>
+            <h3 className="text-2xl font-bold text-[#2B3B8A] mt-1">
+              ₹{cardActiveBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </h3>
+            <p className="text-xs text-gray-500 mt-1">System minus held and blocked</p>
+          </div>
+          <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-[#2B3B8A]">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+            </svg>
+          </div>
+        </div>
+
+        {/* Blocked Funds — Point 17 */}
+        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase text-gray-400 tracking-wider">Blocked Funds</p>
+            <h3 className="text-2xl font-bold text-[#64748B] mt-1">
+              ₹{cardBlockedBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </h3>
+            <p className="text-xs text-gray-500 mt-1">Held by blocked parties</p>
+          </div>
+          <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center text-[#64748B]">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+            </svg>
+          </div>
+        </div>
+
+        {/* Orphaned Funds — Point 17 / Point 1 */}
+        <div className={`rounded-2xl p-5 border shadow-sm flex items-center justify-between ${
+          cardOrphanBalance > 0
+            ? 'bg-red-50 border-red-200'
+            : 'bg-white border-gray-100'
+        }`}>
+          <div>
+            <p className={`text-xs font-semibold uppercase tracking-wider ${
+              cardOrphanBalance > 0 ? 'text-red-600' : 'text-gray-400'
+            }`}>Orphaned Funds</p>
+            <h3 className={`text-2xl font-bold mt-1 ${
+              cardOrphanBalance > 0 ? 'text-red-600' : 'text-gray-400'
+            }`}>
+              ₹{cardOrphanBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </h3>
+            <p className={`text-xs mt-1 ${
+              cardOrphanBalance > 0 ? 'text-red-600 font-medium' : 'text-gray-500'
+            }`}>
+              {cardOrphanCount > 0
+                ? `${cardOrphanCount} wallet${cardOrphanCount === 1 ? '' : 's'} with no party — needs review`
+                : 'No orphaned records'}
+            </p>
+          </div>
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+            cardOrphanBalance > 0 ? 'bg-red-100 text-red-600' : 'bg-gray-50 text-gray-400'
+          }`}>
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
             </svg>
           </div>
         </div>
@@ -540,6 +637,44 @@ export default function WalletManagementPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Reconciliation line — Point 17 ─────────────────────────────────── */}
+      {(() => {
+        const chainTotal = parseFloat(
+          (cardHeldBalance + cardBlockedBalance + cardActiveBalance).toFixed(2)
+        );
+        const balances = Math.abs(chainTotal - cardSystemBalance) < 0.01;
+        const fmt = (n) =>
+          `\u20B9${n.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+
+        return (
+          <div
+            className={`mb-6 rounded-xl border px-4 py-3 text-[13px] leading-relaxed ${
+              balances
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : 'bg-red-50 border-red-200 text-red-800'
+            }`}
+          >
+            <span className="font-semibold">{balances ? 'Balanced. ' : 'Does not balance. '}</span>
+            Held {fmt(cardHeldBalance)} + Blocked {fmt(cardBlockedBalance)} + Active{' '}
+            {fmt(cardActiveBalance)} = {fmt(chainTotal)}
+            {balances ? ' = ' : ' \u2260 '}
+            System Balance {fmt(cardSystemBalance)}.
+            {!balances && (
+              <span className="font-semibold">
+                {' '}Difference {fmt(Math.abs(chainTotal - cardSystemBalance))} — worth investigating.
+              </span>
+            )}
+            {cardOrphanBalance > 0 && (
+              <span className="block mt-1">
+                Orphaned {fmt(cardOrphanBalance)} across {cardOrphanCount} wallet
+                {cardOrphanCount === 1 ? '' : 's'} is excluded from every figure above —
+                these records have no party attached.
+              </span>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Main Content Area */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
