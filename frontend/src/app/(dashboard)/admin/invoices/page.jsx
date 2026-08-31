@@ -577,17 +577,17 @@ export default function AdminInvoicesPage() {
             <thead>
               <tr className="border-b-2 border-gray-100 text-gray-500 text-[12px] uppercase tracking-wide">
                 <th className="pb-3 font-semibold px-2">#</th>
-                <th className="pb-3 font-semibold px-2">Party Name</th>
-                <th className="pb-3 font-semibold px-2">Party Code</th>
-                <th className="pb-3 font-semibold px-2">Mobile</th>
+                <SortableTh field="companyName" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Party Name</SortableTh>
+                <SortableTh field="accountNumber" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Party Code</SortableTh>
+                <SortableTh field="mobileNumber" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Mobile</SortableTh>
                 <SortableTh field="invoiceNumber" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Invoice Number</SortableTh>
                 <SortableTh field="referenceNo" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Reference No</SortableTh>
                 <SortableTh field="invoiceDate" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Invoice Date</SortableTh>
                 <SortableTh field="invoiceAmount" sort={sort} setSort={setSort} align="right" className="pb-3 font-semibold px-2">Amount (₹)</SortableTh>
                 <SortableTh field="redeemedAmount" sort={sort} setSort={setSort} align="right" className="pb-3 font-semibold px-2">Redeemed (₹)</SortableTh>
-                <th className="pb-3 font-semibold px-2">Location</th>
-                <th className="pb-3 font-semibold px-2">Division</th>
-                <th className="pb-3 font-semibold px-2">Remark</th>
+                <SortableTh field="location" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Location</SortableTh>
+                <SortableTh field="divisionName" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Division</SortableTh>
+                <SortableTh field="remark" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Remark</SortableTh>
                 <th className="pb-3 font-semibold px-2 text-center">Actions</th>
               </tr>
             </thead>

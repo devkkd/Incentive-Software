@@ -596,14 +596,24 @@ router.get('/', protect, async (req, res) => {
     const filter = {};
 
     // Point 11 — whitelisted server-side sort
+    // Fields on the invoice itself
     const INVOICE_SORTABLE = {
       invoiceNumber: 'invoiceNumber',
       referenceNo: 'referenceNo',
       invoiceDate: 'invoiceDate',
       invoiceAmount: 'invoiceAmount',
       redeemedAmount: 'redeemedAmount',
+      location: 'location',
+      remark: 'remark',
       status: 'status',
       createdAt: 'createdAt',
+      // Fields on the joined party / division. These cannot be sorted by a
+      // plain .sort() because the join has not happened yet, so the query
+      // below switches to an aggregation when one of these is requested.
+      companyName: 'vendorDoc.companyName',
+      accountNumber: 'vendorDoc.accountNumber',
+      mobileNumber: 'vendorDoc.mobileNumber',
+      divisionName: 'divisionDoc.name',
     };
     const sortField = INVOICE_SORTABLE[sortBy] || 'createdAt';
     const sortDir = sortOrder === 'asc' ? 1 : -1;
@@ -651,13 +661,50 @@ router.get('/', protect, async (req, res) => {
     const totalRedeemed = totalsAgg[0]?.totalRedeemed || 0;
     const totalAmount = totalInvoiced; // kept so nothing else breaks
 
-    const invoices = await Invoice.find(filter)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit))
-      .populate('vendor', 'companyName accountNumber mobileNumber')
-      .populate('division', 'name location')
-      .lean();
+    // Point 11 — join first, then sort, so party and branch columns can be
+    // sorted across the whole dataset rather than just the visible page.
+    const invoices = await Invoice.aggregate([
+      { $match: filter },
+      {
+        $lookup: {
+          from: 'vendors',
+          localField: 'vendor',
+          foreignField: '_id',
+          as: 'vendorDoc',
+        },
+      },
+      { $unwind: { path: '$vendorDoc', preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: 'divisions',
+          localField: 'division',
+          foreignField: '_id',
+          as: 'divisionDoc',
+        },
+      },
+      { $unwind: { path: '$divisionDoc', preserveNullAndEmptyArrays: true } },
+      { $sort: { [sortField]: sortDir } },
+      { $skip: (parseInt(page) - 1) * parseInt(limit) },
+      { $limit: parseInt(limit) },
+      {
+        // Reshape to match what .populate() used to return, so the frontend
+        // continues to work unchanged.
+        $addFields: {
+          vendor: {
+            _id: '$vendorDoc._id',
+            companyName: '$vendorDoc.companyName',
+            accountNumber: '$vendorDoc.accountNumber',
+            mobileNumber: '$vendorDoc.mobileNumber',
+          },
+          division: {
+            _id: '$divisionDoc._id',
+            name: '$divisionDoc.name',
+            location: '$divisionDoc.location',
+          },
+        },
+      },
+      { $project: { vendorDoc: 0, divisionDoc: 0 } },
+    ]).collation({ locale: 'en', strength: 2 });
 
     // Attach redemption amount (sum of debit wallet transactions per invoice)
     const invoiceIds = invoices.map(inv => inv._id);
