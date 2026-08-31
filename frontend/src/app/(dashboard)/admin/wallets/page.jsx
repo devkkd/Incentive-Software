@@ -1006,9 +1006,9 @@ export default function WalletManagementPage() {
 
             <div className="overflow-auto flex-1">
               {listLoading ? (
-                <p className="p-8 text-center text-sm text-gray-500">Loading…</p>
+                <p className="p-4 sm:p-8 text-center text-sm text-gray-500">Loading…</p>
               ) : listRows.length === 0 ? (
-                <p className="p-8 text-center text-sm text-gray-500">
+                <p className="p-4 sm:p-8 text-center text-sm text-gray-500">
                   {listModal === 'held' ? 'No wallets are on hold.' : 'No parties are blocked.'}
                 </p>
               ) : (
@@ -1181,7 +1181,7 @@ export default function WalletManagementPage() {
             Loading wallets data...
           </div>
         ) : error ? (
-          <div className="p-8 text-center text-red-600 font-medium">
+          <div className="p-4 sm:p-8 text-center text-red-600 font-medium">
             Error: {error}
           </div>
         ) : filteredWallets.length === 0 ? (

@@ -401,7 +401,7 @@ export default function AdminReportsPage() {
   };
 
   return (
-    <div className="p-8 md:p-10 max-w-[1600px] mx-auto space-y-6">
+    <div className="p-4 sm:p-8 md:p-10 max-w-[1600px] mx-auto space-y-6">
 
       <div>
         <h2 className="text-[14px] text-gray-700 mb-1">Welcome to Friends Trading Corporation - Incentive Management</h2>
@@ -413,7 +413,7 @@ export default function AdminReportsPage() {
         <div className="flex flex-col md:flex-row">
 
           {/* Column 1: Report Type + Division Filter */}
-          <div className="p-8 md:w-1/3 border-b md:border-b-0 md:border-r border-gray-100">
+          <div className="p-4 sm:p-8 md:w-1/3 border-b md:border-b-0 md:border-r border-gray-100">
             <h3 className="text-[22px] font-bold text-gray-900 mb-6 tracking-tight">Reports</h3>
             <p className="text-[15px] text-gray-800 mb-4">Select a Report to Download</p>
             <div className="flex flex-wrap gap-3 mb-6">
@@ -450,7 +450,7 @@ export default function AdminReportsPage() {
           </div>
 
           {/* Column 2: Timeline Presets */}
-          <div className="p-8 md:w-1/3 border-b md:border-b-0 md:border-r border-gray-100">
+          <div className="p-4 sm:p-8 md:w-1/3 border-b md:border-b-0 md:border-r border-gray-100">
             <p className="text-[15px] text-gray-800 mb-6">Select A Reports Timeline</p>
             <div className="space-y-4">
               {[
@@ -475,7 +475,7 @@ export default function AdminReportsPage() {
           </div>
 
           {/* Column 3: Manual Date */}
-          <div className="p-8 md:w-1/3 flex flex-col justify-center">
+          <div className="p-4 sm:p-8 md:w-1/3 flex flex-col justify-center">
             <p className="text-[15px] text-gray-800 mb-6">Select A Reports Timeline Manually</p>
             <div className="space-y-5">
               <div className="space-y-2">

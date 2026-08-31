@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import MarutiPartnerBadge from '@/components/MarutiPartnerBadge';
 
-export default function Sidebar_branch({ frozen = false }) {
+export default function Sidebar_branch({ frozen = false, open = false, onClose = () => {} }) {
   const pathname = usePathname();
 
   // Define navigation items with their active checking logic
@@ -40,7 +40,22 @@ export default function Sidebar_branch({ frozen = false }) {
   ];
 
   return (
-    <aside className="w-[260px] bg-white border-r border-gray-200 flex flex-col shrink-0 h-full">
+    <>
+      {/* Backdrop — small screens only, closes the drawer on tap */}
+      {open && (
+        <div
+          onClick={onClose}
+          className="fixed inset-0 bg-black/40 z-40 lg:hidden"
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={`w-[260px] bg-white border-r border-gray-200 flex flex-col shrink-0 h-full
+          fixed inset-y-0 left-0 z-50 transition-transform duration-200
+          lg:static lg:translate-x-0 lg:z-auto
+          ${open ? 'translate-x-0' : '-translate-x-full'}`}
+      >
       {/* Sidebar Logo */}
       <Link href="/branch" className="h-[72px] flex items-center px-6 border-b border-gray-200 hover:opacity-80 transition-opacity shrink-0">
         <div className="flex items-center gap-1">
@@ -78,6 +93,7 @@ export default function Sidebar_branch({ frozen = false }) {
             <Link
               key={item.name}
               href={item.href}
+              onClick={onClose}
               className={`mx-3 flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
                 item.isActive
                   ? 'bg-[#2B3B8A] text-white'
@@ -98,5 +114,6 @@ export default function Sidebar_branch({ frozen = false }) {
         <MarutiPartnerBadge size="lg" />
       </div>
     </aside>
+    </>
   );
 }

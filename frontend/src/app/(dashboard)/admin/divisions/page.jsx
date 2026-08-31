@@ -128,7 +128,7 @@ export default function DivisionsPage() {
   };
 
   return (
-    <div className="p-8 md:p-10 max-w-[1600px] mx-auto space-y-6">
+    <div className="p-4 sm:p-8 md:p-10 max-w-[1600px] mx-auto space-y-6">
 
       {/* Edit Modal */}
       {editDiv && (

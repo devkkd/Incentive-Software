@@ -7,7 +7,7 @@ import { usePathname } from 'next/navigation';
 import { useLang } from '@/context/LanguageContext';
 import MarutiPartnerBadge from '@/components/MarutiPartnerBadge';
 
-export default function Sidebar_admin() {
+export default function Sidebar_admin({ open = false, onClose = () => {} }) {
   const pathname = usePathname();
   const { t } = useLang();
 
@@ -24,7 +24,22 @@ export default function Sidebar_admin() {
   ];
 
   return (
-    <aside className="w-[260px] bg-white border-r border-gray-200 flex flex-col shrink-0 h-full">
+    <>
+      {/* Backdrop — small screens only, closes the drawer on tap */}
+      {open && (
+        <div
+          onClick={onClose}
+          className="fixed inset-0 bg-black/40 z-40 lg:hidden"
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={`w-[260px] bg-white border-r border-gray-200 flex flex-col shrink-0 h-full
+          fixed inset-y-0 left-0 z-50 transition-transform duration-200
+          lg:static lg:translate-x-0 lg:z-auto
+          ${open ? 'translate-x-0' : '-translate-x-full'}`}
+      >
       {/* Sidebar Logo */}
       <Link href="/admin" className="h-[72px] flex items-center px-6 border-b border-gray-200 hover:opacity-80 transition-opacity shrink-0">
         <div className="flex items-center gap-1">
@@ -58,5 +73,6 @@ export default function Sidebar_admin() {
         <MarutiPartnerBadge size="lg" />
       </div>
     </aside>
+    </>
   );
 }

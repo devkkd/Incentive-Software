@@ -510,7 +510,7 @@ export default function BranchDashboard() {
   };
 
   return (
-    <div className="p-8 md:p-10 relative">
+    <div className="p-4 sm:p-8 md:p-10 relative">
       {/* SUCCESS MODAL */}
       {showSuccessModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">

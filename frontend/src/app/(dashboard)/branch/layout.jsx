@@ -16,6 +16,7 @@ export default function BranchLayout({ children }) {
   // so every page is blocked except Account Settings.
   const [freeze, setFreeze] = useState({ frozen: false, reason: null });
   const [freezeChecked, setFreezeChecked] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);   // Point 23 — mobile drawer
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -28,6 +29,8 @@ export default function BranchLayout({ children }) {
       .catch(() => {})
       .finally(() => setFreezeChecked(true));
   }, [pathname]);
+
+  useEffect(() => { setMenuOpen(false); }, [pathname]);
 
   const settingsAllowed = pathname?.startsWith('/branch/settings');
   const blocked = freezeChecked && freeze.frozen && !settingsAllowed;
@@ -80,9 +83,9 @@ export default function BranchLayout({ children }) {
 
   return (
     <div className="flex h-screen bg-[#EAF2F9] font-sans text-gray-900 overflow-hidden">
-      <Sidebar_branch frozen={blocked} />
+      <Sidebar_branch frozen={blocked} open={menuOpen} onClose={() => setMenuOpen(false)} />
       <div className="flex-1 flex flex-col min-w-0">
-        <Header_branch />
+        <Header_branch onMenuClick={() => setMenuOpen(true)} />
         <main className="flex-1 overflow-auto">
           {blocked ? (
             <div className="min-h-full flex items-center justify-center p-6">
