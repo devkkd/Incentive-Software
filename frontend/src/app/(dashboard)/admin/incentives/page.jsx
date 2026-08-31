@@ -577,7 +577,7 @@ export default function AdminIncentivesPage() {
                 <SortableTh field="createdAt" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Upload Date</SortableTh>
                 <SortableTh field="fileName" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">File Name</SortableTh>
                 <SortableTh field="walletLabel" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Incentive Month</SortableTh>
-                <SortableTh field="totalAmount" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Incentives Total Amount</SortableTh>
+                <SortableTh field="totalAmount" sort={sort} setSort={setSort} align="right" className="pb-4 pt-2 px-2 font-bold">Incentives Total Amount</SortableTh>
                 <SortableTh field="frequency" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Upload Frequency</SortableTh>
                 <SortableTh field="status" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Status</SortableTh>
               </tr>
@@ -597,7 +597,7 @@ export default function AdminIncentivesPage() {
                       <span className="text-gray-400">—</span>
                     )}
                   </td>
-                  <td className="py-5 px-2">₹{row.totalAmount?.toFixed(2)}</td>
+                  <td className="py-5 px-2 text-right tabular-nums whitespace-nowrap">₹{row.totalAmount?.toFixed(2)}</td>
                   <td className="py-5 px-2 capitalize">{row.frequency}</td>
                   <td className="py-5 px-2">
                     <span className={`px-3 py-1.5 rounded-lg border text-[13px] font-semibold ${

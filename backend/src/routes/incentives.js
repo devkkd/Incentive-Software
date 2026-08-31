@@ -359,12 +359,36 @@ router.get('/monthly-wallets/:vendorId', protect, async (req, res) => {
 
       // Skip wallets whose parent master Wallet is on hold
       const parentWallet = mw.wallet
-        ? await Wallet.findById(mw.wallet).select('isHold').lean()
-        : await Wallet.findOne({ name: mw.label }).select('isHold').lean();
+        ? await Wallet.findById(mw.wallet)
+            .select('isHold noticeEnabled noticeMessage noticeExpiresOn lapseDate')
+            .lean()
+        : await Wallet.findOne({ name: mw.label })
+            .select('isHold noticeEnabled noticeMessage noticeExpiresOn lapseDate')
+            .lean();
       if (parentWallet && parentWallet.isHold) continue;
 
+      // Point 22 — attach the counter notice, if one is set and still current
+      let notice = null;
+      if (parentWallet?.noticeEnabled && parentWallet.noticeMessage) {
+        // "Hide notice after 31 Aug" must mean the notice is still shown all
+        // day on the 31st and disappears on the 1st. A date input stores
+        // midnight at the START of the day, so compare against the END of it.
+        let expired = false;
+        if (parentWallet.noticeExpiresOn) {
+          const endOfDay = new Date(parentWallet.noticeExpiresOn);
+          endOfDay.setUTCHours(23, 59, 59, 999);
+          expired = endOfDay < new Date();
+        }
+        if (!expired) {
+          notice = {
+            message: parentWallet.noticeMessage,
+            lapseDate: parentWallet.lapseDate || null,
+          };
+        }
+      }
+
       const cappedBalance = parseFloat(Math.min(mw.balance, remaining).toFixed(2));
-      allWallets.push({ ...mw, balance: cappedBalance });
+      allWallets.push({ ...mw, balance: cappedBalance, notice });
       remaining = parseFloat((remaining - cappedBalance).toFixed(2));
     }
 

@@ -638,7 +638,7 @@ export default function AdminVendorsPage() {
                     <td className="py-5 px-2">{String((pagination.page - 1) * 10 + i + 1).padStart(2, '0')}</td>
                     <td className="py-5 px-2 font-semibold text-[#2B3B8A] font-mono text-[12px]">{vendor.accountNumber}</td>
                     <td className="py-5 px-2 font-mono text-[12px] text-gray-600">{vendor.division?.name || '—'}</td>
-                    <td className="py-5 px-2 font-semibold">{vendor.companyName}</td>
+                    <td className="py-5 px-2 font-semibold max-w-[220px] truncate" title={vendor.companyName || ''}>{vendor.companyName}</td>
                     <td className="py-5 px-2">
                       {vendor.partyType ? (
                         <span className="text-[11px] font-semibold bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{vendor.partyType}</span>
@@ -647,7 +647,7 @@ export default function AdminVendorsPage() {
                     <td className="py-5 px-2">{vendor.mobileNumber}</td>
                     <td className="py-5 px-2 text-gray-600">{vendor.salesPerson || '—'}</td>
                     <td className="py-5 px-2 text-gray-500 text-[12px]">{vendor.email || '—'}</td>
-                    <td className="py-5 px-2">₹{Number(vendor.walletBalance).toFixed(2)}</td>
+                    <td className="py-5 px-2 text-right tabular-nums whitespace-nowrap">₹{Number(vendor.walletBalance).toFixed(2)}</td>
                     <td className="py-5 px-2">
                       <span className={`px-3 py-1.5 rounded-lg border text-[13px] font-semibold capitalize ${statusStyles[vendor.status] || 'text-gray-600 bg-gray-100 border-gray-200'}`}>
                         {vendor.status}

@@ -62,6 +62,39 @@ export default function WalletManagementPage() {
   const [listLoading, setListLoading] = useState(false);
   const [expandedRows, setExpandedRows] = useState(new Set());
 
+  // Point 22 — counter notice
+  const [noticeWallet, setNoticeWallet] = useState(null);
+  const [noticeForm, setNoticeForm] = useState({
+    noticeEnabled: false, noticeMessage: '', noticeExpiresOn: '', lapseDate: '',
+  });
+  const [noticeSaving, setNoticeSaving] = useState(false);
+
+  const openNotice = (w) => {
+    setNoticeWallet(w);
+    setNoticeForm({
+      noticeEnabled: !!w.noticeEnabled,
+      noticeMessage: w.noticeMessage || '',
+      noticeExpiresOn: w.noticeExpiresOn ? w.noticeExpiresOn.slice(0, 10) : '',
+      lapseDate: w.lapseDate ? w.lapseDate.slice(0, 10) : '',
+    });
+  };
+
+  const saveNotice = async () => {
+    setNoticeSaving(true);
+    try {
+      const res = await fetch(`${API}/api/wallets/${noticeWallet._id}/notice`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(noticeForm),
+      });
+      const json = await res.json();
+      if (json.success) { setNoticeWallet(null); fetchWallets(); }
+      else alert(json.message);
+    } catch (err) { console.error('[notice]', err); }
+    finally { setNoticeSaving(false); }
+  };
+
   // Point 7 — redemption freeze
   const [freeze, setFreeze] = useState({ frozen: false, reason: null });
   const [freezeModal, setFreezeModal] = useState(false);
@@ -789,6 +822,114 @@ export default function WalletManagementPage() {
         </div>
       </div>
 
+      {/* ── Counter notice modal — Point 22 ────────────────────────────────── */}
+      {noticeWallet && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+             onClick={() => setNoticeWallet(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-5"
+               onClick={(e) => e.stopPropagation()}>
+            <div>
+              <h3 className="text-[18px] font-bold text-gray-900">Counter notice</h3>
+              <p className="text-[13px] text-gray-500 mt-1">
+                Shown to branch staff whenever a party holds a balance in{' '}
+                <span className="font-semibold text-gray-700">{noticeWallet.name}</span>.
+                Informational only — it does not block redemption.
+              </p>
+            </div>
+
+            {/* Toggle */}
+            <div className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3">
+              <div>
+                <p className="text-[13px] font-semibold text-gray-900">
+                  {noticeForm.noticeEnabled ? 'Notice is on' : 'Notice is off'}
+                </p>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  Switching off keeps the text for next time
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNoticeForm((f) => ({ ...f, noticeEnabled: !f.noticeEnabled }))}
+                className={`relative w-12 h-6 rounded-full transition-colors shrink-0 cursor-pointer ${
+                  noticeForm.noticeEnabled ? 'bg-amber-500' : 'bg-gray-300'
+                }`}
+              >
+                <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                  noticeForm.noticeEnabled ? 'translate-x-6' : 'translate-x-0.5'
+                }`} />
+              </button>
+            </div>
+
+            {/* Message */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                  Message
+                </label>
+                <span className={`text-[11px] tabular-nums ${
+                  noticeForm.noticeMessage.length > 110 ? 'text-red-600 font-semibold' : 'text-gray-400'
+                }`}>
+                  {noticeForm.noticeMessage.length}/120
+                </span>
+              </div>
+              <textarea
+                value={noticeForm.noticeMessage}
+                onChange={(e) => setNoticeForm((f) => ({ ...f, noticeMessage: e.target.value.slice(0, 120) }))}
+                disabled={!noticeForm.noticeEnabled}
+                rows={2}
+                placeholder="e.g. Balance will lapse on 31 Aug"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[13px] disabled:bg-gray-50 disabled:text-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400"
+              />
+            </div>
+
+            {/* Dates */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                  Lapse date
+                </label>
+                <input
+                  type="date"
+                  value={noticeForm.lapseDate}
+                  onChange={(e) => setNoticeForm((f) => ({ ...f, lapseDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[13px] focus:outline-none focus:border-amber-400"
+                />
+                <p className="text-[10px] text-gray-500 mt-1">
+                  A real date, separate from the text — usable by reports
+                </p>
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                  Hide notice after
+                </label>
+                <input
+                  type="date"
+                  value={noticeForm.noticeExpiresOn}
+                  onChange={(e) => setNoticeForm((f) => ({ ...f, noticeExpiresOn: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[13px] focus:outline-none focus:border-amber-400"
+                />
+                <p className="text-[10px] text-gray-500 mt-1">
+                  Optional. Stops a stale notice lingering
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={() => setNoticeWallet(null)}
+                className="px-4 py-2 text-[13px] font-semibold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer">
+                Cancel
+              </button>
+              <button
+                onClick={saveNotice}
+                disabled={noticeSaving || (noticeForm.noticeEnabled && !noticeForm.noticeMessage.trim())}
+                className="px-4 py-2 text-[13px] font-semibold text-white bg-[#2B3B8A] hover:bg-[#222f70] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl cursor-pointer">
+                {noticeSaving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Freeze reason modal — Point 7 ──────────────────────────────────── */}
       {freezeModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
@@ -1129,6 +1270,17 @@ export default function WalletManagementPage() {
                           className="px-3 py-1.5 bg-[#2B3B8A]/10 hover:bg-[#2B3B8A] text-[#2B3B8A] hover:text-white font-semibold text-xs rounded-lg transition-colors"
                         >
                           View Parties
+                        </button>
+                        <button
+                          onClick={() => openNotice(w)}
+                          title={w.noticeEnabled ? 'Notice is showing at the counter' : 'Set a counter notice'}
+                          className={`px-3 py-1.5 font-semibold text-xs rounded-lg transition-colors cursor-pointer ${
+                            w.noticeEnabled
+                              ? 'bg-amber-500 text-white hover:bg-amber-600'
+                              : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                          }`}
+                        >
+                          {w.noticeEnabled ? 'Notice On' : 'Notice'}
                         </button>
                         <button
                           onClick={() => handleToggleHoldWallet(w)}

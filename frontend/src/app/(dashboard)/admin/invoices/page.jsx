@@ -615,13 +615,13 @@ export default function AdminInvoicesPage() {
                   <td className="py-4 px-2 font-semibold font-mono text-[12px]">{row.invoiceNumber}</td>
                   <td className="py-4 px-2 font-mono font-medium text-gray-800">{row.referenceNo || '—'}</td>
                   <td className="py-4 px-2">{new Date(row.invoiceDate).toLocaleDateString('en-IN')}</td>
-                  <td className="py-4 px-2 font-semibold text-gray-900">₹{Number(row.invoiceAmount).toLocaleString('en-IN')}</td>
-                  <td className="py-4 px-2 font-semibold text-[#E74C3C]">
+                  <td className="py-4 px-2 font-semibold text-gray-900 text-right tabular-nums whitespace-nowrap">₹{Number(row.invoiceAmount).toLocaleString('en-IN')}</td>
+                  <td className="py-4 px-2 font-semibold text-[#E74C3C] text-right tabular-nums whitespace-nowrap">
                     {row.redeemAmount > 0
                       ? `₹${Number(row.redeemAmount).toLocaleString('en-IN')}`
                       : <span className="text-gray-300">—</span>}
                   </td>
-                  <td className="py-4 px-2 text-gray-500">{row.location || '—'}</td>
+                  <td className="py-4 px-2 text-gray-500 max-w-[160px] truncate" title={row.location || ''}>{row.location || '—'}</td>
                   <td className="py-4 px-2">
                     <span className="px-2.5 py-1 bg-[#EEF2FF] text-[#2B3B8A] text-[11px] font-semibold rounded-lg">
                       {row.division?.name || '—'}

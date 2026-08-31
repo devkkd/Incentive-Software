@@ -24,3 +24,22 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+
+/* Point 22 — counter notice attention pulse.
+   A slow ~2s fade rather than a blink. Anything flashing faster than about
+   three times a second is a seizure risk and barred by accessibility
+   standards, and fast blinking is also the first thing staff learn to ignore.
+   Respects the operating system's reduce-motion setting. */
+@keyframes pulse-slow {
+  0%, 100% { background-color: rgb(254 252 232); }
+  50%      { background-color: rgb(254 240 199); }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse-slow { animation: none; }
+}

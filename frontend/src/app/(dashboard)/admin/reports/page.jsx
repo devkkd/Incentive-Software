@@ -404,6 +404,7 @@ export default function AdminReportsPage() {
     <div className="p-8 md:p-10 max-w-[1600px] mx-auto space-y-6">
 
       <div>
+        <h2 className="text-[14px] text-gray-700 mb-1">Welcome to Friends Trading Corporation - Incentive Management</h2>
         <h1 className="text-[28px] font-bold text-black tracking-tight">Admin Portal</h1>
       </div>
 
@@ -575,7 +576,7 @@ export default function AdminReportsPage() {
                       <th className="pb-4 font-bold px-2">Mobile</th>
                       <th className="pb-4 font-bold px-2">Division</th>
                       <th className="pb-4 font-bold px-2">Status</th>
-                      <th className="pb-4 font-bold px-2">Total Wallet (₹)</th>
+                      <th className="pb-4 font-bold px-2 text-right">Total Wallet (₹)</th>
                       {allMonths.map(m => <th key={m} className="pb-4 font-bold px-2 text-right">{m} (₹)</th>)}
                       <th className="pb-4 font-bold px-2 text-center">Action</th>
                     </>;
@@ -585,7 +586,7 @@ export default function AdminReportsPage() {
                     <th className="pb-4 font-bold px-2">Reference No</th>
                     <th className="pb-4 font-bold px-2">Party Name</th>
                     <th className="pb-4 font-bold px-2">Party Code</th>
-                    <th className="pb-4 font-bold px-2">Invoice Amount (₹)</th>
+                    <th className="pb-4 font-bold px-2 text-right">Invoice Amount (₹)</th>
                     <th className="pb-4 font-bold px-2">Amount Redeemed (₹)</th>
                     <th className="pb-4 font-bold px-2">Location</th>
                     <th className="pb-4 font-bold px-2">Division</th>
@@ -596,7 +597,7 @@ export default function AdminReportsPage() {
                     <th className="pb-4 font-bold px-2">Party Name</th>
                     <th className="pb-4 font-bold px-2">Party Code</th>
                     <th className="pb-4 font-bold px-2">Type</th>
-                    <th className="pb-4 font-bold px-2">Amount (₹)</th>
+                    <th className="pb-4 font-bold px-2 text-right">Amount (₹)</th>
                     <th className="pb-4 font-bold px-2">Balance After</th>
                     <th className="pb-4 font-bold px-2">Date</th>
                   </>}
@@ -616,7 +617,7 @@ export default function AdminReportsPage() {
                         <td className="py-5 px-2">
                           <span className={`px-3 py-1.5 rounded-lg border text-[13px] font-semibold capitalize ${statusStyles[row.status] || ''}`}>{row.status}</span>
                         </td>
-                        <td className="py-5 px-2 font-semibold text-[#2B3B8A]">₹{Number(row.walletBalance).toFixed(2)}</td>
+                        <td className="py-5 px-2 font-semibold text-[#2B3B8A] text-right tabular-nums whitespace-nowrap">₹{Number(row.walletBalance).toFixed(2)}</td>
                         {allMonths.map(month => {
                           const mw = (row.monthlyWallets || []).find(w => w.label === month);
                           const bal = mw ? Number(mw.balance) : 0;
@@ -636,7 +637,7 @@ export default function AdminReportsPage() {
                       <td className="py-5 px-2 font-mono font-medium text-gray-800">{row.referenceNo || '—'}</td>
                       <td className="py-5 px-2">{row.vendor?.companyName || 'N/A'}</td>
                       <td className="py-5 px-2">{row.vendor?.accountNumber || 'N/A'}</td>
-                      <td className="py-5 px-2">₹{Number(row.invoiceAmount).toFixed(2)}</td>
+                      <td className="py-5 px-2 text-right tabular-nums whitespace-nowrap">₹{Number(row.invoiceAmount).toFixed(2)}</td>
                       <td className="py-5 px-2 font-semibold text-[#E74C3C]">
                         {row.redeemAmount > 0 ? `₹${Number(row.redeemAmount).toFixed(2)}` : <span className="text-gray-400">—</span>}
                       </td>
@@ -655,8 +656,8 @@ export default function AdminReportsPage() {
                       <td className="py-5 px-2">
                         <span className={`font-semibold ${row.type === 'credit' ? 'text-[#2ECC71]' : 'text-[#E74C3C]'}`}>{row.type}</span>
                       </td>
-                      <td className="py-5 px-2">₹{row.amount}</td>
-                      <td className="py-5 px-2">₹{row.balanceAfter}</td>
+                      <td className="py-5 px-2 text-right tabular-nums whitespace-nowrap">₹{row.amount}</td>
+                      <td className="py-5 px-2 text-right tabular-nums whitespace-nowrap">₹{row.balanceAfter}</td>
                       <td className="py-5 px-2">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
                     </>}
                   </tr>
@@ -683,7 +684,7 @@ export default function AdminReportsPage() {
                       <tr className="border-t border-gray-100">
                         <td className="py-3 px-2" />
                         <td colSpan="5" className="py-3 px-2 text-right font-semibold">Total Wallet Balance</td>
-                        <td className="py-3 px-2 font-semibold text-[#2B3B8A]">₹{Number(totals.walletTotal).toFixed(2)}</td>
+                        <td className="py-3 px-2 font-semibold text-[#2B3B8A] text-right tabular-nums whitespace-nowrap">₹{Number(totals.walletTotal).toFixed(2)}</td>
                         {allMonths.map(m => {
                           const t = filteredData.reduce((s, v) => { const mw = (v.monthlyWallets||[]).find(w=>w.label===m); return s+(mw?Number(mw.balance):0); }, 0);
                           return <td key={m} className="py-3 px-2 text-right font-semibold text-[#2B3B8A]">{t>0?`₹${t.toFixed(2)}`:'—'}</td>;
@@ -696,8 +697,8 @@ export default function AdminReportsPage() {
                     <tr className="border-t border-gray-100">
                       <td className="py-3 px-2" />
                       <td colSpan="3" className="py-3 px-2 text-right font-semibold">Total</td>
-                      <td className="py-3 px-2 font-semibold">₹{Number(totals.invoiceTotal).toFixed(2)}</td>
-                      <td className="py-3 px-2 font-semibold text-[#E74C3C]">₹{Number(totals.redeemTotal).toFixed(2)}</td>
+                      <td className="py-3 px-2 font-semibold text-right tabular-nums whitespace-nowrap">₹{Number(totals.invoiceTotal).toFixed(2)}</td>
+                      <td className="py-3 px-2 font-semibold text-[#E74C3C] text-right tabular-nums whitespace-nowrap">₹{Number(totals.redeemTotal).toFixed(2)}</td>
                       <td className="py-3 px-2" />
                       <td className="py-3 px-2" />
                       <td className="py-3 px-2" />
@@ -708,7 +709,7 @@ export default function AdminReportsPage() {
                     <tr className="border-t border-gray-100">
                       <td className="py-3 px-2" />
                       <td colSpan="2" className="py-3 px-2 text-right">Total Incentive</td>
-                      <td className="py-3 px-2">₹{Number(totals.incentiveTotal).toFixed(2)}</td>
+                      <td className="py-3 px-2 text-right tabular-nums whitespace-nowrap">₹{Number(totals.incentiveTotal).toFixed(2)}</td>
                       <td className="py-3 px-2" />
                       <td className="py-3 px-2" />
                       <td className="py-3 px-2" />
