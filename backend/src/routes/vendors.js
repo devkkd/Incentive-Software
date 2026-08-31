@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const Vendor = require('../models/Vendor');
+const DeletedParty = require('../models/DeletedParty');
 const Division = require('../models/Division');
 const Invoice = require('../models/Invoice');
 const { protect, authorize } = require('../middleware/auth');
@@ -494,8 +495,31 @@ router.get('/:id/transactions', protect, async (req, res) => {
 // @access  Admin only
 router.delete('/:id', protect, authorize('admin'), async (req, res) => {
   try {
-    const vendor = await Vendor.findByIdAndDelete(req.params.id);
+    // Record who they were BEFORE removing them. Without this their wallets,
+    // transactions and invoices are left pointing at nothing and no one can
+    // say whose money it was.
+    const vendor = await Vendor.findById(req.params.id).populate('division', 'name').lean();
     if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
+
+    await DeletedParty.create({
+      vendorId: vendor._id,
+      accountNumber: vendor.accountNumber,
+      companyName: vendor.companyName,
+      personName: vendor.personName,
+      mobileNumber: vendor.mobileNumber,
+      partyCity: vendor.partyCity,
+      partyType: vendor.partyType,
+      salesPerson: vendor.salesPerson,
+      divisionName: vendor.division?.name || null,
+      status: vendor.status,
+      walletBalanceAtDeletion: vendor.walletBalance || 0,
+      deletedBy: req.user._id,
+      deletedByName: req.user.name || null,
+      deletionReason: req.body?.reason?.trim() || null,
+    });
+
+    await Vendor.findByIdAndDelete(req.params.id);
+
     res.status(200).json({ success: true, data: {} });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

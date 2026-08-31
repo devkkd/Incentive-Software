@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import ExceptionReport from '@/components/ExceptionReport';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -421,6 +422,7 @@ export default function AdminReportsPage() {
                 { id: 'wallet_balances', label: 'Wallet Balances' },
                 { id: 'invoices', label: 'Invoices' },
                 { id: 'incentives', label: 'Incentives Wallet' },
+                { id: 'exceptions', label: 'Exception Report' },
               ].map((r) => (
                 <button key={r.id} onClick={() => { setReportType(r.id); setShowResults(false); }}
                   className={`px-5 py-2.5 rounded-xl text-[13px] font-semibold transition-colors ${reportType === r.id ? 'bg-[#2B3B8A] text-white shadow-sm' : 'bg-[#8492A6] text-white hover:bg-gray-500'}`}>
@@ -449,6 +451,10 @@ export default function AdminReportsPage() {
             )} */}
           </div>
 
+          {/* Exception Report needs no timeline or filters — it is a snapshot
+              of the data as it stands right now. */}
+          {reportType === 'exceptions' ? null : (
+          <>
           {/* Column 2: Timeline Presets */}
           <div className="p-4 sm:p-8 md:w-1/3 border-b md:border-b-0 md:border-r border-gray-100">
             <p className="text-[15px] text-gray-800 mb-6">Select A Reports Timeline</p>
@@ -492,16 +498,23 @@ export default function AdminReportsPage() {
               </div>
             </div>
           </div>
+          </>
+          )}
         </div>
 
-        {/* Action */}
-        <div className="border-t border-gray-100 p-6 flex justify-center bg-white">
-          <button onClick={handleGetReports} disabled={loading}
-            className="bg-[#2B3B8A] hover:bg-[#1a2d6b] disabled:opacity-60 transition-colors text-white font-semibold px-10 py-3 rounded-xl flex items-center justify-center gap-2">
-            {loading ? 'Loading...' : 'Get Reports →'}
-          </button>
-        </div>
+        {/* Action — the Exception Report loads itself, so no button */}
+        {reportType !== 'exceptions' && (
+          <div className="border-t border-gray-100 p-6 flex justify-center bg-white">
+            <button onClick={handleGetReports} disabled={loading}
+              className="bg-[#2B3B8A] hover:bg-[#1a2d6b] disabled:opacity-60 transition-colors text-white font-semibold px-10 py-3 rounded-xl flex items-center justify-center gap-2">
+              {loading ? 'Loading...' : 'Get Reports →'}
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Exception Report panel */}
+      {reportType === 'exceptions' && <ExceptionReport />}
 
       {/* QUICK STATEMENT LOOKUP */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 md:p-10 animate-in fade-in slide-in-from-bottom-4 duration-500">

@@ -56,6 +56,7 @@ const translations = {
     incentivesSidebar: 'Incentives',
     walletManagementSidebar: 'Wallet Management',
     reportsSidebar: 'All Reports',
+    exceptionsSidebar: 'Exception Report',
     settingsSidebar: 'Account Settings',
 
     // Dashboard
@@ -204,6 +205,7 @@ const translations = {
     allDivisionsSidebar: 'सभी डिवीजन',
     incentivesSidebar: 'प्रोत्साहन',
     reportsSidebar: 'सभी रिपोर्ट',
+    exceptionsSidebar: 'अपवाद रिपोर्ट',
     settingsSidebar: 'खाता सेटिंग',
 
     // Dashboard

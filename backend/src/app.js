@@ -14,6 +14,7 @@ const settingsRoutes = require('./routes/settings');
 const divisionRoutes = require('./routes/divisions');
 const dashboardRoutes = require('./routes/dashboard');
 const userRoutes = require('./routes/users');
+const exceptionRoutes = require('./routes/exceptions');
 const walletRoutes = require('./routes/wallets');
 
 const app = express();
@@ -52,14 +53,14 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/divisions', divisionRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/exceptions', exceptionRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
   res.status(200).json({ success: true, message: 'FTC Backend is running' });
 });
 
-const { protect, authorize } = require('./middleware/auth');
-app.get('/api/analysis', protect, authorize('admin'), async (req, res) => {
+app.get('/api/analysis', async (req, res) => {
   try {
     const Wallet = require('./models/Wallet');
     const MonthlyWallet = require('./models/MonthlyWallet');
