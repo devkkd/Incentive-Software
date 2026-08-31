@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import SortableTh from '@/components/SortableTh';
+import useClientSort from '@/components/useClientSort';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -359,12 +361,21 @@ export default function WalletManagementPage() {
   };
 
   // Filtered wallets
-  const filteredWallets = wallets.filter((w) => {
+  const filteredWalletsUnsorted = wallets.filter((w) => {
     const matchesSearch = w.name.toLowerCase().includes(search.toLowerCase()) ||
       (w.description && w.description.toLowerCase().includes(search.toLowerCase()));
     if (statusFilter === 'active') return matchesSearch && !w.isHold;
     if (statusFilter === 'hold') return matchesSearch && w.isHold;
     return matchesSearch;
+  });
+
+  // Point 11 — the whole wallet list is already loaded, so sort it here
+  const { sort, setSort, sorted: filteredWallets } = useClientSort(filteredWalletsUnsorted, {
+    name:          (w) => w.name,
+    totalCredited: (w) => w.totalCredited || 0,
+    totalBalance:  (w) => w.totalBalance || 0,
+    totalParties:  (w) => w.totalParties || 0,
+    isHold:        (w) => (w.isHold ? 'On Hold' : 'Active'),
   });
 
   // Filtered parties in selected wallet
@@ -1044,11 +1055,11 @@ export default function WalletManagementPage() {
             <table className="w-full text-left text-sm">
               <thead className="bg-gray-50 text-gray-500 font-semibold border-b border-gray-100 text-xs uppercase tracking-wider">
                 <tr>
-                  <th className="px-6 py-4">Wallet Name</th>
-                  <th className="px-6 py-4 text-right">Credited Amount</th>
-                  <th className="px-6 py-4 text-right">Current Balance</th>
-                  <th className="px-6 py-4">Parties Count</th>
-                  <th className="px-6 py-4">Status</th>
+                  <SortableTh field="name" sort={sort} setSort={setSort}>Wallet Name</SortableTh>
+                  <SortableTh field="totalCredited" sort={sort} setSort={setSort} align="right">Credited Amount</SortableTh>
+                  <SortableTh field="totalBalance" sort={sort} setSort={setSort} align="right">Current Balance</SortableTh>
+                  <SortableTh field="totalParties" sort={sort} setSort={setSort}>Parties Count</SortableTh>
+                  <SortableTh field="isHold" sort={sort} setSort={setSort}>Status</SortableTh>
                   <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
               </thead>

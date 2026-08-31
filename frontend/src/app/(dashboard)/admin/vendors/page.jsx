@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import SortableTh from '@/components/SortableTh';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -63,6 +64,7 @@ export default function AdminVendorsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [pagination, setPagination] = useState({ total: 0, page: 1, pages: 1 });
   const [pageStart, setPageStart] = useState(1);
+  const [sort, setSort] = useState({ by: '', order: '' });   // Point 11
 
   useEffect(() => {
     if (pagination.page > pageStart + 5) {
@@ -100,12 +102,13 @@ export default function AdminVendorsPage() {
       const params = new URLSearchParams({ page, limit: 10 });
       if (searchQuery) params.append('q', searchQuery);
       if (statusFilter) params.append('status', statusFilter.toLowerCase());
+      if (sort.by) { params.append('sortBy', sort.by); params.append('sortOrder', sort.order); }
       const res = await fetch(`${API}/api/vendors?${params}`, { headers: authHeaders(), credentials: 'include' });
       const data = await res.json();
       if (res.ok) { setVendors(data.data); setPagination(data.pagination); }
     } catch { /* silent */ }
     finally { setLoading(false); }
-  }, [searchQuery, statusFilter]);
+  }, [searchQuery, statusFilter, sort]);
 
   useEffect(() => { fetchVendors(1); }, [fetchVendors]);
 
@@ -559,6 +562,7 @@ export default function AdminVendorsPage() {
 
       <div className="p-8 md:p-10 max-w-[1600px] mx-auto">
         <div className="mb-6">
+          <h2 className="text-[14px] text-gray-700 mb-1">Welcome to Faith Trust Commitment - Incentive Management</h2>
           <h1 className="text-[28px] font-bold text-black tracking-tight">Admin Portal</h1>
         </div>
 
@@ -614,15 +618,15 @@ export default function AdminVendorsPage() {
               <thead>
                 <tr className="border-b-2 border-gray-100 text-gray-900 text-[13px]">
                   <th className="pb-4 pt-2 px-2 font-bold">#</th>
-                  <th className="pb-4 pt-2 px-2 font-bold">Party Code</th>
+                  <SortableTh field="accountNumber" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Party Code</SortableTh>
                   <th className="pb-4 pt-2 px-2 font-bold">Branch Code</th>
-                  <th className="pb-4 pt-2 px-2 font-bold">Party Name</th>
-                  <th className="pb-4 pt-2 px-2 font-bold">Party Type</th>
-                  <th className="pb-4 pt-2 px-2 font-bold">Mobile</th>
-                  <th className="pb-4 pt-2 px-2 font-bold">Sales Person</th>
+                  <SortableTh field="companyName" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Party Name</SortableTh>
+                  <SortableTh field="partyType" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Party Type</SortableTh>
+                  <SortableTh field="mobileNumber" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Mobile</SortableTh>
+                  <SortableTh field="salesPerson" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Sales Person</SortableTh>
                   <th className="pb-4 pt-2 px-2 font-bold">Email</th>
-                  <th className="pb-4 pt-2 px-2 font-bold">Wallet</th>
-                  <th className="pb-4 pt-2 px-2 font-bold">Status</th>
+                  <SortableTh field="walletBalance" sort={sort} setSort={setSort} align="right" className="pb-4 pt-2 px-2 font-bold">Wallet</SortableTh>
+                  <SortableTh field="status" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Status</SortableTh>
                   <th className="pb-4 pt-2 px-2 font-bold">Action</th>
                 </tr>
               </thead>

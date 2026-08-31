@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import SortableTh from '@/components/SortableTh';
+import useClientSort from '@/components/useClientSort';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -194,6 +196,16 @@ export default function AdminIncentivesPage() {
   // History state
   const [history, setHistory] = useState([]);
 
+  // Point 11
+  const { sort, setSort, sorted: sortedHistory } = useClientSort(history, {
+    createdAt:   (h) => h.createdAt,
+    fileName:    (h) => h.fileName,
+    walletLabel: (h) => h.walletLabel,
+    totalAmount: (h) => h.totalAmount || 0,
+    frequency:   (h) => h.frequency,
+    status:      (h) => h.status,
+  });
+
   // Wallets selection for destination
   const [wallets, setWallets] = useState([]);
   const [selectedWalletId, setSelectedWalletId] = useState('');
@@ -329,6 +341,7 @@ export default function AdminIncentivesPage() {
     <div className="p-8 md:p-10 max-w-[1600px] mx-auto space-y-6">
 
       <div>
+        <h2 className="text-[14px] text-gray-700 mb-1">Welcome to Friends Trading Corporation - Incentive Management</h2>
         <h1 className="text-[28px] font-bold text-black tracking-tight">Admin Portal</h1>
       </div>
 
@@ -561,16 +574,16 @@ export default function AdminIncentivesPage() {
             <thead>
               <tr className="border-b border-gray-200 text-gray-900">
                 <th className="pb-4 pt-2 px-2 font-bold">#</th>
-                <th className="pb-4 pt-2 px-2 font-bold">Upload Date</th>
-                <th className="pb-4 pt-2 px-2 font-bold">File Name</th>
-                <th className="pb-4 pt-2 px-2 font-bold">Incentive Month</th>
-                <th className="pb-4 pt-2 px-2 font-bold">Incentives Total Amount</th>
-                <th className="pb-4 pt-2 px-2 font-bold">Upload Frequency</th>
-                <th className="pb-4 pt-2 px-2 font-bold">Status</th>
+                <SortableTh field="createdAt" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Upload Date</SortableTh>
+                <SortableTh field="fileName" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">File Name</SortableTh>
+                <SortableTh field="walletLabel" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Incentive Month</SortableTh>
+                <SortableTh field="totalAmount" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Incentives Total Amount</SortableTh>
+                <SortableTh field="frequency" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Upload Frequency</SortableTh>
+                <SortableTh field="status" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Status</SortableTh>
               </tr>
             </thead>
             <tbody className="text-gray-700 font-medium">
-              {Array.isArray(history) && history.length > 0 ? history.map((row, i) => (
+              {Array.isArray(sortedHistory) && sortedHistory.length > 0 ? sortedHistory.map((row, i) => (
                 <tr key={row._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
                   <td className="py-5 px-2">{String(i+1).padStart(2,'0')}</td>
                   <td className="py-5 px-2">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import SortableTh from '@/components/SortableTh';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -107,6 +108,7 @@ export default function AdminInvoicesPage() {
   const [divisions, setDivisions]         = useState([]);
   const [wallets, setWallets]             = useState([]);
   const [walletFilter, setWalletFilter]   = useState('');
+  const [sort, setSort]                   = useState({ by: '', order: '' });   // Point 11
   const [locationOptions, setLocationOptions] = useState([]);
 
   // Load divisions once
@@ -154,6 +156,7 @@ export default function AdminInvoicesPage() {
       if (locationFilter) params.append('location', locationFilter);
       if (divisionFilter) params.append('divisionId', divisionFilter);
       if (walletFilter) params.append('walletId', walletFilter);
+      if (sort.by) { params.append('sortBy', sort.by); params.append('sortOrder', sort.order); }
 
       // Date range: manual dates override timeline preset
       if (startDate && endDate) {
@@ -178,7 +181,7 @@ export default function AdminInvoicesPage() {
       }
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
-  }, [searchQuery, timeline, divisionFilter, locationFilter, walletFilter, startDate, endDate]);
+  }, [searchQuery, timeline, divisionFilter, locationFilter, walletFilter, startDate, endDate, sort]);
 
   useEffect(() => { fetchInvoices(1); }, [fetchInvoices]);
 
@@ -258,6 +261,7 @@ export default function AdminInvoicesPage() {
     if (locationFilter) params.append('location', locationFilter);
     if (divisionFilter) params.append('divisionId', divisionFilter);
       if (walletFilter) params.append('walletId', walletFilter);
+      if (sort.by) { params.append('sortBy', sort.by); params.append('sortOrder', sort.order); }
     if (startDate && endDate) { params.append('startDate', startDate); params.append('endDate', endDate); }
     else if (timeline) { const r = getDateRange(timeline); if (r) { params.append('startDate', r.start); params.append('endDate', r.end); } }
     const res  = await fetch(`${API}/api/invoices?${params}`, { headers: authHeaders(), credentials: 'include' });
@@ -576,11 +580,11 @@ export default function AdminInvoicesPage() {
                 <th className="pb-3 font-semibold px-2">Party Name</th>
                 <th className="pb-3 font-semibold px-2">Party Code</th>
                 <th className="pb-3 font-semibold px-2">Mobile</th>
-                <th className="pb-3 font-semibold px-2">Invoice Number</th>
-                <th className="pb-3 font-semibold px-2">Reference No</th>
-                <th className="pb-3 font-semibold px-2">Invoice Date</th>
-                <th className="pb-3 font-semibold px-2">Amount (₹)</th>
-                <th className="pb-3 font-semibold px-2">Redeemed (₹)</th>
+                <SortableTh field="invoiceNumber" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Invoice Number</SortableTh>
+                <SortableTh field="referenceNo" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Reference No</SortableTh>
+                <SortableTh field="invoiceDate" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Invoice Date</SortableTh>
+                <SortableTh field="invoiceAmount" sort={sort} setSort={setSort} align="right" className="pb-3 font-semibold px-2">Amount (₹)</SortableTh>
+                <SortableTh field="redeemedAmount" sort={sort} setSort={setSort} align="right" className="pb-3 font-semibold px-2">Redeemed (₹)</SortableTh>
                 <th className="pb-3 font-semibold px-2">Location</th>
                 <th className="pb-3 font-semibold px-2">Division</th>
                 <th className="pb-3 font-semibold px-2">Remark</th>
