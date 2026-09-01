@@ -349,4 +349,39 @@ router.get('/', protect, authorize('admin'), async (req, res) => {
   }
 });
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POINT 26 — nightly Excel backup
+// ─────────────────────────────────────────────────────────────────────────────
+
+// @route   POST /api/exceptions/backup/run
+// @desc    Generate the workbook now and upload it. Admin only.
+// @access  Admin
+router.post('/backup/run', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { runBackup } = require('../services/backupExport');
+    const result = await runBackup();
+    res.status(200).json({
+      success: true,
+      message: result.sent
+        ? `Backup emailed to ${result.sentTo}`
+        : result.error
+        ? 'Backup created but the email failed — see below'
+        : 'Backup created. Email is not configured, so the file was kept on the server.',
+      data: {
+        fileName: result.fileName,
+        generatedAt: result.generatedAt,
+        counts: result.counts,
+        sent: result.sent,
+        sentTo: result.sentTo,
+        filePath: result.sent ? null : result.filePath,
+        error: result.error || null,
+      },
+    });
+  } catch (error) {
+    console.error('[backup]', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 module.exports = router;

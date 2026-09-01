@@ -111,6 +111,24 @@ export default function ExceptionReport() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [openKey, setOpenKey] = useState(null);
+  const [backupRunning, setBackupRunning] = useState(false);
+  const [backupResult, setBackupResult] = useState(null);
+
+  const runBackup = async () => {
+    setBackupRunning(true);
+    setBackupResult(null);
+    try {
+      const res = await fetch(`${API}/api/exceptions/backup/run`, {
+        method: 'POST', headers: authHeaders(), credentials: 'include',
+      });
+      const json = await res.json();
+      setBackupResult(json);
+    } catch {
+      setBackupResult({ success: false, message: 'Could not reach the server' });
+    } finally {
+      setBackupRunning(false);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -167,14 +185,49 @@ export default function ExceptionReport() {
             it changes nothing.
           </p>
         </div>
-        <button
-          onClick={load}
-          disabled={loading}
-          className="px-4 py-2 bg-[#2B3B8A] hover:bg-[#222f70] text-white text-[13px] font-semibold rounded-xl disabled:opacity-50 cursor-pointer shrink-0"
-        >
-          {loading ? 'Checking…' : 'Run again'}
-        </button>
+        <div className="flex gap-2 shrink-0">
+          <button
+            onClick={runBackup}
+            disabled={backupRunning}
+            title="Generate the Excel snapshot now and email it"
+            className="px-4 py-2 bg-white border border-gray-200 hover:border-[#2B3B8A] text-gray-700 text-[13px] font-semibold rounded-xl disabled:opacity-50 cursor-pointer"
+          >
+            {backupRunning ? 'Backing up…' : 'Back up now'}
+          </button>
+          <button
+            onClick={load}
+            disabled={loading}
+            className="px-4 py-2 bg-[#2B3B8A] hover:bg-[#222f70] text-white text-[13px] font-semibold rounded-xl disabled:opacity-50 cursor-pointer"
+          >
+            {loading ? 'Checking…' : 'Run again'}
+          </button>
+        </div>
       </div>
+
+      {backupResult && (
+        <div className={`mb-6 rounded-xl border px-4 py-3 text-[13px] ${
+          backupResult.success
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+            : 'border-red-200 bg-red-50 text-red-700'
+        }`}>
+          <p className="font-semibold">{backupResult.message}</p>
+          {backupResult.data && (
+            <>
+              <p className="mt-1 text-[12px]">{backupResult.data.fileName}</p>
+              {backupResult.data.filePath && (
+                <p className="mt-1 text-[12px] text-gray-600">
+                  Kept on the server at {backupResult.data.filePath}
+                </p>
+              )}
+              {backupResult.data.error && (
+                <p className="mt-1 text-[12px] text-red-700 font-medium">
+                  Email failed: {backupResult.data.error}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">

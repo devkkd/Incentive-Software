@@ -471,8 +471,8 @@ export default function WalletManagementPage() {
             }`}
             title={freeze.frozen ? 'Resume redemption' : 'Freeze redemption'}
           >
-            <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-              freeze.frozen ? 'translate-x-6' : 'translate-x-0.5'
+            <span className={`absolute top-0.5 left-0 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+              freeze.frozen ? 'translate-x-[26px]' : 'translate-x-[2px]'
             }`} />
           </button>
         </div>
@@ -854,8 +854,8 @@ export default function WalletManagementPage() {
                   noticeForm.noticeEnabled ? 'bg-amber-500' : 'bg-gray-300'
                 }`}
               >
-                <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-                  noticeForm.noticeEnabled ? 'translate-x-6' : 'translate-x-0.5'
+                <span className={`absolute top-0.5 left-0 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                  noticeForm.noticeEnabled ? 'translate-x-[26px]' : 'translate-x-[2px]'
                 }`} />
               </button>
             </div>

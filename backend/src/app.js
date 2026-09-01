@@ -42,6 +42,29 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POINT 27 — never cache API responses.
+//
+// Without this the browser serves its own stored copy (HTTP 304) instead of
+// asking the server. At the counter that means a stale wallet balance, a hold
+// that appears not to have been applied, or a redemption freeze that a branch
+// still sees as open.
+//
+// The server always enforces its own rules, so a cached page cannot make a bad
+// redemption succeed — but staff would be shown one figure and then refused
+// with a confusing error.
+//
+// This applies only to /api/*. Images, fonts and JavaScript bundles are still
+// cached normally, so page load speed is unaffected.
+// ─────────────────────────────────────────────────────────────────────────────
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');           // older proxies
+  res.set('Expires', '0');
+  res.set('Surrogate-Control', 'no-store'); // CDNs
+  next();
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/vendors', vendorRoutes);
@@ -54,6 +77,28 @@ app.use('/api/divisions', divisionRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/exceptions', exceptionRoutes);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POINT 26 — nightly Excel backup at 11pm, after the day's trading.
+// Disabled unless BACKUP_SCHEDULE_ENABLED=true, so it never runs on a
+// developer machine by accident.
+// ─────────────────────────────────────────────────────────────────────────────
+if (process.env.BACKUP_SCHEDULE_ENABLED === 'true') {
+  const cron = require('node-cron');
+  const { runBackup } = require('./services/backupExport');
+
+  cron.schedule(process.env.BACKUP_CRON || '0 23 * * *', async () => {
+    console.log('[backup] nightly run starting');
+    try {
+      const r = await runBackup();
+      console.log(`[backup] done — ${r.fileName}`, r.counts);
+    } catch (err) {
+      console.error('[backup] NIGHTLY RUN FAILED —', err.message);
+    }
+  }, { timezone: process.env.TZ || 'Asia/Kolkata' });
+
+  console.log('[backup] nightly schedule active');
+}
 
 // Health check
 app.get('/api/health', (req, res) => {
