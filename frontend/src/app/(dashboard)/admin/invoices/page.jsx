@@ -278,7 +278,7 @@ export default function AdminInvoicesPage() {
     doc.setFontSize(9);  doc.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 26);
     autoTable(doc, {
       startY: 32,
-      head: [['#', 'Party Name', 'Party Code', 'Mobile', 'Invoice No', 'Reference No', 'Invoice Date', 'Amount (Rs)', 'Redeemed (Rs)', 'Location', 'Division', 'Remark']],
+      head: [['#', 'Party Name', 'Party Code', 'Mobile Number', 'Invoice Number', 'Reference Number', 'Invoice Date', 'Amount (Rs)', 'Redeemed (Rs)', 'Location', 'Location', 'Remark']],
       body: all.map((inv, i) => [
         i + 1, inv.vendor?.companyName || 'N/A', inv.vendor?.accountNumber || 'N/A',
         inv.vendor?.mobileNumber || 'N/A', inv.invoiceNumber, inv.referenceNo || '—',
@@ -296,7 +296,7 @@ export default function AdminInvoicesPage() {
     const all  = await fetchAll();
     const XLSX = await import('xlsx');
     const ws = XLSX.utils.aoa_to_sheet([
-      ['#', 'Party Name', 'Party Code', 'Mobile', 'Invoice No', 'Reference No', 'Invoice Date', 'Amount (Rs)', 'Redeemed (Rs)', 'Location', 'Division', 'Remark', 'Created At'],
+      ['#', 'Party Name', 'Party Code', 'Mobile Number', 'Invoice Number', 'Reference Number', 'Invoice Date', 'Invoice Amount (Rs)', 'Redeemed Amount (Rs)', 'Location', 'Branch', 'Remark', 'Created At'],
       ...all.map((inv, i) => [
         i + 1, inv.vendor?.companyName || 'N/A', inv.vendor?.accountNumber || 'N/A',
         inv.vendor?.mobileNumber || 'N/A', inv.invoiceNumber, inv.referenceNo || '—',

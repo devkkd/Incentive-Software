@@ -69,6 +69,47 @@ export default function WalletManagementPage() {
   });
   const [noticeSaving, setNoticeSaving] = useState(false);
 
+  // Point 18 — rename
+  const [renameWallet, setRenameWallet] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renamePreview, setRenamePreview] = useState(null);
+  const [renameSaving, setRenameSaving] = useState(false);
+  const [renameError, setRenameError] = useState('');
+
+  const openRename = async (w) => {
+    setRenameWallet(w);
+    setRenameValue(w.name);
+    setRenamePreview(null);
+    setRenameError('');
+    try {
+      const res = await fetch(`${API}/api/wallets/${w._id}/rename-preview`, {
+        headers: authHeaders(), credentials: 'include',
+      });
+      const json = await res.json();
+      if (json.success) setRenamePreview(json.data);
+    } catch (err) { console.error('[rename preview]', err); }
+  };
+
+  const saveRename = async () => {
+    setRenameSaving(true);
+    setRenameError('');
+    try {
+      const res = await fetch(`${API}/api/wallets/${renameWallet._id}/rename`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ name: renameValue.trim() }),
+      });
+      const json = await res.json();
+      if (json.success) { setRenameWallet(null); fetchWallets(); }
+      else setRenameError(json.message || 'Could not rename');
+    } catch {
+      setRenameError('Could not reach the server');
+    } finally {
+      setRenameSaving(false);
+    }
+  };
+
   const openNotice = (w) => {
     setNoticeWallet(w);
     setNoticeForm({
@@ -822,6 +863,85 @@ export default function WalletManagementPage() {
         </div>
       </div>
 
+      {/* ── Rename modal — Point 18 ───────────────────────────────────────── */}
+      {renameWallet && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+             onClick={() => setRenameWallet(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5"
+               onClick={(e) => e.stopPropagation()}>
+            <div>
+              <h3 className="text-[18px] font-bold text-gray-900">Rename wallet</h3>
+              <p className="text-[13px] text-gray-500 mt-1">
+                The new name replaces the old one everywhere it appears — on party
+                wallets, at the counter, and in reports.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                Wallet name
+              </label>
+              <input
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && renameValue.trim() && saveRename()}
+                autoFocus
+                maxLength={60}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[14px] focus:outline-none focus:ring-2 focus:ring-[#2B3B8A]/20 focus:border-[#2B3B8A]"
+              />
+              <p className="text-[11px] text-gray-400 mt-1">
+                Currently: {renameWallet.name}
+              </p>
+            </div>
+
+            {renamePreview && (
+              <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 space-y-1.5">
+                <p className="text-[12px] text-gray-700">
+                  <strong className="tabular-nums">{renamePreview.totalAffected}</strong>{' '}
+                  party wallet{renamePreview.totalAffected === 1 ? '' : 's'} will be updated
+                </p>
+                {renamePreview.linkedByNameOnly > 0 && (
+                  <p className="text-[11px] text-amber-700">
+                    {renamePreview.linkedByNameOnly} of these are linked only by the old
+                    name. Their link will be repaired as part of the rename.
+                  </p>
+                )}
+                {(renamePreview.heldWallets > 0 || renamePreview.schemeOnHold) && (
+                  <p className="text-[11px] text-amber-700 font-medium">
+                    {renamePreview.schemeOnHold
+                      ? 'This scheme is on hold.'
+                      : `${renamePreview.heldWallets} wallet(s) here are on hold.`}
+                    {' '}Hold status is preserved.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {renameError && (
+              <p className="text-[13px] text-red-600 font-medium">{renameError}</p>
+            )}
+
+            <p className="text-[11px] text-gray-500 leading-relaxed">
+              Past statement entries keep the old name — they are a record of what
+              was true at the time.
+            </p>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={() => setRenameWallet(null)}
+                className="px-4 py-2 text-[13px] font-semibold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer">
+                Cancel
+              </button>
+              <button
+                onClick={saveRename}
+                disabled={renameSaving || !renameValue.trim() || renameValue.trim() === renameWallet.name}
+                className="px-4 py-2 text-[13px] font-semibold text-white bg-[#2B3B8A] hover:bg-[#222f70] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl cursor-pointer">
+                {renameSaving ? 'Renaming…' : 'Rename'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Counter notice modal — Point 22 ────────────────────────────────── */}
       {noticeWallet && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
@@ -1270,6 +1390,13 @@ export default function WalletManagementPage() {
                           className="px-3 py-1.5 bg-[#2B3B8A]/10 hover:bg-[#2B3B8A] text-[#2B3B8A] hover:text-white font-semibold text-xs rounded-lg transition-colors"
                         >
                           View Parties
+                        </button>
+                        <button
+                          onClick={() => openRename(w)}
+                          title="Rename this wallet"
+                          className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold text-xs rounded-lg transition-colors cursor-pointer"
+                        >
+                          Rename
                         </button>
                         <button
                           onClick={() => openNotice(w)}

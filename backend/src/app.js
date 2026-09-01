@@ -15,6 +15,7 @@ const divisionRoutes = require('./routes/divisions');
 const dashboardRoutes = require('./routes/dashboard');
 const userRoutes = require('./routes/users');
 const exceptionRoutes = require('./routes/exceptions');
+const analyticsRoutes = require('./routes/analytics');
 const walletRoutes = require('./routes/wallets');
 
 const app = express();
@@ -77,6 +78,7 @@ app.use('/api/divisions', divisionRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/exceptions', exceptionRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POINT 26 — nightly Excel backup at 11pm, after the day's trading.

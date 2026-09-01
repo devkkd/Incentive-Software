@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Wallet = require('../models/Wallet');
 const MonthlyWallet = require('../models/MonthlyWallet');
 const Vendor = require('../models/Vendor');
@@ -207,6 +208,131 @@ router.get('/', protect, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   GET /api/wallets/:id/rename-preview
+// @desc    What a rename would affect, before doing it (Point 18)
+// @access  Admin
+router.get('/:id/rename-preview', protect, authorize('admin'), async (req, res) => {
+  try {
+    const wallet = await Wallet.findById(req.params.id).lean();
+    if (!wallet) return res.status(404).json({ success: false, message: 'Wallet not found' });
+
+    const byId = await MonthlyWallet.countDocuments({ wallet: wallet._id });
+    // Legacy records linked only by the name string, with no ID reference
+    const byLabelOnly = await MonthlyWallet.countDocuments({
+      wallet: null, label: wallet.name,
+    });
+    const heldCount = await MonthlyWallet.countDocuments({
+      $or: [{ wallet: wallet._id }, { wallet: null, label: wallet.name }],
+      isHold: true,
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        currentName: wallet.name,
+        linkedById: byId,
+        linkedByNameOnly: byLabelOnly,
+        totalAffected: byId + byLabelOnly,
+        heldWallets: heldCount,
+        schemeOnHold: !!wallet.isHold,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   PATCH /api/wallets/:id/rename
+// @desc    Rename a wallet everywhere it appears (Point 18)
+// @access  Admin
+//
+// ⚠️ Several places in this codebase find a wallet's parent scheme by NAME
+// rather than by ID — including the hold checks in invoices.js and
+// incentives.js. If a rename changed only Wallet.name, those lookups would
+// stop finding the parent and money that was deliberately frozen would become
+// redeemable.
+//
+// So this does three things, in one transaction:
+//   1. Backfills the ID reference on any record linked only by the old name
+//   2. Updates the label on every linked record
+//   3. Renames the wallet itself
+//
+// After this, both ID-based and name-based lookups resolve correctly.
+router.patch('/:id/rename', protect, authorize('admin'), async (req, res) => {
+  const session = await mongoose.startSession();
+  try {
+    const newName = (req.body.name || '').trim();
+
+    if (!newName) {
+      return res.status(400).json({ success: false, message: 'A name is required' });
+    }
+    if (newName.length > 60) {
+      return res.status(400).json({ success: false, message: 'Name must be 60 characters or fewer' });
+    }
+
+    const wallet = await Wallet.findById(req.params.id);
+    if (!wallet) return res.status(404).json({ success: false, message: 'Wallet not found' });
+
+    const oldName = wallet.name;
+    if (oldName === newName) {
+      return res.status(400).json({ success: false, message: 'That is already the name' });
+    }
+
+    // Names must stay unique — the name-based lookups depend on it
+    const clash = await Wallet.findOne({ name: newName, _id: { $ne: wallet._id } });
+    if (clash) {
+      return res.status(400).json({
+        success: false,
+        message: `A wallet named "${newName}" already exists`,
+      });
+    }
+
+    let backfilled = 0;
+    let relabelled = 0;
+
+    await session.withTransaction(async () => {
+      // 1. Legacy records linked only by name — give them the ID reference now,
+      //    before the name changes and the link is lost for good.
+      const backfill = await MonthlyWallet.updateMany(
+        { wallet: null, label: oldName },
+        { $set: { wallet: wallet._id } },
+        { session }
+      );
+      backfilled = backfill.modifiedCount || 0;
+
+      // 2. Every linked record gets the new label
+      const relabel = await MonthlyWallet.updateMany(
+        { wallet: wallet._id },
+        { $set: { label: newName } },
+        { session }
+      );
+      relabelled = relabel.modifiedCount || 0;
+
+      // 3. The wallet itself
+      wallet.name = newName;
+      await wallet.save({ session });
+    });
+
+    // Historical transaction descriptions are deliberately left alone — they
+    // are a record of what was true at the time.
+    res.status(200).json({
+      success: true,
+      message: `Renamed to "${newName}"`,
+      data: {
+        oldName,
+        newName,
+        walletsRelabelled: relabelled,
+        legacyLinksRepaired: backfilled,
+      },
+    });
+  } catch (error) {
+    console.error('[wallet rename]', error);
+    res.status(500).json({ success: false, message: error.message });
+  } finally {
+    await session.endSession();
   }
 });
 

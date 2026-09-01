@@ -150,7 +150,7 @@ export default function AdminVendorsPage() {
     doc.setFontSize(10); doc.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 26);
     autoTable(doc, {
       startY: 32,
-      head: [['#', 'Company Name', 'Person Name', 'Account No', 'Mobile', 'Wallet Balance', 'Status', 'Division']],
+      head: [['#', 'Party Name', 'Contact Person', 'Party Code', 'Mobile Number', 'Current Balance', 'Status', 'Location']],
       body: all.map((v, i) => [i+1, v.companyName, v.personName, v.accountNumber, v.mobileNumber, `Rs. ${Number(v.walletBalance).toFixed(2)}`, v.status, v.division?.name || '']),
       styles: { fontSize: 8 }, headStyles: { fillColor: [43, 59, 138] },
     });
@@ -161,7 +161,7 @@ export default function AdminVendorsPage() {
     const all = await fetchAll();
     const XLSX = await import('xlsx');
     const ws = XLSX.utils.aoa_to_sheet([
-      ['#', 'Company Name', 'Person Name', 'Account No', 'Mobile', 'Email', 'Address', 'Wallet Balance', 'Status', 'Division'],
+      ['#', 'Party Name', 'Contact Person', 'Party Code', 'Mobile Number', 'Email', 'Address', 'Current Balance', 'Status', 'Location'],
       ...all.map((v, i) => [i+1, v.companyName, v.personName, v.accountNumber, v.mobileNumber, v.email||'', v.address||'', Number(v.walletBalance).toFixed(2), v.status, v.division?.name||'']),
     ]);
     const wb = XLSX.utils.book_new();
