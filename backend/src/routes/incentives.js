@@ -119,8 +119,10 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
     if (!otpRecord) {
       return res.status(400).json({ success: false, message: 'Invalid or expired OTP' });
     }
-    otpRecord.used = true;
-    await otpRecord.save();
+
+    // POINT 2 — the OTP is consumed further down, only once we know this is a
+    // real run and not a preview. Burning it here would force the admin to
+    // request a fresh code just to see the confirmation dialog.
 
     // Parse file
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
@@ -137,7 +139,108 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
       return result;
     };
 
-    const results = { success: [], failed: [] };
+    // ═══════════════════════════════════════════════════════════════════════
+    // POINT 2 — duplicate detection
+    //
+    // Before anything is written, work out which parties already hold a
+    // balance for this month AND this scheme. If any do, return the list and
+    // write nothing. The admin then chooses what to do with them.
+    //
+    // confirmDuplicates:
+    //   undefined  → preview only, nothing is written
+    //   'add'      → add the new amount on top of the existing balance
+    //   'replace'  → set the balance to the new amount
+    //   'skip'     → process only the parties who have no existing balance
+    // ═══════════════════════════════════════════════════════════════════════
+    const mode = req.body.confirmDuplicates || null;
+    const excluded = (() => {
+      try { return new Set(JSON.parse(req.body.excludedCodes || '[]')); }
+      catch { return new Set(); }
+    })();
+
+    // Resolve every row to a party first, so duplicates can be found in one pass
+    const parsed = [];
+    for (const rawRow of rows) {
+      const row = normalize(rawRow);
+      const partCode = String(
+        row['party_code'] || row['partcode'] || row['account_no'] || row['accountno'] || row['part code'] || ''
+      ).trim();
+      const amount = parseFloat(row['amount'] || row['incentive_amount'] || 0);
+      const remark = String(row['remark'] || row['remarks'] || '').trim();
+      parsed.push({ partCode, amount, remark });
+    }
+
+    const duplicates = [];
+    for (const row of parsed) {
+      if (!row.partCode || isNaN(row.amount) || row.amount <= 0) continue;
+
+      const vendor = await Vendor.findOne({
+        $or: [
+          { accountNumber: row.partCode },
+          { accountNumber: { $regex: `-${row.partCode}$`, $options: 'i' } },
+        ],
+      }).select('_id companyName accountNumber status').lean();
+      if (!vendor || vendor.status === 'blocked') continue;
+
+      const existing = await MonthlyWallet.findOne({
+        vendor: vendor._id,
+        month: uploadMonth,
+        year: uploadYear,
+        ...(masterWallet ? { wallet: masterWallet._id } : {}),
+      }).lean();
+
+      if (existing && (existing.creditedAmount > 0 || existing.balance !== 0)) {
+        duplicates.push({
+          partCode: row.partCode,
+          partyName: vendor.companyName,
+          alreadyCredited: parseFloat((existing.creditedAmount || 0).toFixed(2)),
+          currentBalance: parseFloat((existing.balance || 0).toFixed(2)),
+          newAmount: row.amount,
+          ifAdd: parseFloat(((existing.balance || 0) + row.amount).toFixed(2)),
+          ifReplace: row.amount,
+          // A replace can push a balance below what has already been spent
+          replaceWouldGoNegative:
+            row.amount - ((existing.creditedAmount || 0) - (existing.balance || 0)) < -0.01,
+          alreadyRedeemed: parseFloat(
+            ((existing.creditedAmount || 0) - (existing.balance || 0)).toFixed(2)
+          ),
+        });
+      }
+    }
+
+    // Duplicates found and no decision made — return the list, write nothing
+    if (duplicates.length > 0 && !mode) {
+      return res.status(200).json({
+        success: true,
+        requiresConfirmation: true,
+        scheme: walletLabel,
+        month: uploadMonth,
+        year: uploadYear,
+        newParties: parsed.filter((r) => r.partCode && r.amount > 0).length - duplicates.length,
+        duplicates,
+        message:
+          `${duplicates.length} part${duplicates.length === 1 ? 'y' : 'ies'} already ` +
+          `hold a balance for ${walletLabel}. Nothing has been uploaded yet.`,
+      });
+    }
+
+    // Past this point the upload is going ahead, so consume the OTP.
+    // Conditional, so a resubmission cannot spend the same approval twice.
+    const claimed = await OtpToken.findOneAndUpdate(
+      { _id: otpRecord._id, used: false },
+      { $set: { used: true } },
+      { new: true }
+    );
+    if (!claimed) {
+      return res.status(400).json({
+        success: false,
+        message: 'This OTP has already been used. Please request a new one.',
+      });
+    }
+
+    const duplicateCodes = new Set(duplicates.map((d) => d.partCode));
+
+    const results = { success: [], failed: [], skipped: [] };
     let totalAmount = 0;
 
     for (const rawRow of rows) {
@@ -162,9 +265,22 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
       if (!vendor)                  { results.failed.push({ partCode, reason: 'Vendor not found' }); continue; }
       if (vendor.status === 'blocked') { results.failed.push({ partCode, reason: 'Vendor is blocked' }); continue; }
 
-      // ── Credit monthly sub-wallet ──────────────────────────────────────
-      // Pass masterWallet._id so that two different named wallets uploaded in
-      // the same month each get their OWN MonthlyWallet document.
+      // ── POINT 2 — how to treat a party who already has a balance ───────
+      const isDuplicate = duplicateCodes.has(partCode);
+
+      if (isDuplicate) {
+        if (mode === 'skip') {
+          results.skipped.push({ partCode, vendorName: vendor.companyName, reason: 'Skipped — already had a balance' });
+          continue;
+        }
+        if (excluded.has(partCode)) {
+          results.skipped.push({ partCode, vendorName: vendor.companyName, reason: 'Unticked by admin' });
+          continue;
+        }
+      }
+
+      // Pass masterWallet._id so two different schemes uploaded in the same
+      // month each get their OWN MonthlyWallet document.
       const monthlyWallet = await MonthlyWallet.getOrCreate(
         vendor._id,
         uploadMonth,
@@ -172,25 +288,66 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
         masterWallet ? masterWallet._id : null,
         walletLabel
       );
-      const newMonthBalance = parseFloat((monthlyWallet.balance + amount).toFixed(2));
-      await MonthlyWallet.findByIdAndUpdate(monthlyWallet._id, {
-        balance: newMonthBalance,
-        label: walletLabel,
-        wallet: masterWallet ? masterWallet._id : monthlyWallet.wallet,
-        $inc: { creditedAmount: amount },
-      });
+
+      let newMonthBalance;
+      let creditDelta;   // what actually changes on the master balance
+
+      if (isDuplicate && mode === 'replace') {
+        // Replace means "this is the corrected TOTAL for this scheme".
+        // Anything already redeemed stays redeemed, so the remaining balance
+        // becomes the new total minus what has been spent.
+        const alreadyRedeemed = parseFloat(
+          ((monthlyWallet.creditedAmount || 0) - (monthlyWallet.balance || 0)).toFixed(2)
+        );
+        newMonthBalance = parseFloat((amount - alreadyRedeemed).toFixed(2));
+
+        if (newMonthBalance < -0.01) {
+          results.failed.push({
+            partCode,
+            reason:
+              `Cannot replace with ₹${amount.toFixed(2)} — ₹${alreadyRedeemed.toFixed(2)} ` +
+              'has already been redeemed from this wallet',
+          });
+          continue;
+        }
+
+        creditDelta = parseFloat((newMonthBalance - (monthlyWallet.balance || 0)).toFixed(2));
+
+        await MonthlyWallet.findByIdAndUpdate(monthlyWallet._id, {
+          balance: newMonthBalance,
+          creditedAmount: amount,
+          label: walletLabel,
+          wallet: masterWallet ? masterWallet._id : monthlyWallet.wallet,
+        });
+      } else {
+        // First credit, or an ADD on top of an existing balance
+        newMonthBalance = parseFloat(((monthlyWallet.balance || 0) + amount).toFixed(2));
+        creditDelta = amount;
+
+        await MonthlyWallet.findByIdAndUpdate(monthlyWallet._id, {
+          balance: newMonthBalance,
+          label: walletLabel,
+          wallet: masterWallet ? masterWallet._id : monthlyWallet.wallet,
+          $inc: { creditedAmount: amount },
+        });
+      }
 
       // ── Credit main vendor wallet ──────────────────────────────────────
-      const newBalance = parseFloat((vendor.walletBalance + amount).toFixed(2));
+      const newBalance = parseFloat((vendor.walletBalance + creditDelta).toFixed(2));
       await Vendor.findByIdAndUpdate(vendor._id, { walletBalance: newBalance });
 
       // ── WalletTransaction record ───────────────────────────────────────
       await WalletTransaction.create({
         vendor: vendor._id,
-        type: 'credit',
-        amount,
+        type: creditDelta >= 0 ? 'credit' : 'debit',
+        amount: Math.abs(creditDelta),
         balanceAfter: newBalance,
-        description: remark || `Incentive credited — ${walletLabel}`,
+        description:
+          isDuplicate && mode === 'replace'
+            ? `Corrected to ₹${amount.toFixed(2)} — ${walletLabel}`
+            : isDuplicate && mode === 'add'
+            ? `Top-up ₹${amount.toFixed(2)} — ${walletLabel}`
+            : remark || `Incentive credited — ${walletLabel}`,
         processedBy: req.user._id,
         monthlyWallet: monthlyWallet._id,
         walletLabel,
@@ -207,7 +364,11 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
       }
 
       totalAmount += amount;
-      results.success.push({ partCode, vendorId: vendor._id, vendorName: vendor.companyName, amount, newBalance, walletLabel });
+      results.success.push({
+        partCode, vendorId: vendor._id, vendorName: vendor.companyName,
+        amount, newBalance, walletLabel,
+        action: isDuplicate ? (mode === 'replace' ? 'replaced' : 'added') : 'credited',
+      });
     }
 
     // Save upload history

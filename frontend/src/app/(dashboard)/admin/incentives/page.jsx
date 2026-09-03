@@ -282,33 +282,64 @@ export default function AdminIncentivesPage() {
     if (e.key === 'Backspace' && !otp[index] && index > 0) otpInputRefs.current[index - 1]?.focus();
   };
 
+  // ── POINT 2 — duplicate confirmation ─────────────────────────────────────
+  const [dupData, setDupData] = useState(null);      // preview from the server
+  const [dupTicked, setDupTicked] = useState({});    // partCode -> boolean
+  const [dupBusy, setDupBusy] = useState(false);
+
+  const buildForm = () => {
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('otp', otp.join(''));
+    formData.append('frequency', 'monthly');
+    formData.append('month', uploadMonth);
+    formData.append('year', uploadYear);
+    if (selectedWalletId) formData.append('walletId', selectedWalletId);
+    return formData;
+  };
+
   // Step 2: Verify OTP + Upload file
-  const handleVerifyOTP = async () => {
+  const handleVerifyOTP = async (mode = null) => {
     if (otp.join('').length < 6) { setOtpError('Enter 6-digit OTP'); return; }
     setIsVerifying(true);
     setIsUploading(true);
+    setDupBusy(true);
     try {
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('otp', otp.join(''));
-      formData.append('frequency', 'monthly');
-      formData.append('month', uploadMonth);
-      formData.append('year', uploadYear);
-      if (selectedWalletId) {
-        formData.append('walletId', selectedWalletId);
+      const formData = buildForm();
+
+      if (mode) {
+        formData.append('confirmDuplicates', mode);
+        // Rows the admin unticked are excluded from whichever action was chosen
+        const excluded = (dupData?.duplicates || [])
+          .filter((d) => dupTicked[d.partCode] === false)
+          .map((d) => d.partCode);
+        formData.append('excludedCodes', JSON.stringify(excluded));
       }
 
       const res = await fetch(`${API}/api/incentives/upload`, {
         method: 'POST', headers: authHeaders(), credentials: 'include', body: formData,
       });
       const data = await res.json();
-      if (!res.ok) { setOtpError(data.message || 'Upload failed'); setIsVerifying(false); setIsUploading(false); return; }
+
+      if (!res.ok) {
+        setOtpError(data.message || 'Upload failed');
+        return;
+      }
+
+      // Server found existing balances and wrote nothing — ask the admin
+      if (data.requiresConfirmation) {
+        setDupData(data);
+        setDupTicked(Object.fromEntries(data.duplicates.map((d) => [d.partCode, true])));
+        return;
+      }
+
+      setDupData(null);
       setUploadResult(data.data);
       setUploadState('success');
       setSelectedFile(null);
       fetchHistory();
     } catch { setUploadError('Server error. Is backend running?'); setUploadState('error'); }
-    finally { setIsVerifying(false); setIsUploading(false); }
+    finally { setIsVerifying(false); setIsUploading(false); setDupBusy(false); }
   };
 
   const downloadPDF = async () => {
@@ -339,6 +370,118 @@ export default function AdminIncentivesPage() {
 
   return (
     <div className="p-4 sm:p-8 md:p-10 max-w-[1600px] mx-auto space-y-6">
+
+      {/* ── POINT 2 — duplicate upload confirmation ─────────────────────── */}
+      {dupData && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[88vh] flex flex-col">
+            <div className="p-5 border-b border-gray-100">
+              <h3 className="text-[18px] font-bold text-gray-900">
+                {dupData.duplicates.length} part{dupData.duplicates.length === 1 ? 'y' : 'ies'} already
+                have a balance for {dupData.scheme}
+              </h3>
+              <p className="text-[13px] text-gray-500 mt-1">
+                Nothing has been uploaded yet. Choose what should happen to these parties.
+                {dupData.newParties > 0 && (
+                  <> The other <strong>{dupData.newParties}</strong> part
+                  {dupData.newParties === 1 ? 'y' : 'ies'} in this file will be credited normally.</>
+                )}
+              </p>
+            </div>
+
+            <div className="overflow-auto flex-1">
+              <table className="w-full text-[13px]">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr className="text-left text-gray-500 uppercase text-[11px] tracking-wider">
+                    <th className="px-3 py-3 w-10">
+                      <input
+                        type="checkbox"
+                        checked={dupData.duplicates.every((d) => dupTicked[d.partCode] !== false)}
+                        onChange={(e) =>
+                          setDupTicked(Object.fromEntries(
+                            dupData.duplicates.map((d) => [d.partCode, e.target.checked])
+                          ))
+                        }
+                        className="cursor-pointer"
+                      />
+                    </th>
+                    <th className="px-3 py-3 font-semibold">Party Code</th>
+                    <th className="px-3 py-3 font-semibold">Party Name</th>
+                    <th className="px-3 py-3 font-semibold text-right">Already Credited</th>
+                    <th className="px-3 py-3 font-semibold text-right">Current Balance</th>
+                    <th className="px-3 py-3 font-semibold text-right">New Amount</th>
+                    <th className="px-3 py-3 font-semibold text-right">If ADD</th>
+                    <th className="px-3 py-3 font-semibold text-right">If REPLACE</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dupData.duplicates.map((d) => {
+                    const ticked = dupTicked[d.partCode] !== false;
+                    return (
+                      <tr key={d.partCode}
+                        className={`border-t border-gray-100 ${ticked ? '' : 'opacity-40'} ${
+                          d.replaceWouldGoNegative ? 'bg-red-50/60' : ''
+                        }`}>
+                        <td className="px-3 py-2.5">
+                          <input type="checkbox" checked={ticked}
+                            onChange={(e) => setDupTicked({ ...dupTicked, [d.partCode]: e.target.checked })}
+                            className="cursor-pointer" />
+                        </td>
+                        <td className="px-3 py-2.5 font-medium text-gray-900 whitespace-nowrap">{d.partCode}</td>
+                        <td className="px-3 py-2.5 max-w-[200px] truncate" title={d.partyName}>{d.partyName}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">₹{d.alreadyCredited.toFixed(2)}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">₹{d.currentBalance.toFixed(2)}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums font-semibold">₹{d.newAmount.toFixed(2)}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums text-emerald-700">₹{d.ifAdd.toFixed(2)}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums">
+                          {d.replaceWouldGoNegative ? (
+                            <span className="text-red-700 font-semibold"
+                              title={`₹${d.alreadyRedeemed.toFixed(2)} already redeemed — replace would go negative`}>
+                              not possible
+                            </span>
+                          ) : (
+                            <span className="text-amber-700">₹{d.ifReplace.toFixed(2)}</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="p-4 border-t border-gray-100 space-y-3">
+              <div className="text-[12px] text-gray-500 leading-relaxed">
+                <strong>Add</strong> puts the new amount on top of the existing balance —
+                use this when the file contains a shortfall.{' '}
+                <strong>Replace</strong> treats the new amount as the corrected total.
+                Rows marked <span className="text-red-700 font-semibold">not possible</span> have
+                already been partly redeemed, so replacing would create a negative balance;
+                those rows will be reported as failed.
+              </div>
+
+              <div className="flex flex-wrap justify-end gap-2">
+                <button onClick={() => setDupData(null)} disabled={dupBusy}
+                  className="px-4 py-2 text-[13px] font-semibold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer">
+                  Cancel
+                </button>
+                <button onClick={() => handleVerifyOTP('skip')} disabled={dupBusy}
+                  className="px-4 py-2 text-[13px] font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer disabled:opacity-50">
+                  Skip these parties
+                </button>
+                <button onClick={() => handleVerifyOTP('replace')} disabled={dupBusy}
+                  className="px-4 py-2 text-[13px] font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-xl cursor-pointer disabled:opacity-50">
+                  Replace existing
+                </button>
+                <button onClick={() => handleVerifyOTP('add')} disabled={dupBusy}
+                  className="px-4 py-2 text-[13px] font-semibold text-white bg-[#2B3B8A] hover:bg-[#222f70] rounded-xl cursor-pointer disabled:opacity-50">
+                  Add to existing
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div>
         <h2 className="text-[14px] text-gray-700 mb-1">Welcome to Friends Trading Corporation - Incentive Management</h2>
