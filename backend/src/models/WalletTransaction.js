@@ -35,6 +35,12 @@ const walletTransactionSchema = new mongoose.Schema(
       ref: 'User',
       required: true,
     },
+    // POINT 14 — flags a debit taken without party OTP approval
+    isAdminOverride: {
+      type: Boolean,
+      default: false,
+    },
+
     location: {
       type: String,
       trim: true,

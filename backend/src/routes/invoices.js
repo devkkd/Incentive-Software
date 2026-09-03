@@ -507,6 +507,319 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
   }
 });
 
+// ═════════════════════════════════════════════════════════════════════════════
+// POINT 14 — ADMIN REDEMPTION (OTP override)
+//
+// For when the SMS service is down or the party cannot be reached.
+//
+// ⚠️ This bypasses the ONLY control protecting a party's balance from being
+// spent without their approval. The safeguards below are not optional:
+//
+//   • Admin role only — branch users are rejected at the server
+//   • A typed reason is mandatory and stored
+//   • The invoice and every ledger row are flagged as an override
+//   • The party is still notified afterwards
+//   • Every use appears in the override report (GET /api/invoices/overrides)
+//
+// If any of these are removed the feature becomes a liability rather than a
+// convenience.
+// ═════════════════════════════════════════════════════════════════════════════
+router.post('/admin-redeem', protect, authorize('admin'), async (req, res) => {
+  try {
+    if (await redemptionFrozen(res)) return;
+
+    const {
+      vendorId, invoiceNumber, invoiceDate, invoiceAmount, redeemAmount,
+      redemptionList, divisionId, location, remark, reason, confirmAmount,
+    } = req.body;
+
+    // ── Override-specific checks ──────────────────────────────────────────
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'A reason is required. It is recorded against this redemption.',
+      });
+    }
+    if (reason.trim().length < 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please give a fuller reason — this is an audited override.',
+      });
+    }
+
+    const redeemAmt = parseFloat(redeemAmount);
+    // Typed confirmation. A single click is too easy on a screen that spends money.
+    if (parseFloat(confirmAmount) !== redeemAmt) {
+      return res.status(400).json({
+        success: false,
+        message: 'The typed amount does not match the redemption amount.',
+      });
+    }
+
+    // ── Standard validation, same as the counter ──────────────────────────
+    const invoiceAmt = parseFloat(invoiceAmount);
+    if (!vendorId || !invoiceNumber || !invoiceDate || isNaN(invoiceAmt)) {
+      return res.status(400).json({ success: false, message: 'All invoice fields are required' });
+    }
+    if (isNaN(redeemAmt) || redeemAmt <= 0) {
+      return res.status(400).json({ success: false, message: 'Redemption amount must be greater than zero' });
+    }
+    if (redeemAmt > invoiceAmt) {
+      return res.status(400).json({ success: false, message: 'Redemption cannot exceed the invoice amount' });
+    }
+
+    // The admin chooses which branch the invoice is booked under
+    const division = await Division.findById(divisionId);
+    if (!division) {
+      return res.status(400).json({ success: false, message: 'Select the branch this invoice belongs to' });
+    }
+
+    const prefixedInvoiceNumber = invoiceNumber.trim();
+    const existing = await Invoice.findOne({ invoiceNumber: prefixedInvoiceNumber });
+    if (existing) {
+      return res.status(400).json({ success: false, message: 'This invoice number already exists' });
+    }
+
+    const vendor = await Vendor.findById(vendorId);
+    if (!vendor) return res.status(404).json({ success: false, message: 'Party not found' });
+    if (vendor.status === 'blocked') {
+      return res.status(400).json({ success: false, message: 'This party is blocked' });
+    }
+    if (redeemAmt > vendor.walletBalance) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot redeem ₹${redeemAmt.toFixed(2)} — the balance is ₹${vendor.walletBalance.toFixed(2)}`,
+      });
+    }
+
+    if (redemptionList?.length) {
+      const listTotal = redemptionList.reduce((s, r) => s + parseFloat(r.amount || 0), 0);
+      if (Math.abs(listTotal - redeemAmt) > 0.01) {
+        return res.status(400).json({
+          success: false,
+          message: 'The split amounts do not add up to the redemption total',
+        });
+      }
+    }
+
+    // ── Write, transactionally (same guarantees as Point 6) ───────────────
+    const session = await mongoose.startSession();
+    let invoice;
+    let deductions = [];
+    let newBalance;
+    let referenceNo;
+
+    try {
+      await session.withTransaction(async () => {
+        deductions = [];
+        const STALE =
+          'A balance changed while this was being prepared. Nothing has been ' +
+          'deducted — please reload and try again.';
+
+        if (redemptionList?.length) {
+          for (const r of redemptionList) {
+            const amt = parseFloat(r.amount);
+            const updated = await MonthlyWallet.findOneAndUpdate(
+              { _id: r.monthlyWalletId, balance: { $gte: amt } },
+              { $inc: { balance: -amt } },
+              { new: true, session }
+            );
+            if (!updated) throw new Error(STALE);
+            deductions.push({ monthlyWallet: updated._id, amount: amt, label: updated.label });
+          }
+        } else {
+          let remaining = redeemAmt;
+          const candidates = await MonthlyWallet.find({ vendor: vendorId, balance: { $gt: 0 } })
+            .sort({ year: 1, month: 1 })
+            .session(session);
+
+          const parents = await Wallet.find({
+            _id: { $in: candidates.map((m) => m.wallet).filter(Boolean) },
+          }).select('_id isHold').session(session);
+          const parentById = new Map(parents.map((w) => [String(w._id), w]));
+
+          for (const mw of candidates) {
+            if (remaining <= 0) break;
+            if (mw.isHold) continue;
+            if (mw.wallet && parentById.get(String(mw.wallet))?.isHold) continue;
+
+            const deduct = parseFloat(Math.min(mw.balance, remaining).toFixed(2));
+            if (deduct <= 0) continue;
+
+            const updated = await MonthlyWallet.findOneAndUpdate(
+              { _id: mw._id, balance: { $gte: deduct } },
+              { $inc: { balance: -deduct } },
+              { new: true, session }
+            );
+            if (!updated) throw new Error(STALE);
+
+            deductions.push({ monthlyWallet: updated._id, amount: deduct, label: updated.label });
+            remaining = parseFloat((remaining - deduct).toFixed(2));
+          }
+
+          if (remaining > 0.01) {
+            throw new Error(
+              `Only ₹${(redeemAmt - remaining).toFixed(2)} could be drawn from available wallets.`
+            );
+          }
+        }
+
+        const updatedVendor = await Vendor.findOneAndUpdate(
+          { _id: vendorId, walletBalance: { $gte: redeemAmt } },
+          {
+            $inc: { walletBalance: -redeemAmt },
+            $set: { lastRedemptionAmount: redeemAmt, lastRedemptionDate: new Date() },
+          },
+          { new: true, session }
+        );
+        if (!updatedVendor) throw new Error(STALE);
+        newBalance = parseFloat(updatedVendor.walletBalance.toFixed(2));
+
+        referenceNo = await generateUniqueReferenceNo();
+        const created = await Invoice.create([{
+          vendor: vendorId,
+          createdBy: req.user._id,
+          division: division._id,
+          invoiceNumber: prefixedInvoiceNumber,
+          invoiceDate: new Date(invoiceDate),
+          invoiceAmount: invoiceAmt,
+          redeemedAmount: redeemAmt,
+          location: location || division.location || '',
+          remark: remark || '',
+          status: 'processed',
+          referenceNo,
+          // The flags that make this reviewable later
+          isAdminOverride: true,
+          overrideReason: reason.trim(),
+          overrideBy: req.user._id,
+          overrideByName: req.user.name || null,
+        }], { session });
+        invoice = created[0];
+
+        let running = parseFloat((newBalance + redeemAmt).toFixed(2));
+        const rows = deductions.map((d) => {
+          running = parseFloat((running - d.amount).toFixed(2));
+          return {
+            vendor: vendorId,
+            invoice: invoice._id,
+            type: 'debit',
+            amount: d.amount,
+            balanceAfter: running,
+            description: `Redemption ₹${d.amount} from ${d.label} — ADMIN OVERRIDE (no party OTP)`,
+            processedBy: req.user._id,
+            monthlyWallet: d.monthlyWallet,
+            walletLabel: d.label,
+            isAdminOverride: true,
+          };
+        });
+        await WalletTransaction.create(rows, { session, ordered: true });
+      });
+    } catch (txErr) {
+      await session.endSession();
+      console.error('[admin-redeem] rolled back —', txErr.message);
+      return res.status(409).json({ success: false, message: txErr.message });
+    }
+    await session.endSession();
+
+    console.warn(
+      `[ADMIN OVERRIDE] ${req.user.name} redeemed ₹${redeemAmt} for ` +
+      `${vendor.accountNumber} without party OTP. Reason: ${reason.trim()}`
+    );
+
+    // The party is told regardless — they should learn their balance changed
+    // even though they were not asked to approve it.
+    let notified = false;
+    if (vendor.mobileNumber) {
+      try {
+        await sendRedemptionConfirmation(
+          vendor.mobileNumber, vendor.companyName, redeemAmt, newBalance, referenceNo
+        );
+        notified = true;
+        await Invoice.findByIdAndUpdate(invoice._id, { partyNotified: true });
+      } catch (err) {
+        console.error(`[ADMIN OVERRIDE] party not notified: ${err.message}`);
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Redemption completed as an admin override',
+      data: {
+        invoice, referenceNo, newBalance,
+        walletsUsed: deductions.map((d) => ({ label: d.label, amount: d.amount })),
+        partyNotified: notified,
+      },
+    });
+  } catch (error) {
+    console.error('[admin-redeem]', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   GET /api/invoices/overrides
+// @desc    POINT 20.10 — every redemption done without party OTP approval
+// @access  Admin
+//
+// This report is what makes the override feature safe to have. It should be
+// reviewed regularly, and that review should be someone's named job.
+router.get('/overrides', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const filter = { isAdminOverride: true };
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) filter.createdAt.$gte = new Date(startDate);
+      if (endDate) {
+        const e = new Date(endDate); e.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = e;
+      }
+    }
+
+    const invoices = await Invoice.find(filter)
+      .populate('vendor', 'companyName accountNumber mobileNumber')
+      .populate('division', 'name')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const fyStart = new Date(
+      now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1, 3, 1
+    );
+
+    res.status(200).json({
+      success: true,
+      generatedAt: now,
+      summary: {
+        total: invoices.length,
+        totalValue: parseFloat(invoices.reduce((a, i) => a + (i.redeemedAmount || 0), 0).toFixed(2)),
+        thisMonth: invoices.filter((i) => new Date(i.createdAt) >= monthStart).length,
+        thisMonthValue: parseFloat(
+          invoices.filter((i) => new Date(i.createdAt) >= monthStart)
+            .reduce((a, i) => a + (i.redeemedAmount || 0), 0).toFixed(2)
+        ),
+        thisYear: invoices.filter((i) => new Date(i.createdAt) >= fyStart).length,
+        notNotified: invoices.filter((i) => !i.partyNotified).length,
+      },
+      rows: invoices.map((i) => ({
+        date: i.createdAt,
+        adminUser: i.overrideByName || '(unknown)',
+        partyCode: i.vendor?.accountNumber || '(deleted party)',
+        partyName: i.vendor?.companyName || '(deleted party)',
+        mobileNumber: i.vendor?.mobileNumber || '',
+        amount: parseFloat((i.redeemedAmount || 0).toFixed(2)),
+        invoiceNumber: i.invoiceNumber,
+        referenceNo: i.referenceNo,
+        branch: i.division?.name || '',
+        reason: i.overrideReason || '',
+        partyNotified: !!i.partyNotified,
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // @route   GET /api/invoices/all  (admin — all divisions)
 // @access  Admin only

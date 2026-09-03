@@ -30,7 +30,16 @@ export default function PartyScorecard() {
         headers: authHeaders(), credentials: 'include',
       });
       const json = await res.json();
-      const list = json.data || [];
+      if (!json.success) {
+        setError(json.message || 'No party found for that search');
+        return;
+      }
+      // Single vendor object, not an array
+      const list = Array.isArray(json.data) ? json.data : json.data ? [json.data] : [];
+      if (list.length === 0) {
+        setError('No party found for that search');
+        return;
+      }
       setResults(list);
       if (list.length === 1) loadCard(list[0]._id);
     } catch {

@@ -114,6 +114,34 @@ const REPORTS = {
     highlight: (r) => r.outlier,
   },
 
+  overrides: {
+    title: 'Admin Override Report',
+    blurb: 'Every redemption completed without the party approving by OTP. This report is what makes that feature safe to have — review it regularly.',
+    endpoint: 'overrides',
+    base: 'invoices',
+    rowsKey: 'rows',
+    cols: [
+      ['date', 'Date', 'datetime'],
+      ['adminUser', 'Admin'],
+      ['partyCode', 'Party Code'],
+      ['partyName', 'Party Name'],
+      ['amount', 'Amount', 'money'],
+      ['invoiceNumber', 'Invoice Number'],
+      ['branch', 'Branch'],
+      ['reason', 'Reason'],
+      ['partyNotified', 'Party Notified', 'bool'],
+    ],
+    cards: (s) => [
+      { label: 'Total overrides', value: num(s.total), tone: s.total > 0 ? 'warn' : 'good' },
+      { label: 'Total value', value: fmt(s.totalValue) },
+      { label: 'This month', value: `${num(s.thisMonth)} · ${fmt(s.thisMonthValue)}` },
+      {
+        label: 'Party not notified', value: num(s.notNotified),
+        tone: s.notNotified > 0 ? 'bad' : 'good',
+      },
+    ],
+  },
+
   branch: {
     title: 'Branch Performance',
     blurb: 'Which branches are promoting the scheme. Read the caveat below before comparing.',
@@ -143,7 +171,7 @@ export default function AnalyticsReport({ type }) {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${API}/api/analytics/${cfg.endpoint}`, {
+      const res = await fetch(`${API}/api/${cfg.base || 'analytics'}/${cfg.endpoint}`, {
         headers: authHeaders(), credentials: 'include',
       });
       const json = await res.json();
@@ -166,6 +194,12 @@ export default function AnalyticsReport({ type }) {
     if (kind === 'money') return fmt(v);
     if (kind === 'pct') return pct(v);
     if (kind === 'num') return num(v);
+    if (kind === 'datetime') return new Date(v).toLocaleString('en-IN');
+    if (kind === 'bool') {
+      return v
+        ? <span className="text-emerald-700">Yes</span>
+        : <span className="text-red-700 font-semibold">No</span>;
+    }
     if (kind === 'variance') {
       const ok = Math.abs(Number(v)) < 0.01;
       return <span className={ok ? 'text-emerald-700 font-semibold' : 'text-red-700 font-bold'}>{fmt(v)}</span>;

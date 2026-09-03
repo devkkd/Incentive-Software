@@ -204,7 +204,7 @@ export default function AdminReportsPage() {
     doc.text(`Wallet Bal.  : Rs. ${Number(v?.walletBalance || 0).toFixed(2)}`, 14, 59);
     doc.text(`Generated    : ${genDate}`, 200, 35);
 
-    const head = ['#', 'Date', 'Particulars / Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited (Rs)', 'Debited (Rs)', 'Wallet Balance (Rs)', 'Location'];
+    const head = ['#', 'Date', 'Particulars / Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited Amount (Rs)', 'Debited (Rs)', 'Current Balance (Rs)', 'Location'];
     const body = filteredStatementData.map((row, i) => [
       i + 1,
       row.date.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }),
@@ -239,7 +239,7 @@ export default function AdminReportsPage() {
       [`Wallet Balance: Rs. ${Number(v?.walletBalance || 0).toFixed(2)}`, '', `Generated: ${genDate}`],
       [],
     ];
-    const head = ['#', 'Date', 'Particulars / Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited (Rs)', 'Debited (Rs)', 'Wallet Balance (Rs)', 'Location'];
+    const head = ['#', 'Date', 'Particulars / Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited Amount (Rs)', 'Debited (Rs)', 'Current Balance (Rs)', 'Location'];
     const body = filteredStatementData.map((row, i) => [
       i + 1,
       row.date.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }),
@@ -386,7 +386,7 @@ export default function AdminReportsPage() {
   const getTableData = () => {
     if (reportType === 'wallet_balances') {
       const allMonths = [...new Set(filteredData.flatMap(v => (v.monthlyWallets || []).map(w => w.label)))].sort();
-      const head = ['#', 'Party Name', 'Party Code', 'Mobile', 'Division', 'Status', 'Total Wallet (Rs)', ...allMonths];
+      const head = ['#', 'Party Name', 'Party Code', 'Mobile Number', 'Location', 'Status', 'Current Balance (Rs)', ...allMonths];
       const body = filteredData.map((v, i) => {
         const monthCols = allMonths.map(month => {
           const mw = (v.monthlyWallets || []).find(w => w.label === month);
@@ -397,11 +397,11 @@ export default function AdminReportsPage() {
       return { head, body };
     }
     if (reportType === 'invoices') return {
-      head: ['#', 'Invoice No', 'Reference No', 'Vendor', 'Account No', 'Invoice Amount', 'Amount Redeemed', 'Location', 'Division', 'Date', 'Remark'],
+      head: ['#', 'Invoice Number', 'Reference Number', 'Party Name', 'Party Code', 'Invoice Amount', 'Redeemed Amount', 'Location', 'Location', 'Date', 'Remark'],
       body: filteredData.map((inv, i) => [i+1, inv.invoiceNumber, inv.referenceNo || '—', inv.vendor?.companyName||'N/A', inv.vendor?.accountNumber||'N/A', `Rs. ${Number(inv.invoiceAmount).toFixed(2)}`, inv.redeemAmount > 0 ? `Rs. ${Number(inv.redeemAmount).toFixed(2)}` : '—', inv.location, inv.division?.name||'', new Date(inv.invoiceDate).toLocaleDateString('en-IN'), inv.remark || '—']),
     };
     return {
-      head: ['#', 'Vendor', 'Account No', 'Type', 'Amount', 'Balance After', 'Date'],
+      head: ['#', 'Party Name', 'Party Code', 'Type', 'Amount', 'Balance After', 'Date'],
       body: filteredData.map((t, i) => [i+1, t.vendor?.companyName||'N/A', t.vendor?.accountNumber||'N/A', t.type, `Rs. ${t.amount}`, `Rs. ${t.balanceAfter}`, new Date(t.createdAt).toLocaleDateString('en-IN')]),
     };
   };
@@ -437,6 +437,7 @@ export default function AdminReportsPage() {
                 { id: 'branch', label: 'Branch Performance' },
                 { id: 'scorecard', label: 'Party Scorecard' },
                 { id: 'patterns', label: 'Unusual Patterns' },
+                { id: 'overrides', label: 'Admin Overrides' },
               ].map((r) => (
                 <button key={r.id} onClick={() => { setReportType(r.id); setShowResults(false); }}
                   className={`px-5 py-2.5 rounded-xl text-[13px] font-semibold transition-colors ${reportType === r.id ? 'bg-[#2B3B8A] text-white shadow-sm' : 'bg-[#8492A6] text-white hover:bg-gray-500'}`}>
@@ -467,7 +468,7 @@ export default function AdminReportsPage() {
 
           {/* Exception Report needs no timeline or filters — it is a snapshot
               of the data as it stands right now. */}
-          {['exceptions', 'ageing', 'dormant', 'movement', 'scheme', 'velocity', 'ratio', 'branch', 'scorecard', 'patterns'].includes(reportType) ? null : (
+          {['exceptions', 'ageing', 'dormant', 'movement', 'scheme', 'velocity', 'ratio', 'branch', 'scorecard', 'patterns', 'overrides'].includes(reportType) ? null : (
           <>
           {/* Column 2: Timeline Presets */}
           <div className="p-4 sm:p-8 md:w-1/3 border-b md:border-b-0 md:border-r border-gray-100">
@@ -517,7 +518,7 @@ export default function AdminReportsPage() {
         </div>
 
         {/* Action — the Exception Report loads itself, so no button */}
-        {!['exceptions', 'ageing', 'dormant', 'movement', 'scheme', 'velocity', 'ratio', 'branch', 'scorecard', 'patterns'].includes(reportType) && (
+        {!['exceptions', 'ageing', 'dormant', 'movement', 'scheme', 'velocity', 'ratio', 'branch', 'scorecard', 'patterns', 'overrides'].includes(reportType) && (
           <div className="border-t border-gray-100 p-6 flex justify-center bg-white">
             <button onClick={handleGetReports} disabled={loading}
               className="bg-[#2B3B8A] hover:bg-[#1a2d6b] disabled:opacity-60 transition-colors text-white font-semibold px-10 py-3 rounded-xl flex items-center justify-center gap-2">
@@ -531,7 +532,7 @@ export default function AdminReportsPage() {
       {reportType === 'exceptions' && <ExceptionReport />}
       {reportType === 'ageing' && <LiabilityAgeing />}
       {reportType === 'dormant' && <DormantParties />}
-      {['movement', 'scheme', 'velocity', 'ratio', 'branch'].includes(reportType) && (
+      {['movement', 'scheme', 'velocity', 'ratio', 'branch', 'overrides'].includes(reportType) && (
         <AnalyticsReport type={reportType} />
       )}
       {reportType === 'scorecard' && <PartyScorecard />}
