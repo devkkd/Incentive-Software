@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import SortableTh from '@/components/SortableTh';
+import useClientSort from '@/components/useClientSort';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 const authHeaders = () => {
@@ -216,7 +218,15 @@ export default function AnalyticsReport({ type }) {
 
   useEffect(() => { load(); }, [type]);
 
-  const rows = data?.[cfg.rowsKey] || [];
+  const rawRows = data?.[cfg.rowsKey] || [];
+
+  // Point 11 — every column in the config becomes sortable. These reports load
+  // their full dataset, so sorting in the browser sorts everything.
+  const accessors = useMemo(
+    () => Object.fromEntries(cfg.cols.map(([k]) => [k, (r) => r[k]])),
+    [cfg]
+  );
+  const { sort, setSort, sorted: rows } = useClientSort(rawRows, accessors);
 
   const render = (r, [key, , kind]) => {
     const v = r[key];
@@ -306,9 +316,11 @@ export default function AnalyticsReport({ type }) {
               <thead className="bg-gray-50 sticky top-0">
                 <tr className="text-left text-gray-500 uppercase text-[11px] tracking-wider">
                   {cfg.cols.map(([k, l, kind]) => (
-                    <th key={k} className={`px-4 py-3 font-semibold whitespace-nowrap ${
-                      isNumeric(kind) ? 'text-right' : ''
-                    }`}>{l}</th>
+                    <SortableTh key={k} field={k} sort={sort} setSort={setSort}
+                      align={isNumeric(kind) ? 'right' : 'left'}
+                      className="px-4 py-3 font-semibold whitespace-nowrap">
+                      {l}
+                    </SortableTh>
                   ))}
                 </tr>
               </thead>

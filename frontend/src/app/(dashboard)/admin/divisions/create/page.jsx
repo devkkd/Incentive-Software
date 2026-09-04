@@ -67,7 +67,7 @@ export default function CreateDivisionPage() {
   };
 
   return (
-    <div className="p-8 md:p-10 max-w-[1600px] mx-auto">
+    <div className="p-4 sm:p-6 md:p-10 max-w-[1600px] mx-auto">
       <div className="mb-8">
         <div className="flex items-center gap-2 text-[13px] text-gray-500 mb-3">
           <Link href="/admin/divisions" className="hover:text-[#2B3B8A] transition-colors">Divisions</Link>
@@ -76,6 +76,7 @@ export default function CreateDivisionPage() {
           </svg>
           <span className="text-gray-800 font-medium">Create New Division</span>
         </div>
+        <h2 className="text-[14px] text-gray-700 mb-1">Welcome to Faith Trust Commitment - Incentive Management</h2>
         <h1 className="text-[28px] font-bold text-black tracking-tight">Admin Portal</h1>
       </div>
 

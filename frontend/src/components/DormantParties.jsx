@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import SortableTh from '@/components/SortableTh';
+import useClientSort from '@/components/useClientSort';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 const authHeaders = () => {
@@ -42,7 +44,21 @@ export default function DormantParties() {
 
   useEffect(() => { load(); }, []);
 
-  const rows = data ? (tab === 'never' ? data.neverRedeemed : data.stoppedRedeeming) : [];
+  const rawRows = data ? (tab === 'never' ? data.neverRedeemed : data.stoppedRedeeming) : [];
+
+  // Point 11
+  const { sort, setSort, sorted: rows } = useClientSort(rawRows, {
+    partyCode: (r) => r.partyCode,
+    partyName: (r) => r.partyName,
+    mobileNumber: (r) => r.mobileNumber,
+    partyCity: (r) => r.partyCity,
+    salesPerson: (r) => r.salesPerson,
+    currentBalance: (r) => r.currentBalance,
+    lastRedemption: (r) => r.lastRedemption,
+    daysSinceRedemption: (r) => r.daysSinceRedemption,
+    lastInvoice: (r) => r.lastInvoice,
+    status: (r) => r.status,
+  });
 
   const downloadCsv = () => {
     if (!data) return;
@@ -112,7 +128,7 @@ export default function DormantParties() {
             Minimum balance
           </label>
           <div className="flex gap-2">
-            <input type="number" value={minBalance}
+            <input type="number" inputMode="decimal" value={minBalance}
               onChange={(e) => setMinBalance(Number(e.target.value) || 0)}
               onKeyDown={(e) => e.key === 'Enter' && load(months, minBalance)}
               className="w-32 px-3 py-1.5 border border-gray-200 rounded-lg text-[13px] tabular-nums focus:outline-none focus:border-[#2B3B8A]" />
@@ -176,20 +192,20 @@ export default function DormantParties() {
             <table className="w-full text-[13px]">
               <thead className="bg-gray-50 sticky top-0">
                 <tr className="text-left text-gray-500 uppercase text-[11px] tracking-wider">
-                  <th className="px-4 py-3 font-semibold whitespace-nowrap">Party Code</th>
-                  <th className="px-4 py-3 font-semibold whitespace-nowrap">Party Name</th>
-                  <th className="px-4 py-3 font-semibold whitespace-nowrap">Mobile Number</th>
-                  <th className="px-4 py-3 font-semibold whitespace-nowrap">Party City</th>
-                  <th className="px-4 py-3 font-semibold whitespace-nowrap">Salesperson</th>
-                  <th className="px-4 py-3 font-semibold text-right whitespace-nowrap">Current Balance</th>
+                  <SortableTh field="partyCode" sort={sort} setSort={setSort} className="px-4 py-3 font-semibold whitespace-nowrap">Party Code</SortableTh>
+                  <SortableTh field="partyName" sort={sort} setSort={setSort} className="px-4 py-3 font-semibold whitespace-nowrap">Party Name</SortableTh>
+                  <SortableTh field="mobileNumber" sort={sort} setSort={setSort} className="px-4 py-3 font-semibold whitespace-nowrap">Mobile Number</SortableTh>
+                  <SortableTh field="partyCity" sort={sort} setSort={setSort} className="px-4 py-3 font-semibold whitespace-nowrap">Party City</SortableTh>
+                  <SortableTh field="salesPerson" sort={sort} setSort={setSort} className="px-4 py-3 font-semibold whitespace-nowrap">Salesperson</SortableTh>
+                  <SortableTh field="currentBalance" sort={sort} setSort={setSort} align="right" className="px-4 py-3 font-semibold whitespace-nowrap">Current Balance</SortableTh>
                   {tab === 'stopped' && (
                     <>
-                      <th className="px-4 py-3 font-semibold whitespace-nowrap">Last Redemption</th>
-                      <th className="px-4 py-3 font-semibold text-right whitespace-nowrap">Days Since</th>
+                      <SortableTh field="lastRedemption" sort={sort} setSort={setSort} className="px-4 py-3 font-semibold whitespace-nowrap">Last Redemption</SortableTh>
+                      <SortableTh field="daysSinceRedemption" sort={sort} setSort={setSort} align="right" className="px-4 py-3 font-semibold whitespace-nowrap">Days Since</SortableTh>
                     </>
                   )}
-                  <th className="px-4 py-3 font-semibold whitespace-nowrap">Last Invoice</th>
-                  <th className="px-4 py-3 font-semibold whitespace-nowrap">Status</th>
+                  <SortableTh field="lastInvoice" sort={sort} setSort={setSort} className="px-4 py-3 font-semibold whitespace-nowrap">Last Invoice</SortableTh>
+                  <SortableTh field="status" sort={sort} setSort={setSort} className="px-4 py-3 font-semibold whitespace-nowrap">Status</SortableTh>
                 </tr>
               </thead>
               <tbody>

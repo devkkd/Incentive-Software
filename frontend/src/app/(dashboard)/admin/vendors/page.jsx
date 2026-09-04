@@ -352,7 +352,7 @@ export default function AdminVendorsPage() {
               <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Location / Branch <span className="text-red-400">*</span></label>
                 <select
-                  value={editForm.divisionId || ''}
+                  value={editForm.divisionId || <span className='text-gray-300'>—</span>}
                   onChange={(e) => {
                     const selDiv = divisions.find(d => d._id === e.target.value);
                     // Extract just the suffix from current full account number
@@ -407,46 +407,46 @@ export default function AdminVendorsPage() {
 
               <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Party Name <span className="text-red-400">*</span></label>
-                <input type="text" value={editForm.companyName || ''} onChange={(e) => setEditForm(p => ({ ...p, companyName: e.target.value }))}
+                <input type="text" value={editForm.companyName || <span className='text-gray-300'>—</span>} onChange={(e) => setEditForm(p => ({ ...p, companyName: e.target.value }))}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Party City / Location</label>
-                <input type="text" value={editForm.partyCity || ''} onChange={(e) => setEditForm(p => ({ ...p, partyCity: e.target.value }))}
+                <input type="text" value={editForm.partyCity || <span className='text-gray-300'>—</span>} onChange={(e) => setEditForm(p => ({ ...p, partyCity: e.target.value }))}
                   placeholder="e.g. Jodhpur"
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Mobile Number</label>
-                <input type="text" value={editForm.mobileNumber || ''} onChange={(e) => setEditForm(p => ({ ...p, mobileNumber: e.target.value }))}
+                <input type="text" value={editForm.mobileNumber || <span className='text-gray-300'>—</span>} onChange={(e) => setEditForm(p => ({ ...p, mobileNumber: e.target.value }))}
                   maxLength={10}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Party Type</label>
-                <input type="text" value={editForm.partyType || ''} onChange={(e) => setEditForm(p => ({ ...p, partyType: e.target.value }))}
+                <input type="text" value={editForm.partyType || <span className='text-gray-300'>—</span>} onChange={(e) => setEditForm(p => ({ ...p, partyType: e.target.value }))}
                   placeholder="CO-DEALER, DEALER..."
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
 
               <div className="space-y-1.5 col-span-2">
                 <label className="text-[13px] font-medium text-gray-800">Address</label>
-                <input type="text" value={editForm.address || ''} onChange={(e) => setEditForm(p => ({ ...p, address: e.target.value }))}
+                <input type="text" value={editForm.address || <span className='text-gray-300'>—</span>} onChange={(e) => setEditForm(p => ({ ...p, address: e.target.value }))}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Sales Person</label>
-                <input type="text" value={editForm.salesPerson || ''} onChange={(e) => setEditForm(p => ({ ...p, salesPerson: e.target.value }))}
+                <input type="text" value={editForm.salesPerson || <span className='text-gray-300'>—</span>} onChange={(e) => setEditForm(p => ({ ...p, salesPerson: e.target.value }))}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Status</label>
-                <select value={editForm.status || ''} onChange={(e) => setEditForm(p => ({ ...p, status: e.target.value }))}
+                <select value={editForm.status || <span className='text-gray-300'>—</span>} onChange={(e) => setEditForm(p => ({ ...p, status: e.target.value }))}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A] bg-white">
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
@@ -617,17 +617,17 @@ export default function AdminVendorsPage() {
             <table className="w-full text-left whitespace-nowrap">
               <thead>
                 <tr className="border-b-2 border-gray-100 text-gray-900 text-[13px]">
-                  <th className="pb-4 pt-2 px-2 font-bold">#</th>
-                  <SortableTh field="accountNumber" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Party Code</SortableTh>
-                  <th className="pb-4 pt-2 px-2 font-bold">Branch Code</th>
-                  <SortableTh field="companyName" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Party Name</SortableTh>
-                  <SortableTh field="partyType" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Party Type</SortableTh>
-                  <SortableTh field="mobileNumber" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Mobile</SortableTh>
-                  <SortableTh field="salesPerson" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Sales Person</SortableTh>
-                  <th className="pb-4 pt-2 px-2 font-bold">Email</th>
-                  <SortableTh field="walletBalance" sort={sort} setSort={setSort} align="right" className="pb-4 pt-2 px-2 font-bold">Wallet</SortableTh>
-                  <SortableTh field="status" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Status</SortableTh>
-                  <th className="pb-4 pt-2 px-2 font-bold">Action</th>
+                  <th className="pb-4 pt-2 px-3 font-bold sticky left-0 bg-white z-10">#</th>
+                  <SortableTh field="accountNumber" sort={sort} setSort={setSort} className="pb-4 pt-2 px-3 font-bold sticky left-0 z-20 bg-white">Party Code</SortableTh>
+                  <th className="pb-4 pt-2 px-3 font-bold">Branch Code</th>
+                  <SortableTh field="companyName" sort={sort} setSort={setSort} className="pb-4 pt-2 px-3 font-bold">Party Name</SortableTh>
+                  <SortableTh field="partyType" sort={sort} setSort={setSort} className="pb-4 pt-2 px-3 font-bold">Party Type</SortableTh>
+                  <SortableTh field="mobileNumber" sort={sort} setSort={setSort} className="pb-4 pt-2 px-3 font-bold">Mobile</SortableTh>
+                  <SortableTh field="salesPerson" sort={sort} setSort={setSort} className="pb-4 pt-2 px-3 font-bold">Sales Person</SortableTh>
+                  <th className="pb-4 pt-2 px-3 font-bold">Email</th>
+                  <SortableTh field="walletBalance" sort={sort} setSort={setSort} align="right" className="pb-4 pt-2 px-3 font-bold">Wallet</SortableTh>
+                  <SortableTh field="status" sort={sort} setSort={setSort} className="pb-4 pt-2 px-3 font-bold">Status</SortableTh>
+                  <th className="pb-4 pt-2 px-3 font-bold">Action</th>
                 </tr>
               </thead>
               <tbody className="text-gray-700 font-medium text-[13px]">
@@ -635,25 +635,25 @@ export default function AdminVendorsPage() {
                     <tr><td colSpan="11" className="py-10 text-center text-gray-400">Loading...</td></tr>
                 ) : vendors.length > 0 ? vendors.map((vendor, i) => (
                   <tr key={vendor._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
-                    <td className="py-5 px-2">{String((pagination.page - 1) * 10 + i + 1).padStart(2, '0')}</td>
-                    <td className="py-5 px-2 font-semibold text-[#2B3B8A] font-mono text-[12px]">{vendor.accountNumber}</td>
-                    <td className="py-5 px-2 font-mono text-[12px] text-gray-600">{vendor.division?.name || '—'}</td>
-                    <td className="py-5 px-2 font-semibold max-w-[220px] truncate" title={vendor.companyName || ''}>{vendor.companyName}</td>
-                    <td className="py-5 px-2">
+                    <td className="py-4 px-3">{String((pagination.page - 1) * 10 + i + 1).padStart(2, '0')}</td>
+                    <td className="py-4 px-3 font-semibold text-[#2B3B8A] font-mono text-[12px] sticky left-0 z-10 bg-white">{vendor.accountNumber}</td>
+                    <td className="py-4 px-3 font-mono text-[12px] text-gray-600">{vendor.division?.name || '—'}</td>
+                    <td className="py-4 px-3 font-semibold max-w-[220px] truncate" title={vendor.companyName || <span className='text-gray-300'>—</span>}>{vendor.companyName}</td>
+                    <td className="py-4 px-3">
                       {vendor.partyType ? (
                         <span className="text-[11px] font-semibold bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{vendor.partyType}</span>
                       ) : '—'}
                     </td>
-                    <td className="py-5 px-2">{vendor.mobileNumber}</td>
-                    <td className="py-5 px-2 text-gray-600">{vendor.salesPerson || '—'}</td>
-                    <td className="py-5 px-2 text-gray-500 text-[12px]">{vendor.email || '—'}</td>
-                    <td className="py-5 px-2 text-right tabular-nums whitespace-nowrap">₹{Number(vendor.walletBalance).toFixed(2)}</td>
-                    <td className="py-5 px-2">
+                    <td className="py-4 px-3">{vendor.mobileNumber}</td>
+                    <td className="py-4 px-3 text-gray-600">{vendor.salesPerson || '—'}</td>
+                    <td className="py-4 px-3 text-gray-500 text-[12px]">{vendor.email || '—'}</td>
+                    <td className="py-4 px-3 text-right tabular-nums whitespace-nowrap">₹{Number(vendor.walletBalance).toFixed(2)}</td>
+                    <td className="py-4 px-3">
                       <span className={`px-3 py-1.5 rounded-lg border text-[13px] font-semibold capitalize ${statusStyles[vendor.status] || 'text-gray-600 bg-gray-100 border-gray-200'}`}>
                         {vendor.status}
                       </span>
                     </td>
-                    <td className="py-5 px-2">
+                    <td className="py-4 px-3">
                       <div className="flex items-center gap-2">
                         <button onClick={() => openEditModal(vendor)}
                           className="bg-[#007BFF] hover:bg-[#0056b3] text-white px-4 py-1.5 rounded-lg text-[13px] font-semibold transition-colors">

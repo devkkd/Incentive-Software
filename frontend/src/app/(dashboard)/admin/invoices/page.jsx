@@ -369,9 +369,9 @@ export default function AdminInvoicesPage() {
 
       {/* ── POINT 19 — reassign the wallet a redemption came from ────────── */}
       {reassign && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-0 sm:p-4"
              onClick={() => setReassign(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[88vh] overflow-auto p-6 space-y-4"
+          <div className="bg-white rounded-none sm:rounded-2xl shadow-xl w-full h-full sm:h-auto max-w-lg max-h-[88vh] overflow-auto p-6 space-y-4"
                onClick={(e) => e.stopPropagation()}>
             <div>
               <h3 className="text-[18px] font-bold text-gray-900">Change source wallet</h3>
@@ -439,7 +439,7 @@ export default function AdminInvoicesPage() {
               <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
                 Amount
               </label>
-              <input type="number" value={raAmount} onChange={(e) => setRaAmount(e.target.value)}
+              <input type="number" inputMode="decimal" value={raAmount} onChange={(e) => setRaAmount(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[14px] tabular-nums focus:outline-none focus:border-[#2B3B8A]" />
             </div>
 
@@ -520,7 +520,7 @@ export default function AdminInvoicesPage() {
               </div>
               <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Invoice Amount (₹)</label>
-                <input type="number" value={editForm.invoiceAmount}
+                <input type="number" inputMode="decimal" value={editForm.invoiceAmount}
                   onChange={(e) => setEditForm(f => ({ ...f, invoiceAmount: e.target.value }))}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A]/20 focus:border-[#2B3B8A] transition-all"
                   min="0" step="0.01" placeholder="0.00" />
@@ -743,19 +743,19 @@ export default function AdminInvoicesPage() {
           <table className="w-full text-left whitespace-nowrap">
             <thead>
               <tr className="border-b-2 border-gray-100 text-gray-500 text-[12px] uppercase tracking-wide">
-                <th className="pb-3 font-semibold px-2">#</th>
-                <SortableTh field="companyName" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Party Name</SortableTh>
-                <SortableTh field="accountNumber" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Party Code</SortableTh>
-                <SortableTh field="mobileNumber" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Mobile</SortableTh>
-                <SortableTh field="invoiceNumber" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Invoice Number</SortableTh>
-                <SortableTh field="referenceNo" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Reference No</SortableTh>
-                <SortableTh field="invoiceDate" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Invoice Date</SortableTh>
-                <SortableTh field="invoiceAmount" sort={sort} setSort={setSort} align="right" className="pb-3 font-semibold px-2">Amount (₹)</SortableTh>
-                <SortableTh field="redeemedAmount" sort={sort} setSort={setSort} align="right" className="pb-3 font-semibold px-2">Redeemed (₹)</SortableTh>
-                <SortableTh field="location" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Location</SortableTh>
-                <SortableTh field="divisionName" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Division</SortableTh>
-                <SortableTh field="remark" sort={sort} setSort={setSort} className="pb-3 font-semibold px-2">Remark</SortableTh>
-                <th className="pb-3 font-semibold px-2 text-center">Actions</th>
+                <th className="pb-3 font-semibold px-3 sticky left-0 bg-white z-10">#</th>
+                <SortableTh field="companyName" sort={sort} setSort={setSort} className="pb-3 font-semibold px-3">Party Name</SortableTh>
+                <SortableTh field="accountNumber" sort={sort} setSort={setSort} className="pb-3 font-semibold px-3">Party Code</SortableTh>
+                <SortableTh field="mobileNumber" sort={sort} setSort={setSort} className="pb-3 font-semibold px-3">Mobile</SortableTh>
+                <SortableTh field="invoiceNumber" sort={sort} setSort={setSort} className="pb-3 font-semibold px-3 sticky left-0 z-20 bg-white">Invoice Number</SortableTh>
+                <SortableTh field="referenceNo" sort={sort} setSort={setSort} className="pb-3 font-semibold px-3">Reference No</SortableTh>
+                <SortableTh field="invoiceDate" sort={sort} setSort={setSort} className="pb-3 font-semibold px-3">Invoice Date</SortableTh>
+                <SortableTh field="invoiceAmount" sort={sort} setSort={setSort} align="right" className="pb-3 font-semibold px-3">Amount (₹)</SortableTh>
+                <SortableTh field="redeemedAmount" sort={sort} setSort={setSort} align="right" className="pb-3 font-semibold px-3">Redeemed (₹)</SortableTh>
+                <SortableTh field="location" sort={sort} setSort={setSort} className="pb-3 font-semibold px-3">Location</SortableTh>
+                <SortableTh field="divisionName" sort={sort} setSort={setSort} className="pb-3 font-semibold px-3">Division</SortableTh>
+                <SortableTh field="remark" sort={sort} setSort={setSort} className="pb-3 font-semibold px-3">Remark</SortableTh>
+                <th className="pb-3 font-semibold px-3 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="text-gray-700 font-medium text-[13px]">
@@ -773,38 +773,38 @@ export default function AdminInvoicesPage() {
                 </tr>
               ) : invoices.length > 0 ? invoices.map((row, index) => (
                 <tr key={row._id} className="border-b border-gray-50 last:border-0 hover:bg-[#F8FAFF] transition-colors">
-                  <td className="py-4 px-2 text-gray-400">{String((pagination.page - 1) * 10 + index + 1).padStart(2, '0')}</td>
-                  <td className="py-4 px-2">
+                  <td className="py-4 px-3 text-gray-400">{String((pagination.page - 1) * 10 + index + 1).padStart(2, '0')}</td>
+                  <td className="py-4 px-3">
                     {row.vendor?.companyName || <span className="text-gray-400 italic text-[12px]">Deleted Party</span>}
                   </td>
-                  <td className="py-4 px-2 font-semibold text-[#2B3B8A]">{row.vendor?.accountNumber || '—'}</td>
-                  <td className="py-4 px-2 text-gray-500">{row.vendor?.mobileNumber || '—'}</td>
-                  <td className="py-4 px-2 font-semibold font-mono text-[12px]">{row.invoiceNumber}</td>
-                  <td className="py-4 px-2 font-mono font-medium text-gray-800">{row.referenceNo || '—'}</td>
-                  <td className="py-4 px-2">{new Date(row.invoiceDate).toLocaleDateString('en-IN')}</td>
-                  <td className="py-4 px-2 font-semibold text-gray-900 text-right tabular-nums whitespace-nowrap">₹{Number(row.invoiceAmount).toLocaleString('en-IN')}</td>
-                  <td className="py-4 px-2 font-semibold text-[#E74C3C] text-right tabular-nums whitespace-nowrap">
+                  <td className="py-4 px-3 font-semibold text-[#2B3B8A]">{row.vendor?.accountNumber || '—'}</td>
+                  <td className="py-4 px-3 text-gray-500">{row.vendor?.mobileNumber || '—'}</td>
+                  <td className="py-4 px-3 font-semibold font-mono text-[12px] sticky left-0 z-10 bg-white">{row.invoiceNumber}</td>
+                  <td className="py-4 px-3 font-mono font-medium text-gray-800">{row.referenceNo || '—'}</td>
+                  <td className="py-4 px-3">{new Date(row.invoiceDate).toLocaleDateString('en-IN')}</td>
+                  <td className="py-4 px-3 font-semibold text-gray-900 text-right tabular-nums whitespace-nowrap">₹{Number(row.invoiceAmount).toLocaleString('en-IN')}</td>
+                  <td className="py-4 px-3 font-semibold text-[#E74C3C] text-right tabular-nums whitespace-nowrap">
                     {row.redeemAmount > 0
                       ? `₹${Number(row.redeemAmount).toLocaleString('en-IN')}`
                       : <span className="text-gray-300">—</span>}
                   </td>
-                  <td className="py-4 px-2 text-gray-500 max-w-[160px] truncate" title={row.location || ''}>{row.location || '—'}</td>
-                  <td className="py-4 px-2">
+                  <td className="py-4 px-3 text-gray-500 max-w-[160px] truncate" title={row.location || <span className='text-gray-300'>—</span>}>{row.location || '—'}</td>
+                  <td className="py-4 px-3">
                     <span className="px-2.5 py-1 bg-[#EEF2FF] text-[#2B3B8A] text-[11px] font-semibold rounded-lg">
                       {row.division?.name || '—'}
                     </span>
                   </td>
-                  <td className="py-4 px-2 max-w-[140px]">
+                  <td className="py-4 px-3 max-w-[140px]">
                     {row.remark ? (
                       <span className="text-gray-500 text-[12px]" title={row.remark}>
                         {row.remark.length > 28 ? row.remark.substring(0, 28) + '…' : row.remark}
                       </span>
                     ) : <span className="text-gray-300">—</span>}
                   </td>
-                  <td className="py-4 px-2 text-center">
+                  <td className="py-4 px-3 text-center">
                     <div className="flex items-center justify-center gap-1.5">
                       <button onClick={() => openEditModal(row)}
-                        className="px-3 py-1.5 bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white text-[11px] font-bold rounded-lg transition-colors">
+                        className="px-3 py-2 sm:py-1.5 min-h-[36px] bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white text-[11px] font-bold rounded-lg transition-colors cursor-pointer">
                         Edit
                       </button>
                       {row.redeemAmount > 0 && (
@@ -815,7 +815,7 @@ export default function AdminInvoicesPage() {
                         </button>
                       )}
                       <button onClick={() => handleDelete(row._id)}
-                        className="px-3 py-1.5 bg-red-50 hover:bg-red-500 text-red-500 hover:text-white text-[11px] font-bold rounded-lg transition-colors border border-red-200 hover:border-red-500">
+                        className="px-3 py-2 sm:py-1.5 min-h-[36px] bg-red-50 hover:bg-red-500 text-red-500 hover:text-white text-[11px] font-bold rounded-lg transition-colors border border-red-200 hover:border-red-500 cursor-pointer">
                         Delete
                       </button>
                     </div>

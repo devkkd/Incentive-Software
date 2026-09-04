@@ -252,13 +252,13 @@ export default function AdminRedeemPage() {
             </div>
             <div>
               <Label>Invoice Amount</Label>
-              <input type="number" value={form.invoiceAmount}
+              <input type="number" inputMode="decimal" value={form.invoiceAmount}
                 onChange={(e) => setForm({ ...form, invoiceAmount: e.target.value })}
                 className={input + ' tabular-nums'} />
             </div>
             <div>
               <Label>Redemption Amount</Label>
-              <input type="number" value={form.redeemAmount}
+              <input type="number" inputMode="decimal" value={form.redeemAmount}
                 onChange={(e) => setForm({ ...form, redeemAmount: e.target.value })}
                 className={input + ' tabular-nums'} />
               {redeemAmt > (vendor.walletBalance || 0) && (
@@ -310,7 +310,7 @@ export default function AdminRedeemPage() {
                       <p className="text-[13px] font-semibold text-gray-900">{w.label}</p>
                       <p className="text-[11px] text-gray-500 tabular-nums">Available {fmt(w.balance)}</p>
                     </div>
-                    <input type="number" placeholder="0"
+                    <input type="number" inputMode="decimal" placeholder="0"
                       value={splits[w._id] || ''}
                       onChange={(e) => setSplits({ ...splits, [w._id]: e.target.value })}
                       max={w.balance}
@@ -336,8 +336,8 @@ export default function AdminRedeemPage() {
 
       {/* ── Confirmation ─────────────────────────────────────────────────── */}
       {confirmOpen && vendor && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[88vh] overflow-auto p-6 space-y-4">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-0 sm:p-4">
+          <div className="bg-white rounded-none sm:rounded-2xl shadow-xl w-full h-full sm:h-auto max-w-lg max-h-[88vh] overflow-auto p-6 space-y-4">
             <div>
               <h3 className="text-[18px] font-bold text-gray-900">Confirm this redemption</h3>
               <p className="text-[13px] text-amber-700 mt-1 font-medium">
@@ -378,7 +378,7 @@ export default function AdminRedeemPage() {
 
             <div>
               <Label>Type the amount to confirm</Label>
-              <input type="number" value={typedAmount}
+              <input type="number" inputMode="decimal" value={typedAmount}
                 onChange={(e) => setTypedAmount(e.target.value)}
                 placeholder={String(redeemAmt)}
                 className={input + ' tabular-nums'} />

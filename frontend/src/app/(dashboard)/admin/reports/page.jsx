@@ -329,7 +329,7 @@ export default function AdminReportsPage() {
       if (locationFilter && row.location?.toLowerCase() !== locationFilter.toLowerCase()) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
-        if (!`${row.invoiceNumber} ${row.referenceNo || ''} ${row.vendor?.companyName} ${row.location}`.toLowerCase().includes(q)) return false;
+        if (!`${row.invoiceNumber} ${row.referenceNo || <span className='text-gray-300'>—</span>} ${row.vendor?.companyName} ${row.location}`.toLowerCase().includes(q)) return false;
       }
     }
     if (reportType === 'incentives') {
@@ -642,18 +642,18 @@ export default function AdminReportsPage() {
               <tbody className="text-gray-700 font-medium text-[13px]">
                 {filteredData.length > 0 ? filteredData.map((row, i) => (
                   <tr key={row._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
-                    <td className="py-5 px-2">{String(i+1).padStart(2,'0')}</td>
+                    <td className="py-4 px-3">{String(i+1).padStart(2,'0')}</td>
                     {reportType === 'wallet_balances' && (() => {
                       const allMonths = [...new Set(filteredData.flatMap(v => (v.monthlyWallets || []).map(w => w.label)))].sort();
                       return <>
-                        <td className="py-5 px-2">{row.companyName}</td>
-                        <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{row.accountNumber}</td>
-                        <td className="py-5 px-2">{row.mobileNumber}</td>
-                        <td className="py-5 px-2">{row.division?.name || '—'}</td>
-                        <td className="py-5 px-2">
+                        <td className="py-4 px-3">{row.companyName}</td>
+                        <td className="py-4 px-3 font-semibold text-[#2B3B8A]">{row.accountNumber}</td>
+                        <td className="py-4 px-3">{row.mobileNumber}</td>
+                        <td className="py-4 px-3">{row.division?.name || '—'}</td>
+                        <td className="py-4 px-3">
                           <span className={`px-3 py-1.5 rounded-lg border text-[13px] font-semibold capitalize ${statusStyles[row.status] || ''}`}>{row.status}</span>
                         </td>
-                        <td className="py-5 px-2 font-semibold text-[#2B3B8A] text-right tabular-nums whitespace-nowrap">₹{Number(row.walletBalance).toFixed(2)}</td>
+                        <td className="py-4 px-3 font-semibold text-[#2B3B8A] text-right tabular-nums whitespace-nowrap">₹{Number(row.walletBalance).toFixed(2)}</td>
                         {allMonths.map(month => {
                           const mw = (row.monthlyWallets || []).find(w => w.label === month);
                           const bal = mw ? Number(mw.balance) : 0;
@@ -661,7 +661,7 @@ export default function AdminReportsPage() {
                             {bal > 0 ? `₹${bal.toFixed(2)}` : '—'}
                           </td>;
                         })}
-                        <td className="py-5 px-2 text-center">
+                        <td className="py-4 px-3 text-center">
                           <button onClick={() => handleOpenStatement(row)} className="px-3 py-1.5 bg-[#2B3B8A] text-white text-[12px] font-medium rounded hover:bg-[#1e2a61] transition-colors">
                             Statement
                           </button>
@@ -669,32 +669,32 @@ export default function AdminReportsPage() {
                       </>;
                     })()}
                     {reportType === 'invoices' && <>
-                      <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{row.invoiceNumber}</td>
-                      <td className="py-5 px-2 font-mono font-medium text-gray-800">{row.referenceNo || '—'}</td>
-                      <td className="py-5 px-2">{row.vendor?.companyName || 'N/A'}</td>
-                      <td className="py-5 px-2">{row.vendor?.accountNumber || 'N/A'}</td>
-                      <td className="py-5 px-2 text-right tabular-nums whitespace-nowrap">₹{Number(row.invoiceAmount).toFixed(2)}</td>
-                      <td className="py-5 px-2 font-semibold text-[#E74C3C]">
+                      <td className="py-4 px-3 font-semibold text-[#2B3B8A]">{row.invoiceNumber}</td>
+                      <td className="py-4 px-3 font-mono font-medium text-gray-800">{row.referenceNo || '—'}</td>
+                      <td className="py-4 px-3">{row.vendor?.companyName || 'N/A'}</td>
+                      <td className="py-4 px-3">{row.vendor?.accountNumber || 'N/A'}</td>
+                      <td className="py-4 px-3 text-right tabular-nums whitespace-nowrap">₹{Number(row.invoiceAmount).toFixed(2)}</td>
+                      <td className="py-4 px-3 font-semibold text-[#E74C3C]">
                         {row.redeemAmount > 0 ? `₹${Number(row.redeemAmount).toFixed(2)}` : <span className="text-gray-400">—</span>}
                       </td>
-                      <td className="py-5 px-2">{row.location}</td>
-                      <td className="py-5 px-2">{row.division?.name || '—'}</td>
-                      <td className="py-5 px-2">{new Date(row.invoiceDate).toLocaleDateString('en-IN')}</td>
-                      <td className="py-5 px-2 max-w-[140px] text-gray-500">
+                      <td className="py-4 px-3">{row.location}</td>
+                      <td className="py-4 px-3">{row.division?.name || '—'}</td>
+                      <td className="py-4 px-3">{new Date(row.invoiceDate).toLocaleDateString('en-IN')}</td>
+                      <td className="py-4 px-3 max-w-[140px] text-gray-500">
                         {row.remark ? (
                           <span title={row.remark}>{row.remark.length > 25 ? row.remark.substring(0, 25) + '…' : row.remark}</span>
                         ) : <span className="text-gray-300">—</span>}
                       </td>
                     </>}
                     {reportType === 'incentives' && <>
-                      <td className="py-5 px-2">{row.vendor?.companyName || 'N/A'}</td>
-                      <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{row.vendor?.accountNumber || 'N/A'}</td>
-                      <td className="py-5 px-2">
+                      <td className="py-4 px-3">{row.vendor?.companyName || 'N/A'}</td>
+                      <td className="py-4 px-3 font-semibold text-[#2B3B8A]">{row.vendor?.accountNumber || 'N/A'}</td>
+                      <td className="py-4 px-3">
                         <span className={`font-semibold ${row.type === 'credit' ? 'text-[#2ECC71]' : 'text-[#E74C3C]'}`}>{row.type}</span>
                       </td>
-                      <td className="py-5 px-2 text-right tabular-nums whitespace-nowrap">₹{row.amount}</td>
-                      <td className="py-5 px-2 text-right tabular-nums whitespace-nowrap">₹{row.balanceAfter}</td>
-                      <td className="py-5 px-2">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
+                      <td className="py-4 px-3 text-right tabular-nums whitespace-nowrap">₹{row.amount}</td>
+                      <td className="py-4 px-3 text-right tabular-nums whitespace-nowrap">₹{row.balanceAfter}</td>
+                      <td className="py-4 px-3">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
                     </>}
                   </tr>
                 )) : (

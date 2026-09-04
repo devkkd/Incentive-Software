@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import SortableTh from '@/components/SortableTh';
+import useClientSort from '@/components/useClientSort';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 const authHeaders = () => {
@@ -60,7 +62,18 @@ export default function LiabilityAgeing() {
 
   useEffect(() => { load(); }, []);
 
-  const rows = data?.[view] || [];
+  const rawRows = data?.[view] || [];
+
+  // Point 11 — bucket columns plus whatever the current view shows
+  const accessors = useMemo(() => {
+    const a = { total: (r) => r.total };
+    for (const b of data?.buckets || []) a[b.key] = (r) => r[b.key] || 0;
+    for (const k of ['partyCode','partyName','scheme','location','salesPerson','status','parties']) {
+      a[k] = (r) => r[k];
+    }
+    return a;
+  }, [data]);
+  const { sort, setSort, sorted: rows } = useClientSort(rawRows, accessors);
 
   const firstCol = {
     byParty:  [['partyCode', 'Party Code'], ['partyName', 'Party Name']],
@@ -194,14 +207,18 @@ export default function LiabilityAgeing() {
               <thead className="bg-gray-50 sticky top-0">
                 <tr className="text-left text-gray-500 uppercase text-[11px] tracking-wider">
                   {firstCol.map(([k, l]) => (
-                    <th key={k} className="px-4 py-3 font-semibold whitespace-nowrap">{l}</th>
+                    <SortableTh key={k} field={k} sort={sort} setSort={setSort}
+                      className="px-4 py-3 font-semibold whitespace-nowrap">{l}</SortableTh>
                   ))}
                   {data.buckets.map((b) => (
-                    <th key={b.key} className="px-4 py-3 font-semibold text-right whitespace-nowrap">{b.label}</th>
+                    <SortableTh key={b.key} field={b.key} sort={sort} setSort={setSort} align="right"
+                      className="px-4 py-3 font-semibold whitespace-nowrap">{b.label}</SortableTh>
                   ))}
-                  <th className="px-4 py-3 font-semibold text-right whitespace-nowrap">Total</th>
+                  <SortableTh field="total" sort={sort} setSort={setSort} align="right"
+                    className="px-4 py-3 font-semibold whitespace-nowrap">Total</SortableTh>
                   {extraCols.map(([k, l]) => (
-                    <th key={k} className="px-4 py-3 font-semibold whitespace-nowrap">{l}</th>
+                    <SortableTh key={k} field={k} sort={sort} setSort={setSort}
+                      className="px-4 py-3 font-semibold whitespace-nowrap">{l}</SortableTh>
                   ))}
                 </tr>
               </thead>

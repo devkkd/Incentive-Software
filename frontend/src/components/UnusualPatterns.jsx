@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import SortableTh from '@/components/SortableTh';
+import useClientSort from '@/components/useClientSort';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 const authHeaders = () => {
@@ -50,7 +52,14 @@ export default function UnusualPatterns() {
 
   useEffect(() => { load(); }, []);
 
-  const flags = (data?.flags || []).filter((f) => !filter || f.pattern === filter);
+  const rawFlags = (data?.flags || []).filter((f) => !filter || f.pattern === filter);
+
+  // Point 11
+  const { sort, setSort, sorted: flags } = useClientSort(rawFlags, {
+    date: (r) => r.date, pattern: (r) => r.pattern,
+    partyCode: (r) => r.partyCode, partyName: (r) => r.partyName,
+    branch: (r) => r.branch, amount: (r) => r.amount, detail: (r) => r.detail,
+  });
 
   const downloadCsv = () => {
     const cols = [
@@ -172,13 +181,13 @@ export default function UnusualPatterns() {
             <table className="w-full text-[13px]">
               <thead className="bg-gray-50 sticky top-0">
                 <tr className="text-left text-gray-500 uppercase text-[11px] tracking-wider">
-                  <th className="px-4 py-3 font-semibold whitespace-nowrap">Date</th>
-                  <th className="px-4 py-3 font-semibold whitespace-nowrap">Pattern</th>
-                  <th className="px-4 py-3 font-semibold whitespace-nowrap">Party Code</th>
-                  <th className="px-4 py-3 font-semibold whitespace-nowrap">Party Name</th>
-                  <th className="px-4 py-3 font-semibold whitespace-nowrap">Branch</th>
-                  <th className="px-4 py-3 font-semibold text-right whitespace-nowrap">Amount</th>
-                  <th className="px-4 py-3 font-semibold whitespace-nowrap">Detail</th>
+                  <SortableTh field="date" sort={sort} setSort={setSort} className="px-4 py-3 font-semibold whitespace-nowrap">Date</SortableTh>
+                  <SortableTh field="pattern" sort={sort} setSort={setSort} className="px-4 py-3 font-semibold whitespace-nowrap">Pattern</SortableTh>
+                  <SortableTh field="partyCode" sort={sort} setSort={setSort} className="px-4 py-3 font-semibold whitespace-nowrap">Party Code</SortableTh>
+                  <SortableTh field="partyName" sort={sort} setSort={setSort} className="px-4 py-3 font-semibold whitespace-nowrap">Party Name</SortableTh>
+                  <SortableTh field="branch" sort={sort} setSort={setSort} className="px-4 py-3 font-semibold whitespace-nowrap">Branch</SortableTh>
+                  <SortableTh field="amount" sort={sort} setSort={setSort} align="right" className="px-4 py-3 font-semibold whitespace-nowrap">Amount</SortableTh>
+                  <SortableTh field="detail" sort={sort} setSort={setSort} className="px-4 py-3 font-semibold whitespace-nowrap">Detail</SortableTh>
                 </tr>
               </thead>
               <tbody>

@@ -68,7 +68,7 @@ export default function SortableTh({
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 24 24"
             fill="currentColor"
-            className={`w-5 h-5 transition-colors ${
+            className={`w-6 h-6 transition-colors ${
               active && order === 'asc'
                 ? 'text-[#2B3B8A]'
                 : 'text-gray-300 group-hover:text-gray-400'
@@ -80,7 +80,7 @@ export default function SortableTh({
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 24 24"
             fill="currentColor"
-            className={`w-5 h-5 transition-colors ${
+            className={`w-6 h-6 transition-colors ${
               active && order === 'desc'
                 ? 'text-[#2B3B8A]'
                 : 'text-gray-300 group-hover:text-gray-400'

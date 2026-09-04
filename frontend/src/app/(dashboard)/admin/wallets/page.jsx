@@ -865,9 +865,9 @@ export default function WalletManagementPage() {
 
       {/* ── Rename modal — Point 18 ───────────────────────────────────────── */}
       {renameWallet && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-0 sm:p-4"
              onClick={() => setRenameWallet(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5"
+          <div className="bg-white rounded-none sm:rounded-2xl shadow-xl w-full h-full sm:h-auto max-w-md p-6 space-y-5"
                onClick={(e) => e.stopPropagation()}>
             <div>
               <h3 className="text-[18px] font-bold text-gray-900">Rename wallet</h3>
@@ -944,9 +944,9 @@ export default function WalletManagementPage() {
 
       {/* ── Counter notice modal — Point 22 ────────────────────────────────── */}
       {noticeWallet && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-0 sm:p-4"
              onClick={() => setNoticeWallet(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-5"
+          <div className="bg-white rounded-none sm:rounded-2xl shadow-xl w-full h-full sm:h-auto max-w-lg p-6 space-y-5"
                onClick={(e) => e.stopPropagation()}>
             <div>
               <h3 className="text-[18px] font-bold text-gray-900">Counter notice</h3>
@@ -1052,9 +1052,9 @@ export default function WalletManagementPage() {
 
       {/* ── Freeze reason modal — Point 7 ──────────────────────────────────── */}
       {freezeModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-0 sm:p-4"
              onClick={() => setFreezeModal(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4"
+          <div className="bg-white rounded-none sm:rounded-2xl shadow-xl w-full h-full sm:h-auto max-w-md p-6 space-y-4"
                onClick={(e) => e.stopPropagation()}>
             <div>
               <h3 className="text-[18px] font-bold text-gray-900">Freeze redemption</h3>
@@ -1098,11 +1098,11 @@ export default function WalletManagementPage() {
       {/* ── Drill-down modal — Point 17 ────────────────────────────────────── */}
       {listModal && (
         <div
-          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-0 sm:p-4"
           onClick={() => setListModal(null)}
         >
           <div
-            className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[85vh] flex flex-col"
+            className="bg-white rounded-none sm:rounded-2xl shadow-xl w-full h-full sm:h-auto max-w-4xl max-h-[85vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-5 border-b border-gray-100 flex items-center justify-between">
@@ -1651,7 +1651,7 @@ export default function WalletManagementPage() {
                     doc.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 26);
                     autoTable(doc, {
                       startY: 32,
-                      head: [['Party Name', 'Party Code', 'Mobile', 'Credited (Rs)', 'Wallet Balance (Rs)', 'Status']],
+                      head: [['Party Name', 'Party Code', 'Mobile Number', 'Credited Amount (Rs)', 'Current Balance (Rs)', 'Status']],
                       body: filteredParties.map(p => [
                         p.companyName,
                         p.accountNumber,
@@ -1677,7 +1677,7 @@ export default function WalletManagementPage() {
                 <button
                   onClick={async () => {
                     const XLSX = await import('xlsx');
-                    const head = ['Party Name', 'Party Code', 'Mobile', 'Credited (Rs)', 'Wallet Balance (Rs)', 'Status'];
+                    const head = ['Party Name', 'Party Code', 'Mobile Number', 'Credited Amount (Rs)', 'Current Balance (Rs)', 'Status'];
                     const body = filteredParties.map(p => [
                       p.companyName, p.accountNumber, p.mobileNumber,
                       Number(p.creditedAmount).toFixed(2),

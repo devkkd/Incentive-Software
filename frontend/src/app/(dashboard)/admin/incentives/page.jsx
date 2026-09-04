@@ -373,8 +373,8 @@ export default function AdminIncentivesPage() {
 
       {/* ── POINT 2 — duplicate upload confirmation ─────────────────────── */}
       {dupData && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[88vh] flex flex-col">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-0 sm:p-4">
+          <div className="bg-white rounded-none sm:rounded-2xl shadow-xl w-full h-full sm:h-auto max-w-4xl max-h-[88vh] flex flex-col">
             <div className="p-5 border-b border-gray-100">
               <h3 className="text-[18px] font-bold text-gray-900">
                 {dupData.duplicates.length} part{dupData.duplicates.length === 1 ? 'y' : 'ies'} already
@@ -716,22 +716,22 @@ export default function AdminIncentivesPage() {
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead>
               <tr className="border-b border-gray-200 text-gray-900">
-                <th className="pb-4 pt-2 px-2 font-bold">#</th>
-                <SortableTh field="createdAt" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Upload Date</SortableTh>
-                <SortableTh field="fileName" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">File Name</SortableTh>
-                <SortableTh field="walletLabel" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Incentive Month</SortableTh>
-                <SortableTh field="totalAmount" sort={sort} setSort={setSort} align="right" className="pb-4 pt-2 px-2 font-bold">Incentives Total Amount</SortableTh>
-                <SortableTh field="frequency" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Upload Frequency</SortableTh>
-                <SortableTh field="status" sort={sort} setSort={setSort} className="pb-4 pt-2 px-2 font-bold">Status</SortableTh>
+                <th className="pb-4 pt-2 px-3 font-bold sticky left-0 bg-white z-10">#</th>
+                <SortableTh field="createdAt" sort={sort} setSort={setSort} className="pb-4 pt-2 px-3 font-bold">Upload Date</SortableTh>
+                <SortableTh field="fileName" sort={sort} setSort={setSort} className="pb-4 pt-2 px-3 font-bold">File Name</SortableTh>
+                <SortableTh field="walletLabel" sort={sort} setSort={setSort} className="pb-4 pt-2 px-3 font-bold">Incentive Month</SortableTh>
+                <SortableTh field="totalAmount" sort={sort} setSort={setSort} align="right" className="pb-4 pt-2 px-3 font-bold">Incentives Total Amount</SortableTh>
+                <SortableTh field="frequency" sort={sort} setSort={setSort} className="pb-4 pt-2 px-3 font-bold">Upload Frequency</SortableTh>
+                <SortableTh field="status" sort={sort} setSort={setSort} className="pb-4 pt-2 px-3 font-bold">Status</SortableTh>
               </tr>
             </thead>
             <tbody className="text-gray-700 font-medium">
               {Array.isArray(sortedHistory) && sortedHistory.length > 0 ? sortedHistory.map((row, i) => (
                 <tr key={row._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
-                  <td className="py-5 px-2">{String(i+1).padStart(2,'0')}</td>
-                  <td className="py-5 px-2">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
-                  <td className="py-5 px-2">{row.fileName}</td>
-                  <td className="py-5 px-2">
+                  <td className="py-4 px-3">{String(i+1).padStart(2,'0')}</td>
+                  <td className="py-4 px-3">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
+                  <td className="py-4 px-3">{row.fileName}</td>
+                  <td className="py-4 px-3">
                     {row.walletLabel ? (
                       <span className="inline-flex items-center gap-1.5 bg-[#EEF2FF] text-[#2B3B8A] text-[12px] font-semibold px-2.5 py-1 rounded-lg border border-[#2B3B8A]/10">
                         {row.walletLabel}
@@ -740,9 +740,9 @@ export default function AdminIncentivesPage() {
                       <span className="text-gray-400">—</span>
                     )}
                   </td>
-                  <td className="py-5 px-2 text-right tabular-nums whitespace-nowrap">₹{row.totalAmount?.toFixed(2)}</td>
-                  <td className="py-5 px-2 capitalize">{row.frequency}</td>
-                  <td className="py-5 px-2">
+                  <td className="py-4 px-3 text-right tabular-nums whitespace-nowrap">₹{row.totalAmount?.toFixed(2)}</td>
+                  <td className="py-4 px-3 capitalize">{row.frequency}</td>
+                  <td className="py-4 px-3">
                     <span className={`px-3 py-1.5 rounded-lg border text-[13px] font-semibold ${
                       row.status === 'processed' ? 'text-[#2ECC71] bg-[#E4F8ED] border-[#2ECC71]/20' : 'text-[#E74C3C] bg-[#FDEDEC] border-[#E74C3C]/20'
                     }`}>{row.status}</span>

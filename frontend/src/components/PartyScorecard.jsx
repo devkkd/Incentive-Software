@@ -163,9 +163,9 @@ export default function PartyScorecard() {
       {loading && <p className="py-12 text-center text-sm text-gray-500">Loading…</p>}
 
       {auditOpen && audit && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 no-print"
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-0 sm:p-4 no-print"
              onClick={() => setAuditOpen(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[85vh] flex flex-col"
+          <div className="bg-white rounded-none sm:rounded-2xl shadow-xl w-full h-full sm:h-auto max-w-4xl max-h-[85vh] flex flex-col"
                onClick={(e) => e.stopPropagation()}>
             <div className="p-5 border-b border-gray-100 flex items-start justify-between gap-4">
               <div>
@@ -308,7 +308,7 @@ export default function PartyScorecard() {
                     </td>
                     <td className="px-4 py-2.5">
                       {w.isHold
-                        ? <span className="text-amber-700 text-[11px] font-medium" title={w.holdReason || ''}>
+                        ? <span className="text-amber-700 text-[11px] font-medium" title={w.holdReason || <span className='text-gray-300'>—</span>}>
                             On hold ({w.holdLevel})
                           </span>
                         : <span className="text-gray-400 text-[11px]">Available</span>}

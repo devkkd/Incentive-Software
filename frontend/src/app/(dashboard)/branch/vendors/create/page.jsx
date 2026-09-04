@@ -108,7 +108,7 @@ export default function CreateVendorPage() {
   };
 
   return (
-    <div className="p-8 md:p-10 max-w-[1600px] mx-auto">
+    <div className="p-4 sm:p-6 md:p-10 max-w-[1600px] mx-auto">
 
       {/* Page Header */}
       <div className="mb-8">
@@ -119,6 +119,7 @@ export default function CreateVendorPage() {
           </svg>
           <span className="text-gray-800 font-medium">Create New Vendor</span>
         </div>
+        <h2 className="text-[14px] text-gray-700 mb-1">Welcome to Faith Trust Commitment - Incentive Management</h2>
         <h1 className="text-[28px] font-bold text-black tracking-tight">Create New Vendor</h1>
       </div>
 
