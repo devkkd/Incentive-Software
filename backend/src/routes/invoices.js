@@ -7,6 +7,7 @@ const MonthlyWallet = require('../models/MonthlyWallet');
 const Wallet = require('../models/Wallet');
 const OtpToken = require('../models/OtpToken');
 const SystemSetting = require('../models/SystemSetting');
+const { audit } = require('../services/audit');
 const Division = require('../models/Division');
 const { protect, authorize } = require('../middleware/auth');
 const { sendSmsOtp, sendRedemptionConfirmation } = require('../config/sms');
@@ -483,6 +484,16 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
 
     await session.endSession();
 
+    audit({
+      vendor, eventType: 'redemption', actor: req.user, source: 'branch',
+      amount: redeemAmt, balanceAfter: newBalance,
+      walletLabel: walletDeductions.map((d) => d.label).join(', '),
+      invoiceNumber: prefixedInvoiceNumber, referenceNo,
+      summary:
+        `Redeemed ₹${redeemAmt.toFixed(2)} against ${prefixedInvoiceNumber} ` +
+        `from ${walletDeductions.map((d) => d.label).join(', ')}`,
+    });
+
     // Send WhatsApp confirmation (non-blocking)
     sendRedemptionConfirmation(
       vendor.mobileNumber,
@@ -501,6 +512,323 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
         newWalletBalance: vendor.walletBalance,
         walletDeductions,
       },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// POINT 19 — REASSIGN THE WALLET AN INVOICE WAS REDEEMED FROM
+//
+// This is NOT an edit to a field. It is a reversal and a re-application:
+//   1. Credit the amount back to the original wallet
+//   2. Debit it from the target wallet
+//   3. Record both as visible transactions
+//   4. Note the change on the invoice
+//
+// All four in one transaction. The original debit is never touched — deleting
+// or altering it would falsify the audit trail, and the party statement must
+// show what actually happened rather than a tidied version of it.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// @route   GET /api/invoices/:id/reassign-options
+// @desc    Which wallets this invoice drew from, and where it could move to
+// @access  Admin
+router.get('/:id/reassign-options', protect, authorize('admin'), async (req, res) => {
+  try {
+    const invoice = await Invoice.findById(req.params.id)
+      .populate('vendor', 'companyName accountNumber walletBalance')
+      .lean();
+    if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
+
+    // What this invoice actually drew from
+    const debits = await WalletTransaction.find({
+      invoice: invoice._id, type: 'debit', monthlyWallet: { $ne: null },
+    }).lean();
+
+    const mwIds = debits.map((d) => d.monthlyWallet);
+    const sources = await MonthlyWallet.find({ _id: { $in: mwIds } }).lean();
+    const sourceById = new Map(sources.map((m) => [String(m._id), m]));
+
+    // Every other wallet this party holds
+    const allWallets = await MonthlyWallet.find({ vendor: invoice.vendor._id })
+      .sort({ year: 1, month: 1 })
+      .lean();
+
+    const parents = await Wallet.find({
+      _id: { $in: allWallets.map((m) => m.wallet).filter(Boolean) },
+    }).select('_id name isHold').lean();
+    const parentById = new Map(parents.map((w) => [String(w._id), w]));
+
+    res.status(200).json({
+      success: true,
+      invoice: {
+        _id: invoice._id,
+        invoiceNumber: invoice.invoiceNumber,
+        referenceNo: invoice.referenceNo,
+        invoiceDate: invoice.invoiceDate,
+        redeemedAmount: invoice.redeemedAmount,
+        partyName: invoice.vendor?.companyName,
+        partyCode: invoice.vendor?.accountNumber,
+        reassignmentCount: invoice.reassignmentCount || 0,
+      },
+      // Where the money came from — one row per wallet used
+      sources: debits.map((d) => {
+        const mw = sourceById.get(String(d.monthlyWallet));
+        return {
+          monthlyWalletId: d.monthlyWallet,
+          label: d.walletLabel || mw?.label || '',
+          amount: parseFloat((d.amount || 0).toFixed(2)),
+          currentBalance: mw ? parseFloat((mw.balance || 0).toFixed(2)) : null,
+        };
+      }),
+      // Where it could go instead
+      targets: allWallets
+        .filter((m) => !mwIds.some((id) => String(id) === String(m._id)))
+        .map((m) => {
+          const parent = m.wallet ? parentById.get(String(m.wallet)) : null;
+          return {
+            monthlyWalletId: m._id,
+            label: parent?.name || m.label || '',
+            balance: parseFloat((m.balance || 0).toFixed(2)),
+            creditedAmount: parseFloat((m.creditedAmount || 0).toFixed(2)),
+            isHold: !!(m.isHold || parent?.isHold),
+            holdReason: m.holdReason || parent?.holdReason || null,
+            // Moving a redemption ONTO a wallet spends it, so it needs the room
+            hasRoom: (m.balance || 0),
+          };
+        }),
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   PATCH /api/invoices/:id/reassign
+// @desc    Move a redemption from one wallet to another
+// @access  Admin
+router.patch('/:id/reassign', protect, authorize('admin'), async (req, res) => {
+  const session = await mongoose.startSession();
+  try {
+    const { fromMonthlyWalletId, toMonthlyWalletId, amount, reason, overrideHold } = req.body;
+    const amt = parseFloat(amount);
+
+    if (!reason?.trim() || reason.trim().length < 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'A reason of at least 10 characters is required — this is recorded.',
+      });
+    }
+    if (!fromMonthlyWalletId || !toMonthlyWalletId) {
+      return res.status(400).json({ success: false, message: 'Choose both wallets' });
+    }
+    if (String(fromMonthlyWalletId) === String(toMonthlyWalletId)) {
+      return res.status(400).json({ success: false, message: 'Those are the same wallet' });
+    }
+    if (isNaN(amt) || amt <= 0) {
+      return res.status(400).json({ success: false, message: 'Amount must be greater than zero' });
+    }
+
+    const invoice = await Invoice.findById(req.params.id).populate('vendor', 'companyName accountNumber');
+    if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
+
+    // Repeated reassignment makes the trail very hard to follow
+    if ((invoice.reassignmentCount || 0) >= 1 && !overrideHold) {
+      return res.status(400).json({
+        success: false,
+        message:
+          'This invoice has already been reassigned once. Reassigning again makes the ' +
+          'audit trail hard to follow — confirm explicitly if you are sure.',
+        needsConfirmation: true,
+      });
+    }
+
+    // The original debit must actually exist and cover the amount
+    const originalDebit = await WalletTransaction.findOne({
+      invoice: invoice._id, type: 'debit', monthlyWallet: fromMonthlyWalletId,
+    });
+    if (!originalDebit) {
+      return res.status(400).json({
+        success: false,
+        message: 'This invoice did not draw from that wallet',
+      });
+    }
+    if (amt > originalDebit.amount + 0.01) {
+      return res.status(400).json({
+        success: false,
+        message: `Only ₹${originalDebit.amount.toFixed(2)} was drawn from that wallet`,
+      });
+    }
+
+    const target = await MonthlyWallet.findById(toMonthlyWalletId);
+    if (!target) return res.status(404).json({ success: false, message: 'Target wallet not found' });
+    if (String(target.vendor) !== String(invoice.vendor._id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'That wallet belongs to a different party',
+      });
+    }
+
+    const targetParent = target.wallet ? await Wallet.findById(target.wallet).lean() : null;
+    if ((target.isHold || targetParent?.isHold) && !overrideHold) {
+      return res.status(400).json({
+        success: false,
+        message: 'The target wallet is on hold. Confirm explicitly to proceed.',
+        needsConfirmation: true,
+      });
+    }
+
+    let fromLabel, toLabel;
+
+    try {
+      await session.withTransaction(async () => {
+        // 1. Give the money back to the original wallet
+        const from = await MonthlyWallet.findByIdAndUpdate(
+          fromMonthlyWalletId,
+          { $inc: { balance: amt } },
+          { new: true, session }
+        );
+        if (!from) throw new Error('Original wallet no longer exists');
+        fromLabel = from.label;
+
+        // 2. Take it from the target — atomic, so it cannot go negative
+        const to = await MonthlyWallet.findOneAndUpdate(
+          { _id: toMonthlyWalletId, balance: { $gte: amt } },
+          { $inc: { balance: -amt } },
+          { new: true, session }
+        );
+        if (!to) {
+          throw new Error(
+            `The target wallet does not hold ₹${amt.toFixed(2)}. Nothing has been changed.`
+          );
+        }
+        toLabel = to.label;
+
+        // 3. Two visible entries. The original debit is left exactly as it was.
+        //    The pair nets to zero, so the party's balance is unaffected.
+        const stamp = new Date().toLocaleDateString('en-IN');
+        await WalletTransaction.create([
+          {
+            vendor: invoice.vendor._id,
+            invoice: invoice._id,
+            type: 'credit',
+            amount: amt,
+            balanceAfter: null,
+            description: `Reversal — reassigned from ${fromLabel} to ${toLabel} on ${stamp}`,
+            processedBy: req.user._id,
+            monthlyWallet: from._id,
+            walletLabel: fromLabel,
+            isReassignment: true,
+          },
+          {
+            vendor: invoice.vendor._id,
+            invoice: invoice._id,
+            type: 'debit',
+            amount: amt,
+            balanceAfter: null,
+            description: `Re-applied — reassigned from ${fromLabel} to ${toLabel} on ${stamp}`,
+            processedBy: req.user._id,
+            monthlyWallet: to._id,
+            walletLabel: toLabel,
+            isReassignment: true,
+          },
+        ], { session, ordered: true });
+
+        // 4. Note it on the invoice
+        await Invoice.findByIdAndUpdate(
+          invoice._id,
+          {
+            $inc: { reassignmentCount: 1 },
+            $push: {
+              reassignments: {
+                fromWallet: fromLabel,
+                toWallet: toLabel,
+                amount: amt,
+                reason: reason.trim(),
+                byUser: req.user._id,
+                byUserName: req.user.name || null,
+                at: new Date(),
+              },
+            },
+          },
+          { session }
+        );
+      });
+    } catch (txErr) {
+      await session.endSession();
+      console.error('[reassign] rolled back —', txErr.message);
+      return res.status(409).json({ success: false, message: txErr.message });
+    }
+    await session.endSession();
+
+    console.warn(
+      `[REASSIGN] ${req.user.name} moved ₹${amt} on invoice ${invoice.invoiceNumber} ` +
+      `from ${fromLabel} to ${toLabel}. Reason: ${reason.trim()}`
+    );
+
+    audit({
+      vendor: invoice.vendor, eventType: 'redemption.reassigned',
+      actor: req.user, source: 'admin',
+      amount: amt, walletLabel: `${fromLabel} → ${toLabel}`,
+      invoiceNumber: invoice.invoiceNumber,
+      reason: reason.trim(),
+      changes: [{ field: 'sourceWallet', from: fromLabel, to: toLabel }],
+      summary: `Moved ₹${amt.toFixed(2)} from ${fromLabel} to ${toLabel}`,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Moved ₹${amt.toFixed(2)} from ${fromLabel} to ${toLabel}`,
+      data: { fromWallet: fromLabel, toWallet: toLabel, amount: amt },
+    });
+  } catch (error) {
+    console.error('[reassign]', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   GET /api/invoices/reassignments
+// @desc    POINT 20.11 — every invoice whose source wallet was changed
+// @access  Admin
+router.get('/reassignments', protect, authorize('admin'), async (req, res) => {
+  try {
+    const invoices = await Invoice.find({ reassignmentCount: { $gt: 0 } })
+      .populate('vendor', 'companyName accountNumber')
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    const rows = [];
+    for (const inv of invoices) {
+      for (const r of inv.reassignments || []) {
+        rows.push({
+          date: r.at,
+          adminUser: r.byUserName || '(unknown)',
+          partyCode: inv.vendor?.accountNumber || '(deleted party)',
+          partyName: inv.vendor?.companyName || '(deleted party)',
+          invoiceNumber: inv.invoiceNumber,
+          amount: parseFloat((r.amount || 0).toFixed(2)),
+          movedFrom: r.fromWallet,
+          movedTo: r.toWallet,
+          reason: r.reason,
+          timesReassigned: inv.reassignmentCount,
+        });
+      }
+    }
+
+    rows.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    res.status(200).json({
+      success: true,
+      generatedAt: new Date(),
+      summary: {
+        total: rows.length,
+        totalValue: parseFloat(rows.reduce((a, r) => a + r.amount, 0).toFixed(2)),
+        invoicesAffected: invoices.length,
+        // More than once is worth a look — the trail gets hard to follow
+        multipleReassignments: invoices.filter((i) => i.reassignmentCount > 1).length,
+      },
+      rows,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -725,6 +1053,16 @@ router.post('/admin-redeem', protect, authorize('admin'), async (req, res) => {
       `[ADMIN OVERRIDE] ${req.user.name} redeemed ₹${redeemAmt} for ` +
       `${vendor.accountNumber} without party OTP. Reason: ${reason.trim()}`
     );
+
+    audit({
+      vendor, eventType: 'redemption.adminOverride', actor: req.user, source: 'admin',
+      amount: redeemAmt, balanceAfter: newBalance,
+      walletLabel: deductions.map((d) => d.label).join(', '),
+      invoiceNumber: prefixedInvoiceNumber, referenceNo,
+      reason: reason.trim(),
+      summary:
+        `ADMIN OVERRIDE — redeemed ₹${redeemAmt.toFixed(2)} without party OTP approval`,
+    });
 
     // The party is told regardless — they should learn their balance changed
     // even though they were not asked to approve it.

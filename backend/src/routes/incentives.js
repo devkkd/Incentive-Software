@@ -8,6 +8,7 @@ const Wallet = require('../models/Wallet');
 const IncentiveUpload = require('../models/IncentiveUpload');
 const OtpToken = require('../models/OtpToken');
 const { protect, authorize } = require('../middleware/auth');
+const { audit } = require('../services/audit');
 const { sendOtpEmail } = require('../config/email');
 const { sendIncentiveCreditNotification } = require('../config/sms');
 
@@ -362,6 +363,21 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
           remark || `Incentive — ${walletLabel}`
         ).catch((err) => console.error(`[CREDIT NOTIFY FAILED] ${vendor.mobileNumber}: ${err.message}`));
       }
+
+      audit({
+        vendor, actor: req.user, source: 'upload',
+        eventType:
+          isDuplicate && mode === 'replace' ? 'incentive.replaced'
+          : isDuplicate ? 'incentive.topup'
+          : 'incentive.credited',
+        amount: creditDelta, balanceAfter: newBalance, walletLabel,
+        summary:
+          isDuplicate && mode === 'replace'
+            ? `Corrected ${walletLabel} to ₹${amount.toFixed(2)}`
+            : isDuplicate
+            ? `Topped up ${walletLabel} by ₹${amount.toFixed(2)}`
+            : `Credited ₹${amount.toFixed(2)} to ${walletLabel}`,
+      });
 
       totalAmount += amount;
       results.success.push({

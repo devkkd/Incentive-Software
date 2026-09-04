@@ -71,6 +71,27 @@ const invoiceSchema = new mongoose.Schema(
       default: false,
     },
 
+    // ── POINT 19 — wallet reassignment ─────────────────────────────────────
+    // Set when the wallet a redemption was drawn from has been changed after
+    // the fact. The original entries are never edited — a reversal and a
+    // re-application are added instead, so the statement tells the whole story.
+    reassignmentCount: {
+      type: Number,
+      default: 0,
+    },
+    reassignments: [
+      {
+        fromWallet: String,
+        toWallet: String,
+        amount: Number,
+        reason: String,
+        byUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        byUserName: String,
+        at: { type: Date, default: Date.now },
+        _id: false,
+      },
+    ],
+
     remark: {
       type: String,
       trim: true,

@@ -3,6 +3,7 @@ const multer = require('multer');
 const XLSX = require('xlsx');
 const Vendor = require('../models/Vendor');
 const DeletedParty = require('../models/DeletedParty');
+const { audit, diff } = require('../services/audit');
 const Division = require('../models/Division');
 const Invoice = require('../models/Invoice');
 const { protect, authorize } = require('../middleware/auth');
@@ -70,6 +71,12 @@ router.post('/', protect, authorize('admin'), async (req, res) => {
       partyType: partyType || null,
       division: divisionId,
       createdBy: req.user._id,
+    });
+
+    audit({
+      vendor, eventType: 'party.created', actor: req.user,
+      source: req.user.role === 'admin' ? 'admin' : 'branch',
+      summary: `Party created — ${vendor.companyName}`,
     });
 
     res.status(201).json({ success: true, data: vendor });
@@ -399,6 +406,14 @@ router.put('/:id', protect, authorize('admin'), async (req, res) => {
       }
     }
 
+    // POINT 21b — snapshot before the edit, so the trail can say what changed
+    const beforeEdit = {
+      companyName: vendor.companyName, personName: vendor.personName,
+      mobileNumber: vendor.mobileNumber, email: vendor.email, address: vendor.address,
+      status: vendor.status, salesPerson: vendor.salesPerson, partyCity: vendor.partyCity,
+      partyType: vendor.partyType, accountNumber: vendor.accountNumber,
+    };
+
     vendor.companyName = companyName !== undefined ? companyName : vendor.companyName;
     vendor.personName = personName !== undefined ? personName : vendor.personName;
     vendor.mobileNumber = mobileNumber !== undefined ? mobileNumber : vendor.mobileNumber;
@@ -412,6 +427,22 @@ router.put('/:id', protect, authorize('admin'), async (req, res) => {
     vendor.division = updatedDivision;
 
     await vendor.save();
+
+    const edits = diff(beforeEdit, vendor, Object.keys(beforeEdit));
+    if (edits.length) {
+      const statusChange = edits.find((c) => c.field === 'status');
+      audit({
+        vendor, actor: req.user,
+        source: req.user.role === 'admin' ? 'admin' : 'branch',
+        eventType:
+          statusChange?.to === 'blocked' ? 'party.blocked'
+          : statusChange?.from === 'blocked' ? 'party.unblocked'
+          : 'party.updated',
+        changes: edits,
+        summary: `${edits.length} field${edits.length === 1 ? '' : 's'} changed: ` +
+                 edits.map((c) => c.field).join(', '),
+      });
+    }
 
     res.status(200).json({ success: true, data: vendor });
   } catch (error) {
@@ -435,6 +466,14 @@ router.put('/:id/block', protect, authorize('branch', 'admin'), async (req, res)
     );
 
     if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
+
+    audit({
+      vendor, eventType: 'party.blocked', actor: req.user,
+      source: req.user.role === 'admin' ? 'admin' : 'branch',
+      reason: blockReason.trim(),
+      amount: vendor.walletBalance || 0,
+      summary: `Party blocked while holding ₹${(vendor.walletBalance || 0).toFixed(2)}`,
+    });
 
     res.status(200).json({ success: true, data: vendor });
   } catch (error) {
@@ -519,6 +558,13 @@ router.delete('/:id', protect, authorize('admin'), async (req, res) => {
     });
 
     await Vendor.findByIdAndDelete(req.params.id);
+
+    audit({
+      vendor, eventType: 'party.deleted', actor: req.user, source: 'admin',
+      amount: vendor.walletBalance || 0,
+      reason: req.body?.reason?.trim() || null,
+      summary: `Party deleted holding ₹${(vendor.walletBalance || 0).toFixed(2)}`,
+    });
 
     res.status(200).json({ success: true, data: {} });
   } catch (error) {

@@ -4,6 +4,7 @@ const Wallet = require('../models/Wallet');
 const MonthlyWallet = require('../models/MonthlyWallet');
 const WalletTransaction = require('../models/WalletTransaction');
 const Invoice = require('../models/Invoice');
+const AuditLog = require('../models/AuditLog');
 const { protect, authorize } = require('../middleware/auth');
 
 const router = express.Router();
@@ -985,6 +986,89 @@ router.get('/unusual-patterns', protect, authorize('admin'), async (req, res) =>
     });
   } catch (error) {
     console.error('[unusual-patterns]', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * POINT 21b — AUDIT TRAIL
+ *
+ * Everything that has happened to one party, in order.
+ *
+ * Money movement before this feature was installed can be partially rebuilt
+ * from WalletTransaction. Those entries are marked `reconstructed` so they are
+ * never mistaken for a real audit record — party edits, holds and OTP events
+ * from that period were never recorded and cannot be recovered.
+ */
+router.get('/audit/:vendorId', protect, authorize('admin'), async (req, res) => {
+  try {
+    const vendor = await Vendor.findById(req.params.vendorId)
+      .select('companyName accountNumber')
+      .lean();
+    if (!vendor) return res.status(404).json({ success: false, message: 'Party not found' });
+
+    const captured = await AuditLog.find({ vendorId: vendor._id })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Rebuild what we can from before the trail existed
+    const earliest = captured.length
+      ? new Date(Math.min(...captured.map((c) => new Date(c.createdAt))))
+      : new Date();
+
+    const older = await WalletTransaction.find({
+      vendor: vendor._id,
+      createdAt: { $lt: earliest },
+    })
+      .populate('invoice', 'invoiceNumber referenceNo')
+      .populate('processedBy', 'name')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const reconstructed = older.map((tx) => ({
+      _id: `recon-${tx._id}`,
+      createdAt: tx.createdAt,
+      eventType: tx.type === 'credit' ? 'incentive.credited' : 'redemption',
+      actorName: tx.processedBy?.name || null,
+      source: 'system',
+      amount: parseFloat((tx.amount || 0).toFixed(2)),
+      balanceAfter: tx.balanceAfter,
+      walletLabel: tx.walletLabel || null,
+      invoiceNumber: tx.invoice?.invoiceNumber || null,
+      referenceNo: tx.invoice?.referenceNo || null,
+      summary: tx.description || null,
+      changes: [],
+      reconstructed: true,
+    }));
+
+    const events = [...captured, ...reconstructed]
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    const byType = new Map();
+    for (const e of events) {
+      byType.set(e.eventType, (byType.get(e.eventType) || 0) + 1);
+    }
+
+    res.status(200).json({
+      success: true,
+      generatedAt: new Date(),
+      party: { partyCode: vendor.accountNumber, partyName: vendor.companyName },
+      summary: {
+        totalEvents: events.length,
+        capturedEvents: captured.length,
+        reconstructedEvents: reconstructed.length,
+        trailStarted: captured.length ? captured.at(-1).createdAt : null,
+        byType: [...byType.entries()].map(([type, count]) => ({ type, count })),
+      },
+      events,
+      note: reconstructed.length
+        ? `${reconstructed.length} earlier entries were rebuilt from transaction ` +
+          'records. Party edits, holds and OTP events from before the audit trail ' +
+          'was installed were never recorded and cannot be recovered.'
+        : null,
+    });
+  } catch (error) {
+    console.error('[audit trail]', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });

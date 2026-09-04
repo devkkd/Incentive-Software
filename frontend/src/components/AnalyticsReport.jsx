@@ -142,6 +142,36 @@ const REPORTS = {
     ],
   },
 
+  reassignments: {
+    title: 'Reassignment Report',
+    blurb: 'Every invoice whose source wallet was changed after the fact. Each one added a reversal and a re-application rather than editing the original.',
+    endpoint: 'reassignments',
+    base: 'invoices',
+    rowsKey: 'rows',
+    cols: [
+      ['date', 'Date', 'datetime'],
+      ['adminUser', 'Admin'],
+      ['partyCode', 'Party Code'],
+      ['partyName', 'Party Name'],
+      ['invoiceNumber', 'Invoice Number'],
+      ['amount', 'Amount', 'money'],
+      ['movedFrom', 'Moved From'],
+      ['movedTo', 'Moved To'],
+      ['reason', 'Reason'],
+      ['timesReassigned', 'Times', 'num'],
+    ],
+    cards: (s) => [
+      { label: 'Reassignments', value: num(s.total), tone: s.total > 0 ? 'warn' : 'good' },
+      { label: 'Total value moved', value: fmt(s.totalValue) },
+      { label: 'Invoices affected', value: num(s.invoicesAffected) },
+      {
+        label: 'Moved more than once', value: num(s.multipleReassignments),
+        tone: s.multipleReassignments > 0 ? 'bad' : 'good',
+      },
+    ],
+    highlight: (r) => r.timesReassigned > 1,
+  },
+
   branch: {
     title: 'Branch Performance',
     blurb: 'Which branches are promoting the scheme. Read the caveat below before comparing.',

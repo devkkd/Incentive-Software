@@ -5,6 +5,7 @@ const MonthlyWallet = require('../models/MonthlyWallet');
 const Vendor = require('../models/Vendor');
 const WalletTransaction = require('../models/WalletTransaction');
 const { protect, authorize } = require('../middleware/auth');
+const { audit } = require('../services/audit');
 
 const router = express.Router();
 
@@ -318,6 +319,13 @@ router.patch('/:id/rename', protect, authorize('admin'), async (req, res) => {
 
     // Historical transaction descriptions are deliberately left alone — they
     // are a record of what was true at the time.
+    audit({
+      vendorId: null, eventType: 'wallet.renamed', actor: req.user, source: 'admin',
+      walletLabel: newName,
+      changes: [{ field: 'walletName', from: oldName, to: newName }],
+      summary: `Wallet renamed from "${oldName}" to "${newName}" — ${relabelled} party wallets updated`,
+    });
+
     res.status(200).json({
       success: true,
       message: `Renamed to "${newName}"`,

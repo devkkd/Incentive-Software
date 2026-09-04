@@ -438,6 +438,7 @@ export default function AdminReportsPage() {
                 { id: 'scorecard', label: 'Party Scorecard' },
                 { id: 'patterns', label: 'Unusual Patterns' },
                 { id: 'overrides', label: 'Admin Overrides' },
+                { id: 'reassignments', label: 'Reassignments' },
               ].map((r) => (
                 <button key={r.id} onClick={() => { setReportType(r.id); setShowResults(false); }}
                   className={`px-5 py-2.5 rounded-xl text-[13px] font-semibold transition-colors ${reportType === r.id ? 'bg-[#2B3B8A] text-white shadow-sm' : 'bg-[#8492A6] text-white hover:bg-gray-500'}`}>
@@ -468,7 +469,7 @@ export default function AdminReportsPage() {
 
           {/* Exception Report needs no timeline or filters — it is a snapshot
               of the data as it stands right now. */}
-          {['exceptions', 'ageing', 'dormant', 'movement', 'scheme', 'velocity', 'ratio', 'branch', 'scorecard', 'patterns', 'overrides'].includes(reportType) ? null : (
+          {['exceptions', 'ageing', 'dormant', 'movement', 'scheme', 'velocity', 'ratio', 'branch', 'scorecard', 'patterns', 'overrides', 'reassignments'].includes(reportType) ? null : (
           <>
           {/* Column 2: Timeline Presets */}
           <div className="p-4 sm:p-8 md:w-1/3 border-b md:border-b-0 md:border-r border-gray-100">
@@ -518,7 +519,7 @@ export default function AdminReportsPage() {
         </div>
 
         {/* Action — the Exception Report loads itself, so no button */}
-        {!['exceptions', 'ageing', 'dormant', 'movement', 'scheme', 'velocity', 'ratio', 'branch', 'scorecard', 'patterns', 'overrides'].includes(reportType) && (
+        {!['exceptions', 'ageing', 'dormant', 'movement', 'scheme', 'velocity', 'ratio', 'branch', 'scorecard', 'patterns', 'overrides', 'reassignments'].includes(reportType) && (
           <div className="border-t border-gray-100 p-6 flex justify-center bg-white">
             <button onClick={handleGetReports} disabled={loading}
               className="bg-[#2B3B8A] hover:bg-[#1a2d6b] disabled:opacity-60 transition-colors text-white font-semibold px-10 py-3 rounded-xl flex items-center justify-center gap-2">
@@ -532,7 +533,7 @@ export default function AdminReportsPage() {
       {reportType === 'exceptions' && <ExceptionReport />}
       {reportType === 'ageing' && <LiabilityAgeing />}
       {reportType === 'dormant' && <DormantParties />}
-      {['movement', 'scheme', 'velocity', 'ratio', 'branch', 'overrides'].includes(reportType) && (
+      {['movement', 'scheme', 'velocity', 'ratio', 'branch', 'overrides', 'reassignments'].includes(reportType) && (
         <AnalyticsReport type={reportType} />
       )}
       {reportType === 'scorecard' && <PartyScorecard />}

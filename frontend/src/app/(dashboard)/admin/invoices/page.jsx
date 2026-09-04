@@ -109,6 +109,57 @@ export default function AdminInvoicesPage() {
   const [wallets, setWallets]             = useState([]);
   const [walletFilter, setWalletFilter]   = useState('');
   const [sort, setSort]                   = useState({ by: '', order: '' });   // Point 11
+
+  // ── POINT 19 — wallet reassignment ──────────────────────────────────────
+  const [reassign, setReassign] = useState(null);   // { invoice, sources, targets }
+  const [raFrom, setRaFrom] = useState('');
+  const [raTo, setRaTo] = useState('');
+  const [raAmount, setRaAmount] = useState('');
+  const [raReason, setRaReason] = useState('');
+  const [raOverride, setRaOverride] = useState(false);
+  const [raBusy, setRaBusy] = useState(false);
+  const [raError, setRaError] = useState('');
+
+  const openReassign = async (row) => {
+    setRaError(''); setRaFrom(''); setRaTo(''); setRaAmount(''); setRaReason(''); setRaOverride(false);
+    try {
+      const res = await fetch(`${API}/api/invoices/${row._id}/reassign-options`, {
+        headers: authHeaders(), credentials: 'include',
+      });
+      const json = await res.json();
+      if (!json.success) { alert(json.message); return; }
+      setReassign(json);
+      if (json.sources.length === 1) {
+        setRaFrom(json.sources[0].monthlyWalletId);
+        setRaAmount(String(json.sources[0].amount));
+      }
+    } catch { alert('Could not reach the server'); }
+  };
+
+  const submitReassign = async () => {
+    setRaBusy(true); setRaError('');
+    try {
+      const res = await fetch(`${API}/api/invoices/${reassign.invoice._id}/reassign`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          fromMonthlyWalletId: raFrom,
+          toMonthlyWalletId: raTo,
+          amount: parseFloat(raAmount),
+          reason: raReason.trim(),
+          overrideHold: raOverride,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) { setReassign(null); fetchInvoices(page); }
+      else {
+        setRaError(json.message);
+        if (json.needsConfirmation) setRaOverride(true);
+      }
+    } catch { setRaError('Could not reach the server'); }
+    finally { setRaBusy(false); }
+  };
   const [locationOptions, setLocationOptions] = useState([]);
 
   // Load divisions once
@@ -315,6 +366,122 @@ export default function AdminInvoicesPage() {
   // ── Render ─────────────────────────────────────────────────────────
   return (
     <div className="p-6 md:p-10 max-w-[1700px] mx-auto">
+
+      {/* ── POINT 19 — reassign the wallet a redemption came from ────────── */}
+      {reassign && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+             onClick={() => setReassign(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[88vh] overflow-auto p-6 space-y-4"
+               onClick={(e) => e.stopPropagation()}>
+            <div>
+              <h3 className="text-[18px] font-bold text-gray-900">Change source wallet</h3>
+              <p className="text-[13px] text-gray-500 mt-1">
+                {reassign.invoice.invoiceNumber} · {reassign.invoice.partyName} ·{' '}
+                ₹{Number(reassign.invoice.redeemedAmount).toLocaleString('en-IN')}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-3 text-[12px] text-gray-600 leading-relaxed">
+              The original entry is never altered. A <strong>reversal</strong> and a{' '}
+              <strong>re-application</strong> are added, so the party statement shows
+              exactly what happened. The party&rsquo;s total balance does not change.
+            </div>
+
+            {reassign.invoice.reassignmentCount > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
+                This invoice has already been reassigned {reassign.invoice.reassignmentCount} time
+                {reassign.invoice.reassignmentCount === 1 ? '' : 's'}.
+              </div>
+            )}
+
+            <div>
+              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                Move from
+              </label>
+              <select value={raFrom}
+                onChange={(e) => {
+                  setRaFrom(e.target.value);
+                  const s = reassign.sources.find((x) => x.monthlyWalletId === e.target.value);
+                  if (s) setRaAmount(String(s.amount));
+                }}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[14px] cursor-pointer focus:outline-none focus:border-[#2B3B8A]">
+                <option value="">Select the wallet it came from…</option>
+                {reassign.sources.map((s) => (
+                  <option key={s.monthlyWalletId} value={s.monthlyWalletId}>
+                    {s.label} — ₹{s.amount.toFixed(2)} drawn
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                Move to
+              </label>
+              <select value={raTo} onChange={(e) => setRaTo(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[14px] cursor-pointer focus:outline-none focus:border-[#2B3B8A]">
+                <option value="">Select the wallet it should have come from…</option>
+                {reassign.targets.map((tg) => (
+                  <option key={tg.monthlyWalletId} value={tg.monthlyWalletId}
+                    disabled={tg.balance < parseFloat(raAmount || 0)}>
+                    {tg.label} — balance ₹{tg.balance.toFixed(2)}
+                    {tg.isHold ? ' (on hold)' : ''}
+                    {tg.balance < parseFloat(raAmount || 0) ? ' — not enough' : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-gray-500 mt-1">
+                The target wallet must hold enough — the redemption moves onto it.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                Amount
+              </label>
+              <input type="number" value={raAmount} onChange={(e) => setRaAmount(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[14px] tabular-nums focus:outline-none focus:border-[#2B3B8A]" />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                Reason — recorded against this invoice
+              </label>
+              <textarea value={raReason} onChange={(e) => setRaReason(e.target.value)} rows={2}
+                placeholder="e.g. Should have been drawn from July, not June"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[13px] focus:outline-none focus:border-[#2B3B8A]" />
+              {raReason.trim().length > 0 && raReason.trim().length < 10 && (
+                <p className="text-[11px] text-amber-700 mt-1">Please give a fuller reason.</p>
+              )}
+            </div>
+
+            {raError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
+                {raError}
+                {raOverride && (
+                  <label className="flex items-center gap-2 mt-2 text-[12px] font-medium cursor-pointer">
+                    <input type="checkbox" checked={raOverride}
+                      onChange={(e) => setRaOverride(e.target.checked)} className="cursor-pointer" />
+                    I understand — proceed anyway
+                  </label>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={() => setReassign(null)} disabled={raBusy}
+                className="px-4 py-2 text-[13px] font-semibold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer">
+                Cancel
+              </button>
+              <button onClick={submitReassign}
+                disabled={raBusy || !raFrom || !raTo || !(parseFloat(raAmount) > 0) || raReason.trim().length < 10}
+                className="px-5 py-2 text-[13px] font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl cursor-pointer">
+                {raBusy ? 'Moving…' : 'Move redemption'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── EDIT MODAL ──────────────────────────────────────────────── */}
       {editModal.isOpen && (
@@ -640,6 +807,13 @@ export default function AdminInvoicesPage() {
                         className="px-3 py-1.5 bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white text-[11px] font-bold rounded-lg transition-colors">
                         Edit
                       </button>
+                      {row.redeemAmount > 0 && (
+                        <button onClick={() => openReassign(row)}
+                          title="Change which wallet this was redeemed from"
+                          className="px-3 py-1.5 bg-amber-50 hover:bg-amber-500 text-amber-700 hover:text-white text-[11px] font-bold rounded-lg transition-colors border border-amber-200 hover:border-amber-500 cursor-pointer">
+                          Wallet
+                        </button>
+                      )}
                       <button onClick={() => handleDelete(row._id)}
                         className="px-3 py-1.5 bg-red-50 hover:bg-red-500 text-red-500 hover:text-white text-[11px] font-bold rounded-lg transition-colors border border-red-200 hover:border-red-500">
                         Delete

@@ -20,6 +20,8 @@ export default function PartyScorecard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [audit, setAudit] = useState(null);
+  const [auditOpen, setAuditOpen] = useState(false);
 
   const search = async () => {
     if (!query.trim()) return;
@@ -58,13 +60,34 @@ export default function PartyScorecard() {
         headers: authHeaders(), credentials: 'include',
       });
       const json = await res.json();
-      if (json.success) setData(json);
+      if (json.success) setData({ ...json, vendorId });
       else setError(json.message || 'Could not load the scorecard');
     } catch {
       setError('Could not reach the server');
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadAudit = async (vendorId) => {
+    try {
+      const res = await fetch(`${API}/api/analytics/audit/${vendorId}`, {
+        headers: authHeaders(), credentials: 'include',
+      });
+      const json = await res.json();
+      if (json.success) { setAudit(json); setAuditOpen(true); }
+    } catch { /* the scorecard still works without it */ }
+  };
+
+  const EVENT_LABEL = {
+    'party.created': 'Party created', 'party.updated': 'Details changed',
+    'party.blocked': 'Blocked', 'party.unblocked': 'Unblocked', 'party.deleted': 'Deleted',
+    'incentive.credited': 'Incentive credited', 'incentive.topup': 'Top-up',
+    'incentive.replaced': 'Amount corrected', 'reconciliation.adjusted': 'Reconciliation',
+    'redemption': 'Redemption', 'redemption.adminOverride': 'Admin override',
+    'redemption.reassigned': 'Wallet reassigned', 'invoice.deleted': 'Invoice deleted',
+    'wallet.held': 'Wallet held', 'wallet.released': 'Wallet released',
+    'wallet.renamed': 'Wallet renamed',
   };
 
   const Field = ({ label, value }) => (
@@ -94,10 +117,16 @@ export default function PartyScorecard() {
           </p>
         </div>
         {data && (
+          <div className="flex gap-2 shrink-0">
+          <button onClick={() => loadAudit(data.vendorId)}
+            className="px-4 py-2 bg-white border border-gray-200 hover:border-[#2B3B8A] text-gray-700 text-[13px] font-semibold rounded-xl cursor-pointer">
+            Audit trail
+          </button>
           <button onClick={() => window.print()}
-            className="px-4 py-2 bg-white border border-gray-200 hover:border-[#2B3B8A] text-gray-700 text-[13px] font-semibold rounded-xl cursor-pointer shrink-0">
+            className="px-4 py-2 bg-white border border-gray-200 hover:border-[#2B3B8A] text-gray-700 text-[13px] font-semibold rounded-xl cursor-pointer">
             Print
           </button>
+          </div>
         )}
       </div>
 
@@ -132,6 +161,75 @@ export default function PartyScorecard() {
         <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700 no-print">{error}</div>
       )}
       {loading && <p className="py-12 text-center text-sm text-gray-500">Loading…</p>}
+
+      {auditOpen && audit && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 no-print"
+             onClick={() => setAuditOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[85vh] flex flex-col"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 border-b border-gray-100 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-[18px] font-bold text-gray-900">Audit trail</h3>
+                <p className="text-[13px] text-gray-500 mt-0.5">
+                  {audit.party.partyName} · {audit.summary.totalEvents} events
+                  {audit.summary.reconstructedEvents > 0 &&
+                    ` (${audit.summary.reconstructedEvents} rebuilt from older records)`}
+                </p>
+              </div>
+              <button onClick={() => setAuditOpen(false)}
+                className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500 cursor-pointer">
+                &times;
+              </button>
+            </div>
+
+            <div className="overflow-auto flex-1 divide-y divide-gray-100">
+              {audit.events.map((e) => (
+                <div key={e._id} className={`px-5 py-3 ${e.reconstructed ? 'bg-gray-50/60' : ''}`}>
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="text-[13px] font-semibold text-gray-900">
+                      {EVENT_LABEL[e.eventType] || e.eventType}
+                      {e.reconstructed && (
+                        <span className="ml-2 text-[10px] font-normal text-gray-400 uppercase tracking-wide">
+                          rebuilt
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-[11px] text-gray-500 tabular-nums">
+                      {new Date(e.createdAt).toLocaleString('en-IN')}
+                      {e.actorName && ` · ${e.actorName}`}
+                    </span>
+                  </div>
+
+                  {e.summary && <p className="text-[13px] text-gray-600 mt-0.5">{e.summary}</p>}
+
+                  {e.changes?.length > 0 && (
+                    <div className="mt-1.5 space-y-0.5">
+                      {e.changes.map((c, i) => (
+                        <p key={i} className="text-[12px] text-gray-500">
+                          <span className="font-medium text-gray-700">{c.field}</span>:{' '}
+                          <span className="line-through text-red-600">{String(c.from ?? '—')}</span>
+                          {' → '}
+                          <span className="text-emerald-700">{String(c.to ?? '—')}</span>
+                        </p>
+                      ))}
+                    </div>
+                  )}
+
+                  {e.reason && (
+                    <p className="text-[12px] text-amber-700 mt-1">Reason: {e.reason}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {audit.note && (
+              <p className="px-5 py-3 border-t border-gray-100 text-[12px] text-gray-500 leading-relaxed">
+                {audit.note}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {data && (
         <div id="scorecard">
