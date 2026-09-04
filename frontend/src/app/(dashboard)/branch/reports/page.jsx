@@ -153,7 +153,7 @@ export default function ReportsPage() {
     doc.text(`Generated    : ${genDate}`, 200, 35);
     autoTable(doc, {
       startY: 66,
-      head: [['#', 'Date', 'Particulars', 'Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited (Rs)', 'Debited (Rs)', 'Wallet Balance (Rs)', 'Division']],
+      head: [['#', 'Date', 'Particulars', 'Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited Amount (Rs)', 'Debited (Rs)', 'Current Balance (Rs)', 'Location']],
       body: filteredStatementData.map((row, i) => [
         i + 1,
         row.date.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }),
@@ -182,7 +182,7 @@ export default function ReportsPage() {
       [`Wallet Balance: Rs. ${Number(v?.walletBalance || 0).toFixed(2)}`, '', `Generated: ${genDate}`],
       [],
     ];
-    const head = ['#', 'Date', 'Particulars', 'Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited (Rs)', 'Debited (Rs)', 'Wallet Balance (Rs)', 'Division'];
+    const head = ['#', 'Date', 'Particulars', 'Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited Amount (Rs)', 'Debited (Rs)', 'Current Balance (Rs)', 'Location'];
     const body = filteredStatementData.map((row, i) => [
       i + 1,
       row.date.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }),
@@ -305,7 +305,7 @@ export default function ReportsPage() {
     if (reportType === 'invoices') {
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
-        if (!`${row.invoiceNumber} ${row.referenceNo || ''} ${row.vendor?.companyName} ${row.location}`.toLowerCase().includes(q)) return false;
+        if (!`${row.invoiceNumber} ${row.referenceNo || <span className='text-gray-300'>—</span>} ${row.vendor?.companyName} ${row.location}`.toLowerCase().includes(q)) return false;
       }
     }
     if (reportType === 'incentives') {
@@ -380,7 +380,7 @@ export default function ReportsPage() {
   const getTableData = () => {
     if (reportType === 'vendors') {
       return {
-        head: ['#', 'Company Name', 'Mobile', 'Account Number', 'Wallet Balance', 'Status', 'Created'],
+        head: ['#', 'Party Name', 'Mobile Number', 'Account Number', 'Current Balance', 'Status', 'Created'],
         body: filteredData.map((v, i) => [
           i + 1, v.companyName, v.mobileNumber, v.accountNumber,
           `Rs. ${Number(v.walletBalance).toFixed(2)}`, v.status,
@@ -390,7 +390,7 @@ export default function ReportsPage() {
     }
     if (reportType === 'invoices') {
       return {
-        head: ['#', 'Invoice No', 'Reference No', 'Vendor', 'Invoice Amount', 'Amount Redeemed', 'Location', 'Date', 'Remark'],
+        head: ['#', 'Invoice Number', 'Reference Number', 'Party Name', 'Invoice Amount', 'Redeemed Amount', 'Location', 'Date', 'Remark'],
         body: filteredData.map((inv, i) => [
           i + 1, inv.invoiceNumber, inv.referenceNo || '—', inv.vendor?.companyName || 'N/A',
           `Rs. ${Number(inv.invoiceAmount).toFixed(2)}`,
@@ -403,7 +403,7 @@ export default function ReportsPage() {
     }
     // incentives
     return {
-      head: ['#', 'Vendor', 'Account No', 'Type', 'Amount', 'Balance After', 'Date'],
+      head: ['#', 'Party Name', 'Party Code', 'Type', 'Amount', 'Balance After', 'Date'],
       body: filteredData.map((t, i) => [
         i + 1, t.vendor?.companyName || 'N/A', t.vendor?.accountNumber || 'N/A',
         t.type, `Rs. ${t.amount}`, `Rs. ${t.balanceAfter}`,
@@ -428,7 +428,7 @@ export default function ReportsPage() {
               <div className="flex flex-col md:flex-row">
 
                 {/* Column 1: Report Type */}
-                <div className="p-8 md:w-1/3 border-b md:border-b-0 md:border-r border-gray-100">
+                <div className="p-4 sm:p-8 md:w-1/3 border-b md:border-b-0 md:border-r border-gray-100">
                   <h3 className="text-[22px] font-bold text-gray-900 mb-6 tracking-tight">Reports</h3>
                   <p className="text-[15px] text-gray-800 mb-4">Select a Report to Download</p>
                   <div className="flex flex-wrap gap-3">
@@ -450,7 +450,7 @@ export default function ReportsPage() {
                 </div>
 
                 {/* Column 2: Timeline Presets */}
-                <div className="p-8 md:w-1/3 border-b md:border-b-0 md:border-r border-gray-100">
+                <div className="p-4 sm:p-8 md:w-1/3 border-b md:border-b-0 md:border-r border-gray-100">
                   <p className="text-[15px] text-gray-800 mb-6">Select A Reports Timeline</p>
                   <div className="space-y-4">
                     {[
@@ -478,7 +478,7 @@ export default function ReportsPage() {
                 </div>
 
                 {/* Column 3: Manual Date */}
-                <div className="p-8 md:w-1/3">
+                <div className="p-4 sm:p-8 md:w-1/3">
                   <p className="text-[15px] text-gray-800 mb-6">Select A Reports Timeline Manually</p>
                   <div className="space-y-5">
                     <div className="space-y-2">
@@ -793,78 +793,78 @@ export default function ReportsPage() {
                   <table className="w-full text-left text-sm whitespace-nowrap">
                     <thead>
                       <tr className="border-b border-gray-200 text-gray-900">
-                        <th className="pb-4 pt-2 px-2 font-bold">#</th>
+                        <th className="pb-4 pt-2 px-3 font-bold sticky left-0 bg-white z-10">#</th>
                         {reportType === 'vendors' && <>
-                          <th className="pb-4 pt-2 px-2 font-bold">Party Name</th>
-                          <th className="pb-4 pt-2 px-2 font-bold">Mobile Number</th>
-                          <th className="pb-4 pt-2 px-2 font-bold">Party Code</th>
-                          <th className="pb-4 pt-2 px-2 font-bold">Wallet Balance</th>
-                          <th className="pb-4 pt-2 px-2 font-bold">Status</th>
-                          <th className="pb-4 pt-2 px-2 font-bold">Created</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Party Name</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Mobile Number</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Party Code</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Wallet Balance</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Status</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Created</th>
                         </>}
                         {reportType === 'invoices' && <>
-                          <th className="pb-4 pt-2 px-2 font-bold">Invoice Number</th>
-                          <th className="pb-4 pt-2 px-2 font-bold">Reference No</th>
-                          <th className="pb-4 pt-2 px-2 font-bold">Vendor</th>
-                          <th className="pb-4 pt-2 px-2 font-bold">Invoice Amount (₹)</th>
-                          <th className="pb-4 pt-2 px-2 font-bold">Amount Redeemed (₹)</th>
-                          <th className="pb-4 pt-2 px-2 font-bold">Location</th>
-                          <th className="pb-4 pt-2 px-2 font-bold">Invoice Date</th>
-                          <th className="pb-4 pt-2 px-2 font-bold">Remark</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Invoice Number</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Reference No</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Vendor</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Invoice Amount (₹)</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Amount Redeemed (₹)</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Location</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Invoice Date</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Remark</th>
                         </>}
                         {reportType === 'incentives' && <>
-                          <th className="pb-4 pt-2 px-2 font-bold">Vendor</th>
-                          <th className="pb-4 pt-2 px-2 font-bold">Account No</th>
-                          <th className="pb-4 pt-2 px-2 font-bold">Type</th>
-                          <th className="pb-4 pt-2 px-2 font-bold">Amount (₹)</th>
-                          <th className="pb-4 pt-2 px-2 font-bold">Balance After</th>
-                          <th className="pb-4 pt-2 px-2 font-bold">Date</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Vendor</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Account No</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Type</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Amount (₹)</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Balance After</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Date</th>
                         </>}
                       </tr>
                     </thead>
                     <tbody className="text-gray-700 font-medium">
                       {paginatedData.length > 0 ? paginatedData.map((row, i) => (
                         <tr key={row._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
-                          <td className="py-5 px-2">{String((currentPage - 1) * itemsPerPage + i + 1).padStart(2, '0')}</td>
+                          <td className="py-4 px-3">{String((currentPage - 1) * itemsPerPage + i + 1).padStart(2, '0')}</td>
                           {reportType === 'vendors' && <>
-                            <td className="py-5 px-2">{row.companyName}</td>
-                            <td className="py-5 px-2">{row.mobileNumber}</td>
-                            <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{row.accountNumber}</td>
-                            <td className="py-5 px-2">₹{Number(row.walletBalance).toFixed(2)}</td>
-                            <td className="py-5 px-2">
+                            <td className="py-4 px-3">{row.companyName}</td>
+                            <td className="py-4 px-3">{row.mobileNumber}</td>
+                            <td className="py-4 px-3 font-semibold text-[#2B3B8A]">{row.accountNumber}</td>
+                            <td className="py-4 px-3">₹{Number(row.walletBalance).toFixed(2)}</td>
+                            <td className="py-4 px-3">
                               <span className={`px-3 py-1.5 rounded-lg border text-[13px] font-semibold capitalize ${statusStyles[row.status] || ''}`}>
                                 {row.status}
                               </span>
                             </td>
-                            <td className="py-5 px-2">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
+                            <td className="py-4 px-3">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
                           </>}
                           {reportType === 'invoices' && <>
-                            <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{row.invoiceNumber}</td>
-                            <td className="py-5 px-2 font-mono font-medium text-gray-800">{row.referenceNo || '—'}</td>
-                            <td className="py-5 px-2">{row.vendor?.companyName || 'N/A'}</td>
-                            <td className="py-5 px-2">₹{Number(row.invoiceAmount).toFixed(2)}</td>
-                            <td className="py-5 px-2 font-semibold text-[#E74C3C]">
+                            <td className="py-4 px-3 font-semibold text-[#2B3B8A]">{row.invoiceNumber}</td>
+                            <td className="py-4 px-3 font-mono font-medium text-gray-800">{row.referenceNo || '—'}</td>
+                            <td className="py-4 px-3">{row.vendor?.companyName || 'N/A'}</td>
+                            <td className="py-4 px-3">₹{Number(row.invoiceAmount).toFixed(2)}</td>
+                            <td className="py-4 px-3 font-semibold text-[#E74C3C]">
                               {row.redeemAmount > 0 ? `₹${Number(row.redeemAmount).toFixed(2)}` : <span className="text-gray-400">—</span>}
                             </td>
-                            <td className="py-5 px-2">{row.location || '—'}</td>
-                            <td className="py-5 px-2">{row.invoiceDate ? new Date(row.invoiceDate).toLocaleDateString('en-IN') : '—'}</td>
-                            <td className="py-5 px-2 max-w-[140px] text-gray-500">
+                            <td className="py-4 px-3">{row.location || '—'}</td>
+                            <td className="py-4 px-3">{row.invoiceDate ? new Date(row.invoiceDate).toLocaleDateString('en-IN') : '—'}</td>
+                            <td className="py-4 px-3 max-w-[140px] text-gray-500">
                               {row.remark ? (
                                 <span title={row.remark}>{row.remark.length > 25 ? row.remark.substring(0, 25) + '…' : row.remark}</span>
                               ) : <span className="text-gray-300">—</span>}
                             </td>
                           </>}
                           {reportType === 'incentives' && <>
-                            <td className="py-5 px-2">{row.vendor?.companyName || 'N/A'}</td>
-                            <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{row.vendor?.accountNumber || 'N/A'}</td>
-                            <td className="py-5 px-2">
+                            <td className="py-4 px-3">{row.vendor?.companyName || 'N/A'}</td>
+                            <td className="py-4 px-3 font-semibold text-[#2B3B8A]">{row.vendor?.accountNumber || 'N/A'}</td>
+                            <td className="py-4 px-3">
                               <span className={`font-semibold ${row.type === 'credit' ? 'text-[#2ECC71]' : 'text-[#E74C3C]'}`}>
                                 {row.type}
                               </span>
                             </td>
-                            <td className="py-5 px-2">₹{row.amount}</td>
-                            <td className="py-5 px-2">₹{row.balanceAfter}</td>
-                            <td className="py-5 px-2">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
+                            <td className="py-4 px-3">₹{row.amount}</td>
+                            <td className="py-4 px-3">₹{row.balanceAfter}</td>
+                            <td className="py-4 px-3">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
                           </>}
                         </tr>
                       )) : (
@@ -883,32 +883,32 @@ export default function ReportsPage() {
                       {/* Totals Row */}
                       {filteredData.length > 0 && (
                         <tr className="bg-[#F8FAFC] font-bold border-t-2 border-gray-200 text-[13px]">
-                          <td className="py-4 px-2 text-gray-500">TOTAL</td>
+                          <td className="py-4 px-3 text-gray-500">TOTAL</td>
                           {reportType === 'vendors' && <>
-                            <td className="py-4 px-2"></td>
-                            <td className="py-4 px-2"></td>
-                            <td className="py-4 px-2"></td>
-                            <td className="py-4 px-2 text-[#2B3B8A]">₹{Number(totals.walletTotal).toFixed(2)}</td>
-                            <td className="py-4 px-2"></td>
-                            <td className="py-4 px-2"></td>
+                            <td className="py-4 px-3"></td>
+                            <td className="py-4 px-3"></td>
+                            <td className="py-4 px-3"></td>
+                            <td className="py-4 px-3 text-[#2B3B8A]">₹{Number(totals.walletTotal).toFixed(2)}</td>
+                            <td className="py-4 px-3"></td>
+                            <td className="py-4 px-3"></td>
                           </>}
                           {reportType === 'invoices' && <>
-                            <td className="py-4 px-2"></td>
-                            <td className="py-4 px-2"></td>
-                            <td className="py-4 px-2"></td>
-                            <td className="py-4 px-2 text-[#2B3B8A]">₹{Number(totals.invoiceTotal).toFixed(2)}</td>
-                            <td className="py-4 px-2 text-[#E74C3C]">₹{Number(totals.redeemTotal).toFixed(2)}</td>
-                            <td className="py-4 px-2"></td>
-                            <td className="py-4 px-2"></td>
-                            <td className="py-4 px-2"></td>
+                            <td className="py-4 px-3"></td>
+                            <td className="py-4 px-3"></td>
+                            <td className="py-4 px-3"></td>
+                            <td className="py-4 px-3 text-[#2B3B8A]">₹{Number(totals.invoiceTotal).toFixed(2)}</td>
+                            <td className="py-4 px-3 text-[#E74C3C]">₹{Number(totals.redeemTotal).toFixed(2)}</td>
+                            <td className="py-4 px-3"></td>
+                            <td className="py-4 px-3"></td>
+                            <td className="py-4 px-3"></td>
                           </>}
                           {reportType === 'incentives' && <>
-                            <td className="py-4 px-2"></td>
-                            <td className="py-4 px-2"></td>
-                            <td className="py-4 px-2"></td>
-                            <td className="py-4 px-2 text-[#2B3B8A]">₹{Number(totals.incentiveTotal).toFixed(2)}</td>
-                            <td className="py-4 px-2"></td>
-                            <td className="py-4 px-2"></td>
+                            <td className="py-4 px-3"></td>
+                            <td className="py-4 px-3"></td>
+                            <td className="py-4 px-3"></td>
+                            <td className="py-4 px-3 text-[#2B3B8A]">₹{Number(totals.incentiveTotal).toFixed(2)}</td>
+                            <td className="py-4 px-3"></td>
+                            <td className="py-4 px-3"></td>
                           </>}
                         </tr>
                       )}

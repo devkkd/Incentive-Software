@@ -2,6 +2,8 @@ const express = require('express');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const Vendor = require('../models/Vendor');
+const DeletedParty = require('../models/DeletedParty');
+const { audit, diff } = require('../services/audit');
 const Division = require('../models/Division');
 const Invoice = require('../models/Invoice');
 const { protect, authorize } = require('../middleware/auth');
@@ -69,6 +71,12 @@ router.post('/', protect, authorize('admin'), async (req, res) => {
       partyType: partyType || null,
       division: divisionId,
       createdBy: req.user._id,
+    });
+
+    audit({
+      vendor, eventType: 'party.created', actor: req.user,
+      source: req.user.role === 'admin' ? 'admin' : 'branch',
+      summary: `Party created — ${vendor.companyName}`,
     });
 
     res.status(201).json({ success: true, data: vendor });
@@ -181,8 +189,25 @@ router.post('/bulk-import', protect, authorize('admin'), upload.single('file'), 
 // @access  Branch, Admin
 router.get('/', protect, async (req, res) => {
   try {
-    const { status, q, page = 1, limit = 10 } = req.query;
+    const { status, q, page = 1, limit = 10, sortBy, sortOrder } = req.query;
     const filter = {};
+
+    // Point 11 — server-side sorting across the whole dataset, not just the page.
+    // Whitelisted so a query parameter cannot sort by an arbitrary field.
+    const VENDOR_SORTABLE = {
+      accountNumber: 'accountNumber',
+      companyName: 'companyName',
+      personName: 'personName',
+      mobileNumber: 'mobileNumber',
+      partyCity: 'partyCity',
+      partyType: 'partyType',
+      salesPerson: 'salesPerson',
+      walletBalance: 'walletBalance',
+      status: 'status',
+      createdAt: 'createdAt',
+    };
+    const sortField = VENDOR_SORTABLE[sortBy] || 'createdAt';
+    const sortDir = sortOrder === 'asc' ? 1 : -1;
 
     // Branch sees ALL vendors (no division filter)
     // Admin also sees all vendors
@@ -199,7 +224,8 @@ router.get('/', protect, async (req, res) => {
 
     const total = await Vendor.countDocuments(filter);
     const vendors = await Vendor.find(filter)
-      .sort({ createdAt: -1 })
+      .collation({ locale: 'en', strength: 2 })   // case-insensitive text sort
+      .sort({ [sortField]: sortDir })
       .skip((page - 1) * limit)
       .limit(parseInt(limit))
       .populate('division', 'name location')
@@ -341,7 +367,33 @@ router.put('/:id', protect, authorize('admin'), async (req, res) => {
       const division = await Division.findById(divId);
       if (!division) return res.status(400).json({ success: false, message: 'Division not found' });
       updatedDivision = division._id;
-      const suffix = (accountNumber || '').toString().trim() || (vendor.accountNumber || '').toString().split('-').slice(1).join('-');
+      // ── POINT 15a ──────────────────────────────────────────────────────
+      // The edit form sends back the full displayed code (e.g. "JODHPUR-12345").
+      // Strip any division prefixes already present before rebuilding, or every
+      // save appends another one: JODHPUR-JODHPUR-12345, and so on.
+      const raw = (accountNumber || vendor.accountNumber || '').toString().trim();
+
+      // Remove one or more leading "<DIVISION>-" prefixes, whichever division
+      // they came from — historic records may carry a different one.
+      const divisionNames = (await Division.find().select('name').lean()).map((d) => d.name);
+      let suffix = raw;
+      let stripped = true;
+      while (stripped) {
+        stripped = false;
+        for (const name of divisionNames) {
+          const prefix = `${name}-`;
+          if (suffix.toUpperCase().startsWith(prefix.toUpperCase())) {
+            suffix = suffix.slice(prefix.length);
+            stripped = true;
+            break;
+          }
+        }
+      }
+
+      if (!suffix) {
+        return res.status(400).json({ success: false, message: 'Party code cannot be empty' });
+      }
+
       updatedAccountNumber = `${division.name}-${suffix}`;
 
       // Check duplicates excluding current vendor
@@ -353,6 +405,14 @@ router.put('/:id', protect, authorize('admin'), async (req, res) => {
         return res.status(409).json({ success: false, message: existing.accountNumber === updatedAccountNumber ? 'This account number already exists' : 'This mobile number is already registered' });
       }
     }
+
+    // POINT 21b — snapshot before the edit, so the trail can say what changed
+    const beforeEdit = {
+      companyName: vendor.companyName, personName: vendor.personName,
+      mobileNumber: vendor.mobileNumber, email: vendor.email, address: vendor.address,
+      status: vendor.status, salesPerson: vendor.salesPerson, partyCity: vendor.partyCity,
+      partyType: vendor.partyType, accountNumber: vendor.accountNumber,
+    };
 
     vendor.companyName = companyName !== undefined ? companyName : vendor.companyName;
     vendor.personName = personName !== undefined ? personName : vendor.personName;
@@ -367,6 +427,22 @@ router.put('/:id', protect, authorize('admin'), async (req, res) => {
     vendor.division = updatedDivision;
 
     await vendor.save();
+
+    const edits = diff(beforeEdit, vendor, Object.keys(beforeEdit));
+    if (edits.length) {
+      const statusChange = edits.find((c) => c.field === 'status');
+      audit({
+        vendor, actor: req.user,
+        source: req.user.role === 'admin' ? 'admin' : 'branch',
+        eventType:
+          statusChange?.to === 'blocked' ? 'party.blocked'
+          : statusChange?.from === 'blocked' ? 'party.unblocked'
+          : 'party.updated',
+        changes: edits,
+        summary: `${edits.length} field${edits.length === 1 ? '' : 's'} changed: ` +
+                 edits.map((c) => c.field).join(', '),
+      });
+    }
 
     res.status(200).json({ success: true, data: vendor });
   } catch (error) {
@@ -390,6 +466,14 @@ router.put('/:id/block', protect, authorize('branch', 'admin'), async (req, res)
     );
 
     if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
+
+    audit({
+      vendor, eventType: 'party.blocked', actor: req.user,
+      source: req.user.role === 'admin' ? 'admin' : 'branch',
+      reason: blockReason.trim(),
+      amount: vendor.walletBalance || 0,
+      summary: `Party blocked while holding ₹${(vendor.walletBalance || 0).toFixed(2)}`,
+    });
 
     res.status(200).json({ success: true, data: vendor });
   } catch (error) {
@@ -450,8 +534,38 @@ router.get('/:id/transactions', protect, async (req, res) => {
 // @access  Admin only
 router.delete('/:id', protect, authorize('admin'), async (req, res) => {
   try {
-    const vendor = await Vendor.findByIdAndDelete(req.params.id);
+    // Record who they were BEFORE removing them. Without this their wallets,
+    // transactions and invoices are left pointing at nothing and no one can
+    // say whose money it was.
+    const vendor = await Vendor.findById(req.params.id).populate('division', 'name').lean();
     if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
+
+    await DeletedParty.create({
+      vendorId: vendor._id,
+      accountNumber: vendor.accountNumber,
+      companyName: vendor.companyName,
+      personName: vendor.personName,
+      mobileNumber: vendor.mobileNumber,
+      partyCity: vendor.partyCity,
+      partyType: vendor.partyType,
+      salesPerson: vendor.salesPerson,
+      divisionName: vendor.division?.name || null,
+      status: vendor.status,
+      walletBalanceAtDeletion: vendor.walletBalance || 0,
+      deletedBy: req.user._id,
+      deletedByName: req.user.name || null,
+      deletionReason: req.body?.reason?.trim() || null,
+    });
+
+    await Vendor.findByIdAndDelete(req.params.id);
+
+    audit({
+      vendor, eventType: 'party.deleted', actor: req.user, source: 'admin',
+      amount: vendor.walletBalance || 0,
+      reason: req.body?.reason?.trim() || null,
+      summary: `Party deleted holding ₹${(vendor.walletBalance || 0).toFixed(2)}`,
+    });
+
     res.status(200).json({ success: true, data: {} });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

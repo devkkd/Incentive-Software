@@ -108,7 +108,7 @@ export default function CreateVendorPage() {
   };
 
   return (
-    <div className="p-8 md:p-10 max-w-[1600px] mx-auto">
+    <div className="p-4 sm:p-6 md:p-10 max-w-[1600px] mx-auto">
 
       {/* Page Header */}
       <div className="mb-8">

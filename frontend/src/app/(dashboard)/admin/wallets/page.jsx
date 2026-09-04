@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import SortableTh from '@/components/SortableTh';
+import useClientSort from '@/components/useClientSort';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -44,6 +46,145 @@ export default function WalletManagementPage() {
   const [trueSystemBalance, setTrueSystemBalance] = useState(0);
   const [totalCreditedFromTxn, setTotalCreditedFromTxn] = useState(0);
   const [totalRedeemed, setTotalRedeemed] = useState(0);
+  // Point 17 — cards derived from the wallet list below
+  const [cardTotalCredited, setCardTotalCredited] = useState(0);
+  const [cardSystemBalance, setCardSystemBalance] = useState(0);
+  const [cardTotalRedeemed, setCardTotalRedeemed] = useState(0);
+  const [cardHeldBalance, setCardHeldBalance] = useState(0);
+  const [cardActiveBalance, setCardActiveBalance] = useState(0);
+  const [cardBlockedBalance, setCardBlockedBalance] = useState(0);
+  const [cardOrphanBalance, setCardOrphanBalance] = useState(0);
+  const [cardOrphanCount, setCardOrphanCount] = useState(0);
+  const [cardHeldWalletCount, setCardHeldWalletCount] = useState(0);
+  const [cardBlockedPartyCount, setCardBlockedPartyCount] = useState(0);
+  const [listModal, setListModal] = useState(null);
+  const [listRows, setListRows] = useState([]);
+  const [listLoading, setListLoading] = useState(false);
+  const [expandedRows, setExpandedRows] = useState(new Set());
+
+  // Point 22 — counter notice
+  const [noticeWallet, setNoticeWallet] = useState(null);
+  const [noticeForm, setNoticeForm] = useState({
+    noticeEnabled: false, noticeMessage: '', noticeExpiresOn: '', lapseDate: '',
+  });
+  const [noticeSaving, setNoticeSaving] = useState(false);
+
+  // Point 18 — rename
+  const [renameWallet, setRenameWallet] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renamePreview, setRenamePreview] = useState(null);
+  const [renameSaving, setRenameSaving] = useState(false);
+  const [renameError, setRenameError] = useState('');
+
+  const openRename = async (w) => {
+    setRenameWallet(w);
+    setRenameValue(w.name);
+    setRenamePreview(null);
+    setRenameError('');
+    try {
+      const res = await fetch(`${API}/api/wallets/${w._id}/rename-preview`, {
+        headers: authHeaders(), credentials: 'include',
+      });
+      const json = await res.json();
+      if (json.success) setRenamePreview(json.data);
+    } catch (err) { console.error('[rename preview]', err); }
+  };
+
+  const saveRename = async () => {
+    setRenameSaving(true);
+    setRenameError('');
+    try {
+      const res = await fetch(`${API}/api/wallets/${renameWallet._id}/rename`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ name: renameValue.trim() }),
+      });
+      const json = await res.json();
+      if (json.success) { setRenameWallet(null); fetchWallets(); }
+      else setRenameError(json.message || 'Could not rename');
+    } catch {
+      setRenameError('Could not reach the server');
+    } finally {
+      setRenameSaving(false);
+    }
+  };
+
+  const openNotice = (w) => {
+    setNoticeWallet(w);
+    setNoticeForm({
+      noticeEnabled: !!w.noticeEnabled,
+      noticeMessage: w.noticeMessage || '',
+      noticeExpiresOn: w.noticeExpiresOn ? w.noticeExpiresOn.slice(0, 10) : '',
+      lapseDate: w.lapseDate ? w.lapseDate.slice(0, 10) : '',
+    });
+  };
+
+  const saveNotice = async () => {
+    setNoticeSaving(true);
+    try {
+      const res = await fetch(`${API}/api/wallets/${noticeWallet._id}/notice`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(noticeForm),
+      });
+      const json = await res.json();
+      if (json.success) { setNoticeWallet(null); fetchWallets(); }
+      else alert(json.message);
+    } catch (err) { console.error('[notice]', err); }
+    finally { setNoticeSaving(false); }
+  };
+
+  // Point 7 — redemption freeze
+  const [freeze, setFreeze] = useState({ frozen: false, reason: null });
+  const [freezeModal, setFreezeModal] = useState(false);
+  const [freezeReason, setFreezeReason] = useState('');
+  const [freezeSaving, setFreezeSaving] = useState(false);
+
+  const loadFreeze = async () => {
+    try {
+      const res = await fetch(`${API}/api/settings/redemption-freeze`, {
+        headers: authHeaders(), credentials: 'include',
+      });
+      const json = await res.json();
+      if (json.success) setFreeze(json.data);
+    } catch (err) { console.error('[freeze]', err); }
+  };
+
+  useEffect(() => { loadFreeze(); }, []);
+
+  const applyFreeze = async (frozen) => {
+    if (frozen && !freezeReason.trim()) return;
+    setFreezeSaving(true);
+    try {
+      const res = await fetch(`${API}/api/settings/redemption-freeze`, {
+        method: 'PUT',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ frozen, reason: freezeReason }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setFreeze(json.data);
+        setFreezeModal(false);
+        setFreezeReason('');
+      } else {
+        alert(json.message);
+      }
+    } catch (err) {
+      console.error('[freeze]', err);
+    } finally {
+      setFreezeSaving(false);
+    }
+  };
+
+  const toggleRow = (id) =>
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
 
   // Sync Balances
   const [syncing, setSyncing] = useState(false);
@@ -96,6 +237,30 @@ export default function WalletManagementPage() {
     }
   };
 
+  // Point 17 — drill-down lists for the held / blocked cards
+  const openList = async (kind) => {
+    setListModal(kind);
+    setListLoading(true);
+    setListRows([]);
+    try {
+      const path = kind === 'held' ? 'held-parties' : 'blocked-parties';
+      const res = await fetch(`${API}/api/wallets/${path}`, {
+        headers: authHeaders(),
+        credentials: 'include',
+      });
+      const json = await res.json();
+      if (json.success) {
+        setListRows(json.data || []);
+      } else {
+        console.error('[openList] request failed:', json.message);
+      }
+    } catch (err) {
+      console.error('[openList]', err);
+    } finally {
+      setListLoading(false);
+    }
+  };
+
   const fetchWallets = async () => {
     setLoading(true);
     setError('');
@@ -107,6 +272,16 @@ export default function WalletManagementPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to fetch wallets');
       setWallets(data.data || []);
+      if (data.cardTotalCredited !== undefined) setCardTotalCredited(data.cardTotalCredited);
+      if (data.cardSystemBalance !== undefined) setCardSystemBalance(data.cardSystemBalance);
+      if (data.cardTotalRedeemed !== undefined) setCardTotalRedeemed(data.cardTotalRedeemed);
+      if (data.cardHeldBalance !== undefined) setCardHeldBalance(data.cardHeldBalance);
+      if (data.cardActiveBalance !== undefined) setCardActiveBalance(data.cardActiveBalance);
+      if (data.cardBlockedBalance !== undefined) setCardBlockedBalance(data.cardBlockedBalance);
+      if (data.cardOrphanBalance !== undefined) setCardOrphanBalance(data.cardOrphanBalance);
+      if (data.cardOrphanCount !== undefined) setCardOrphanCount(data.cardOrphanCount);
+      if (data.cardHeldWalletCount !== undefined) setCardHeldWalletCount(data.cardHeldWalletCount);
+      if (data.cardBlockedPartyCount !== undefined) setCardBlockedPartyCount(data.cardBlockedPartyCount);
       if (data.trueSystemBalance !== undefined) {
         setTrueSystemBalance(data.trueSystemBalance);
       }
@@ -260,12 +435,21 @@ export default function WalletManagementPage() {
   };
 
   // Filtered wallets
-  const filteredWallets = wallets.filter((w) => {
+  const filteredWalletsUnsorted = wallets.filter((w) => {
     const matchesSearch = w.name.toLowerCase().includes(search.toLowerCase()) ||
       (w.description && w.description.toLowerCase().includes(search.toLowerCase()));
     if (statusFilter === 'active') return matchesSearch && !w.isHold;
     if (statusFilter === 'hold') return matchesSearch && w.isHold;
     return matchesSearch;
+  });
+
+  // Point 11 — the whole wallet list is already loaded, so sort it here
+  const { sort, setSort, sorted: filteredWallets } = useClientSort(filteredWalletsUnsorted, {
+    name:          (w) => w.name,
+    totalCredited: (w) => w.totalCredited || 0,
+    totalBalance:  (w) => w.totalBalance || 0,
+    totalParties:  (w) => w.totalParties || 0,
+    isHold:        (w) => (w.isHold ? 'On Hold' : 'Active'),
   });
 
   // Filtered parties in selected wallet
@@ -300,6 +484,38 @@ export default function WalletManagementPage() {
           <p className="text-sm text-gray-500 mt-1">
             Manage system wallets, view party balances, and control wallet & party hold status.
           </p>
+        </div>
+
+        {/* Point 7 — redemption freeze toggle */}
+        <div className={`rounded-xl border px-4 py-3 flex items-center gap-4 ${
+          freeze.frozen ? 'bg-red-50 border-red-300' : 'bg-white border-gray-200'
+        }`}>
+          <div className="min-w-0">
+            <p className={`text-[13px] font-bold ${freeze.frozen ? 'text-red-700' : 'text-gray-900'}`}>
+              {freeze.frozen ? 'Redemption FROZEN' : 'Redemption enabled'}
+            </p>
+            <p className="text-[11px] text-gray-500 mt-0.5 truncate max-w-[260px]">
+              {freeze.frozen
+                ? freeze.reason || 'No reason recorded'
+                : 'All branches can process redemptions'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (freeze.frozen) { applyFreeze(false); }
+              else { setFreezeReason(''); setFreezeModal(true); }
+            }}
+            disabled={freezeSaving}
+            className={`relative w-12 h-6 rounded-full transition-colors shrink-0 cursor-pointer disabled:opacity-50 ${
+              freeze.frozen ? 'bg-red-500' : 'bg-emerald-500'
+            }`}
+            title={freeze.frozen ? 'Resume redemption' : 'Freeze redemption'}
+          >
+            <span className={`absolute top-0.5 left-0 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+              freeze.frozen ? 'translate-x-[26px]' : 'translate-x-[2px]'
+            }`} />
+          </button>
         </div>
 
         <div className="flex items-center gap-3">
@@ -481,9 +697,9 @@ export default function WalletManagementPage() {
           <div>
             <p className="text-xs font-semibold uppercase text-gray-400 tracking-wider">Total Credited</p>
             <h3 className="text-2xl font-bold text-[#2B3B8A] mt-1">
-              ₹{totalCreditedFromTxn.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              ₹{cardTotalCredited.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </h3>
-            <p className="text-xs text-gray-500 mt-1">Total incentives uploaded</p>
+            <p className="text-xs text-gray-500 mt-1">Sum of credited amounts below</p>
           </div>
           <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-[#2B3B8A]">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
@@ -497,9 +713,9 @@ export default function WalletManagementPage() {
           <div>
             <p className="text-xs font-semibold uppercase text-gray-400 tracking-wider">Total Redeemed</p>
             <h3 className="text-2xl font-bold text-[#E74C3C] mt-1">
-              ₹{totalRedeemed.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              ₹{cardTotalRedeemed.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </h3>
-            <p className="text-xs text-gray-500 mt-1">Wallet redemptions (invoices)</p>
+            <p className="text-xs text-gray-500 mt-1">Credited minus current balance</p>
           </div>
           <div className="w-12 h-12 bg-red-50 rounded-xl flex items-center justify-center text-red-500">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
@@ -513,15 +729,121 @@ export default function WalletManagementPage() {
           <div>
             <p className="text-xs font-semibold uppercase text-emerald-600 tracking-wider">Total System Balance</p>
             <h3 className="text-2xl font-bold text-[#16a34a] mt-1">
-              ₹{trueSystemBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              ₹{cardSystemBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </h3>
             <p className="text-xs text-emerald-600 mt-1 font-medium">
-              Actual wallet balance (all parties)
+              Credited minus redeemed
             </p>
           </div>
           <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+        </div>
+
+        {/* Total Active Balance — Point 17 */}
+        <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase text-gray-400 tracking-wider">Total Active Balance</p>
+            <h3 className="text-2xl font-bold text-[#2B3B8A] mt-1">
+              ₹{cardActiveBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </h3>
+            <p className="text-xs text-gray-500 mt-1">System minus held and blocked</p>
+          </div>
+          <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-[#2B3B8A]">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+            </svg>
+          </div>
+        </div>
+
+        {/* Total Balance On Hold — Point 17 */}
+        <div className="bg-amber-50 rounded-2xl p-5 border border-amber-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase text-amber-700 tracking-wider">Total Balance On Hold</p>
+            <h3 className="text-2xl font-bold text-amber-700 mt-1">
+              ₹{cardHeldBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </h3>
+            <p className="text-xs text-amber-700 mt-1">Frozen wallets and frozen parties</p>
+          </div>
+          <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center text-amber-700">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+            </svg>
+          </div>
+        </div>
+
+        {/* Parties Wallet On Hold — Point 17 */}
+        <button
+          type="button"
+          onClick={() => openList('held')}
+          className="text-left bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex items-center justify-between cursor-pointer hover:border-amber-300 hover:shadow-md transition-all"
+        >
+          <div>
+            <p className="text-xs font-semibold uppercase text-gray-400 tracking-wider">Parties Wallet On Hold</p>
+            <h3 className="text-2xl font-bold text-amber-600 mt-1">{cardHeldWalletCount}</h3>
+            <p className="text-xs text-[#2B3B8A] mt-1 font-medium">
+              Party wallets frozen → view
+            </p>
+          </div>
+          <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center text-amber-600">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+            </svg>
+          </div>
+        </button>
+
+        {/* Blocked Funds — Point 17 */}
+        <button
+          type="button"
+          onClick={() => openList('blocked')}
+          className="text-left bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex items-center justify-between cursor-pointer hover:border-[#64748B]/40 hover:shadow-md transition-all"
+        >
+          <div>
+            <p className="text-xs font-semibold uppercase text-gray-400 tracking-wider">Blocked Funds</p>
+            <h3 className="text-2xl font-bold text-[#64748B] mt-1">
+              ₹{cardBlockedBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </h3>
+            <p className="text-xs text-[#2B3B8A] mt-1 font-medium">
+              {cardBlockedPartyCount} blocked part{cardBlockedPartyCount === 1 ? 'y' : 'ies'} → view
+            </p>
+          </div>
+          <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center text-[#64748B]">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+            </svg>
+          </div>
+        </button>
+
+        {/* Orphaned Funds — Point 17 / Point 1 */}
+        <div className={`rounded-2xl p-5 border shadow-sm flex items-center justify-between ${
+          cardOrphanBalance > 0
+            ? 'bg-red-50 border-red-200'
+            : 'bg-white border-gray-100'
+        }`}>
+          <div>
+            <p className={`text-xs font-semibold uppercase tracking-wider ${
+              cardOrphanBalance > 0 ? 'text-red-600' : 'text-gray-400'
+            }`}>Orphaned Funds</p>
+            <h3 className={`text-2xl font-bold mt-1 ${
+              cardOrphanBalance > 0 ? 'text-red-600' : 'text-gray-400'
+            }`}>
+              ₹{cardOrphanBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </h3>
+            <p className={`text-xs mt-1 ${
+              cardOrphanBalance > 0 ? 'text-red-600 font-medium' : 'text-gray-500'
+            }`}>
+              {cardOrphanCount > 0
+                ? `${cardOrphanCount} wallet${cardOrphanCount === 1 ? '' : 's'} with no party — needs review`
+                : 'No orphaned records'}
+            </p>
+          </div>
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+            cardOrphanBalance > 0 ? 'bg-red-100 text-red-600' : 'bg-gray-50 text-gray-400'
+          }`}>
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
             </svg>
           </div>
         </div>
@@ -540,6 +862,383 @@ export default function WalletManagementPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Rename modal — Point 18 ───────────────────────────────────────── */}
+      {renameWallet && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-0 sm:p-4"
+             onClick={() => setRenameWallet(null)}>
+          <div className="bg-white rounded-none sm:rounded-2xl shadow-xl w-full h-full sm:h-auto max-w-md p-6 space-y-5"
+               onClick={(e) => e.stopPropagation()}>
+            <div>
+              <h3 className="text-[18px] font-bold text-gray-900">Rename wallet</h3>
+              <p className="text-[13px] text-gray-500 mt-1">
+                The new name replaces the old one everywhere it appears — on party
+                wallets, at the counter, and in reports.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                Wallet name
+              </label>
+              <input
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && renameValue.trim() && saveRename()}
+                autoFocus
+                maxLength={60}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[14px] focus:outline-none focus:ring-2 focus:ring-[#2B3B8A]/20 focus:border-[#2B3B8A]"
+              />
+              <p className="text-[11px] text-gray-400 mt-1">
+                Currently: {renameWallet.name}
+              </p>
+            </div>
+
+            {renamePreview && (
+              <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 space-y-1.5">
+                <p className="text-[12px] text-gray-700">
+                  <strong className="tabular-nums">{renamePreview.totalAffected}</strong>{' '}
+                  party wallet{renamePreview.totalAffected === 1 ? '' : 's'} will be updated
+                </p>
+                {renamePreview.linkedByNameOnly > 0 && (
+                  <p className="text-[11px] text-amber-700">
+                    {renamePreview.linkedByNameOnly} of these are linked only by the old
+                    name. Their link will be repaired as part of the rename.
+                  </p>
+                )}
+                {(renamePreview.heldWallets > 0 || renamePreview.schemeOnHold) && (
+                  <p className="text-[11px] text-amber-700 font-medium">
+                    {renamePreview.schemeOnHold
+                      ? 'This scheme is on hold.'
+                      : `${renamePreview.heldWallets} wallet(s) here are on hold.`}
+                    {' '}Hold status is preserved.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {renameError && (
+              <p className="text-[13px] text-red-600 font-medium">{renameError}</p>
+            )}
+
+            <p className="text-[11px] text-gray-500 leading-relaxed">
+              Past statement entries keep the old name — they are a record of what
+              was true at the time.
+            </p>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={() => setRenameWallet(null)}
+                className="px-4 py-2 text-[13px] font-semibold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer">
+                Cancel
+              </button>
+              <button
+                onClick={saveRename}
+                disabled={renameSaving || !renameValue.trim() || renameValue.trim() === renameWallet.name}
+                className="px-4 py-2 text-[13px] font-semibold text-white bg-[#2B3B8A] hover:bg-[#222f70] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl cursor-pointer">
+                {renameSaving ? 'Renaming…' : 'Rename'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Counter notice modal — Point 22 ────────────────────────────────── */}
+      {noticeWallet && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-0 sm:p-4"
+             onClick={() => setNoticeWallet(null)}>
+          <div className="bg-white rounded-none sm:rounded-2xl shadow-xl w-full h-full sm:h-auto max-w-lg p-6 space-y-5"
+               onClick={(e) => e.stopPropagation()}>
+            <div>
+              <h3 className="text-[18px] font-bold text-gray-900">Counter notice</h3>
+              <p className="text-[13px] text-gray-500 mt-1">
+                Shown to branch staff whenever a party holds a balance in{' '}
+                <span className="font-semibold text-gray-700">{noticeWallet.name}</span>.
+                Informational only — it does not block redemption.
+              </p>
+            </div>
+
+            {/* Toggle */}
+            <div className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3">
+              <div>
+                <p className="text-[13px] font-semibold text-gray-900">
+                  {noticeForm.noticeEnabled ? 'Notice is on' : 'Notice is off'}
+                </p>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  Switching off keeps the text for next time
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNoticeForm((f) => ({ ...f, noticeEnabled: !f.noticeEnabled }))}
+                className={`relative w-12 h-6 rounded-full transition-colors shrink-0 cursor-pointer ${
+                  noticeForm.noticeEnabled ? 'bg-amber-500' : 'bg-gray-300'
+                }`}
+              >
+                <span className={`absolute top-0.5 left-0 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                  noticeForm.noticeEnabled ? 'translate-x-[26px]' : 'translate-x-[2px]'
+                }`} />
+              </button>
+            </div>
+
+            {/* Message */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                  Message
+                </label>
+                <span className={`text-[11px] tabular-nums ${
+                  noticeForm.noticeMessage.length > 110 ? 'text-red-600 font-semibold' : 'text-gray-400'
+                }`}>
+                  {noticeForm.noticeMessage.length}/120
+                </span>
+              </div>
+              <textarea
+                value={noticeForm.noticeMessage}
+                onChange={(e) => setNoticeForm((f) => ({ ...f, noticeMessage: e.target.value.slice(0, 120) }))}
+                disabled={!noticeForm.noticeEnabled}
+                rows={2}
+                placeholder="e.g. Balance will lapse on 31 Aug"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[13px] disabled:bg-gray-50 disabled:text-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400"
+              />
+            </div>
+
+            {/* Dates */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                  Lapse date
+                </label>
+                <input
+                  type="date"
+                  value={noticeForm.lapseDate}
+                  onChange={(e) => setNoticeForm((f) => ({ ...f, lapseDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[13px] focus:outline-none focus:border-amber-400"
+                />
+                <p className="text-[10px] text-gray-500 mt-1">
+                  A real date, separate from the text — usable by reports
+                </p>
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                  Hide notice after
+                </label>
+                <input
+                  type="date"
+                  value={noticeForm.noticeExpiresOn}
+                  onChange={(e) => setNoticeForm((f) => ({ ...f, noticeExpiresOn: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[13px] focus:outline-none focus:border-amber-400"
+                />
+                <p className="text-[10px] text-gray-500 mt-1">
+                  Optional. Stops a stale notice lingering
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={() => setNoticeWallet(null)}
+                className="px-4 py-2 text-[13px] font-semibold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer">
+                Cancel
+              </button>
+              <button
+                onClick={saveNotice}
+                disabled={noticeSaving || (noticeForm.noticeEnabled && !noticeForm.noticeMessage.trim())}
+                className="px-4 py-2 text-[13px] font-semibold text-white bg-[#2B3B8A] hover:bg-[#222f70] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl cursor-pointer">
+                {noticeSaving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Freeze reason modal — Point 7 ──────────────────────────────────── */}
+      {freezeModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-0 sm:p-4"
+             onClick={() => setFreezeModal(false)}>
+          <div className="bg-white rounded-none sm:rounded-2xl shadow-xl w-full h-full sm:h-auto max-w-md p-6 space-y-4"
+               onClick={(e) => e.stopPropagation()}>
+            <div>
+              <h3 className="text-[18px] font-bold text-gray-900">Freeze redemption</h3>
+              <p className="text-[13px] text-gray-500 mt-1">
+                Every branch counter will be blocked immediately and shown your reason.
+                Because an invoice cannot be created without a redemption, this stops
+                counter activity entirely. Admin functions and reports are unaffected.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                Reason (shown to branch staff)
+              </label>
+              <textarea
+                value={freezeReason}
+                onChange={(e) => setFreezeReason(e.target.value)}
+                rows={3}
+                autoFocus
+                placeholder="e.g. Balance issue under investigation — do not redeem"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[13px] focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-400"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={() => setFreezeModal(false)}
+                className="px-4 py-2 text-[13px] font-semibold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer">
+                Cancel
+              </button>
+              <button
+                onClick={() => applyFreeze(true)}
+                disabled={!freezeReason.trim() || freezeSaving}
+                className="px-4 py-2 text-[13px] font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl cursor-pointer">
+                {freezeSaving ? 'Freezing…' : 'Freeze redemption'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Drill-down modal — Point 17 ────────────────────────────────────── */}
+      {listModal && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-0 sm:p-4"
+          onClick={() => setListModal(null)}
+        >
+          <div
+            className="bg-white rounded-none sm:rounded-2xl shadow-xl w-full h-full sm:h-auto max-w-4xl max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-[18px] font-bold text-gray-900">
+                  {listModal === 'held' ? 'Party Wallets On Hold' : 'Blocked Parties'}
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {listLoading
+                    ? 'Loading…'
+                    : `${listRows.length} record${listRows.length === 1 ? '' : 's'}`}
+                </p>
+              </div>
+              <button
+                onClick={() => setListModal(null)}
+                className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="overflow-auto flex-1">
+              {listLoading ? (
+                <p className="p-4 sm:p-8 text-center text-sm text-gray-500">Loading…</p>
+              ) : listRows.length === 0 ? (
+                <p className="p-4 sm:p-8 text-center text-sm text-gray-500">
+                  {listModal === 'held' ? 'No wallets are on hold.' : 'No parties are blocked.'}
+                </p>
+              ) : (
+                <table className="w-full text-[13px]">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr className="text-left text-gray-500 uppercase text-[11px] tracking-wider">
+                      <th className="px-4 py-3 font-semibold">Party Code</th>
+                      <th className="px-4 py-3 font-semibold">Party Name</th>
+                      {listModal === 'held' ? (
+                        <>
+                          <th className="px-4 py-3 font-semibold">Wallet</th>
+                          <th className="px-4 py-3 font-semibold">Hold Type</th>
+                        </>
+                      ) : (
+                        <>
+                          <th className="px-4 py-3 font-semibold">Location</th>
+                          <th className="px-4 py-3 font-semibold">Block Reason</th>
+                        </>
+                      )}
+                      <th className="px-4 py-3 font-semibold text-right">Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {listRows.map((r, i) => (
+                      <tr key={i} className="border-t border-gray-100 hover:bg-gray-50">
+                        <td className="px-4 py-3 whitespace-nowrap font-medium text-gray-900">
+                          {r.partyCode}
+                        </td>
+                        <td className="px-4 py-3 text-gray-700">{r.partyName}</td>
+                        {listModal === 'held' ? (
+                          <>
+                            <td className="px-4 py-3 whitespace-nowrap text-gray-700">
+                              {r.walletName}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className="px-2 py-0.5 rounded-full text-[11px] bg-amber-50 text-amber-700 border border-amber-200">
+                                {r.holdType}
+                              </span>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="px-4 py-3 whitespace-nowrap text-gray-700">
+                              {r.location}
+                            </td>
+                            <td className="px-4 py-3 text-gray-600">{r.blockReason}</td>
+                          </>
+                        )}
+                        <td className="px-4 py-3 text-right whitespace-nowrap tabular-nums font-medium text-gray-900">
+                          ₹{(r.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-gray-50 sticky bottom-0">
+                    <tr className="border-t-2 border-gray-200">
+                      <td className="px-4 py-3 font-bold text-gray-900" colSpan={4}>
+                        Total
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold tabular-nums text-gray-900">
+                        ₹{listRows
+                          .reduce((s, r) => s + (r.balance || 0), 0)
+                          .toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Reconciliation line — Point 17 ─────────────────────────────────── */}
+      {(() => {
+        const chainTotal = parseFloat(
+          (cardHeldBalance + cardBlockedBalance + cardActiveBalance).toFixed(2)
+        );
+        const balances = Math.abs(chainTotal - cardSystemBalance) < 0.01;
+        const fmt = (n) =>
+          `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+
+        return (
+          <div
+            className={`mb-6 rounded-xl border px-4 py-3 text-[13px] leading-relaxed ${
+              balances
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : 'bg-red-50 border-red-200 text-red-800'
+            }`}
+          >
+            <span className="font-semibold">{balances ? 'Balanced. ' : 'Does not balance. '}</span>
+            Held {fmt(cardHeldBalance)} + Blocked {fmt(cardBlockedBalance)} + Active{' '}
+            {fmt(cardActiveBalance)} = {fmt(chainTotal)}
+            {balances ? ' = ' : ' \u2260 '}
+            System Balance {fmt(cardSystemBalance)}.
+            {!balances && (
+              <span className="font-semibold">
+                {' '}Difference {fmt(Math.abs(chainTotal - cardSystemBalance))} — worth investigating.
+              </span>
+            )}
+            {cardOrphanBalance > 0 && (
+              <span className="block mt-1">
+                Orphaned {fmt(cardOrphanBalance)} across {cardOrphanCount} wallet
+                {cardOrphanCount === 1 ? '' : 's'} is excluded from every figure above —
+                these records have no party attached.
+              </span>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Main Content Area */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
@@ -602,7 +1301,7 @@ export default function WalletManagementPage() {
             Loading wallets data...
           </div>
         ) : error ? (
-          <div className="p-8 text-center text-red-600 font-medium">
+          <div className="p-4 sm:p-8 text-center text-red-600 font-medium">
             Error: {error}
           </div>
         ) : filteredWallets.length === 0 ? (
@@ -617,30 +1316,58 @@ export default function WalletManagementPage() {
             <table className="w-full text-left text-sm">
               <thead className="bg-gray-50 text-gray-500 font-semibold border-b border-gray-100 text-xs uppercase tracking-wider">
                 <tr>
-                  <th className="px-6 py-4">Wallet Name</th>
-                  <th className="px-6 py-4">Current Balance</th>
-                  <th className="px-6 py-4">Credited Amount</th>
-                  <th className="px-6 py-4">Parties Count</th>
-                  <th className="px-6 py-4">Status</th>
+                  <SortableTh field="name" sort={sort} setSort={setSort}>Wallet Name</SortableTh>
+                  <SortableTh field="totalCredited" sort={sort} setSort={setSort} align="right">Credited Amount</SortableTh>
+                  <SortableTh field="totalBalance" sort={sort} setSort={setSort} align="right">Current Balance</SortableTh>
+                  <SortableTh field="totalParties" sort={sort} setSort={setSort}>Parties Count</SortableTh>
+                  <SortableTh field="isHold" sort={sort} setSort={setSort}>Status</SortableTh>
                   <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-gray-700">
                 {filteredWallets.map((w) => (
-                  <tr key={w._id} className="hover:bg-gray-50/80 transition-colors group">
+                  <React.Fragment key={w._id}>
+                  <tr className="hover:bg-gray-50/80 transition-colors group">
                     <td className="px-6 py-4">
                       <div className="font-semibold text-gray-900">{w.name}</div>
                       {w.description && <div className="text-xs text-gray-400 mt-0.5">{w.description}</div>}
                     </td>
-                    <td className="px-6 py-4 font-bold text-gray-900">
-                      ₹{w.totalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-6 py-4 text-gray-600 font-medium">
+                    <td className="px-6 py-4 text-right text-gray-600 font-medium tabular-nums whitespace-nowrap">
                       ₹{w.totalCredited.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-6 py-4 text-right tabular-nums whitespace-nowrap">
+                      {(w.heldBalance > 0 || w.blockedBalance > 0) ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleRow(w._id)}
+                          className="inline-flex items-center gap-1.5 cursor-pointer hover:text-[#2B3B8A] transition-colors"
+                          title={expandedRows.has(w._id) ? 'Hide breakdown' : 'Show breakdown'}
+                        >
+                          <span className="font-bold text-gray-900">
+                            ₹{w.totalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </span>
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            strokeWidth={2.5}
+                            stroke="currentColor"
+                            className={`w-3.5 h-3.5 text-gray-400 transition-transform ${
+                              expandedRows.has(w._id) ? 'rotate-180' : ''
+                            }`}
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                          </svg>
+                        </button>
+                      ) : (
+                        <span className="font-bold text-gray-900">
+                          ₹{w.totalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
-                        {w.totalParties} parties ({w.partiesWithBalance} active)
+                        {w.totalParties} parties ({w.partiesWithBalance} active{w.heldPartiesCount > 0 ? `, ${w.heldPartiesCount} on hold` : ''}{w.blockedPartiesCount > 0 ? `, ${w.blockedPartiesCount} blocked` : ''})
                       </span>
                     </td>
                     <td className="px-6 py-4">
@@ -665,6 +1392,24 @@ export default function WalletManagementPage() {
                           View Parties
                         </button>
                         <button
+                          onClick={() => openRename(w)}
+                          title="Rename this wallet"
+                          className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold text-xs rounded-lg transition-colors cursor-pointer"
+                        >
+                          Rename
+                        </button>
+                        <button
+                          onClick={() => openNotice(w)}
+                          title={w.noticeEnabled ? 'Notice is showing at the counter' : 'Set a counter notice'}
+                          className={`px-3 py-1.5 font-semibold text-xs rounded-lg transition-colors cursor-pointer ${
+                            w.noticeEnabled
+                              ? 'bg-amber-500 text-white hover:bg-amber-600'
+                              : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                          }`}
+                        >
+                          {w.noticeEnabled ? 'Notice On' : 'Notice'}
+                        </button>
+                        <button
                           onClick={() => handleToggleHoldWallet(w)}
                           disabled={holdingWalletId === w._id}
                           className={`px-3 py-1.5 font-semibold text-xs rounded-lg transition-colors disabled:opacity-50 ${
@@ -678,8 +1423,75 @@ export default function WalletManagementPage() {
                       </div>
                     </td>
                   </tr>
+                  {expandedRows.has(w._id) && (w.heldBalance > 0 || w.blockedBalance > 0) && (
+                    <tr key={`${w._id}-detail`} className="bg-gray-50/60">
+                      <td colSpan={6} className="px-6 py-4">
+                        <div className="max-w-sm ml-auto text-[13px] tabular-nums">
+                          <p className="text-[11px] uppercase tracking-wider text-gray-400 font-semibold mb-2">
+                            Current Balance breakdown
+                          </p>
+                          <div className="flex justify-between py-1">
+                            <span className="text-gray-600">Active</span>
+                            <span className="font-medium text-gray-900">
+                              ₹{(w.activeBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                          {w.heldBalance > 0 && (
+                            <div className="flex justify-between py-1">
+                              <span className="text-amber-600">On Hold</span>
+                              <span className="font-medium text-amber-700">
+                                ₹{w.heldBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                          )}
+                          {w.blockedBalance > 0 && (
+                            <div className="flex justify-between py-1">
+                              <span className="text-[#64748B]">Blocked parties</span>
+                              <span className="font-medium text-[#64748B]">
+                                ₹{w.blockedBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex justify-between py-1.5 mt-1 border-t border-gray-300">
+                            <span className="font-semibold text-gray-700">Total</span>
+                            <span className="font-bold text-gray-900">
+                              ₹{w.totalBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
                 ))}
               </tbody>
+              {filteredWallets.length > 0 && (
+                <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+                  <tr className="font-bold text-gray-900">
+                    <td className="px-6 py-4">
+                      Total
+                      <span className="ml-2 font-normal text-xs text-gray-500">
+                        ({filteredWallets.length} wallet{filteredWallets.length === 1 ? '' : 's'})
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right tabular-nums whitespace-nowrap">
+                      ₹{filteredWallets
+                        .reduce((s, w) => s + (w.totalCredited || 0), 0)
+                        .toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-6 py-4 text-right tabular-nums whitespace-nowrap">
+                      ₹{filteredWallets
+                        .reduce((s, w) => s + (w.totalBalance || 0), 0)
+                        .toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-6 py-4 font-normal text-xs text-gray-500">
+                      {filteredWallets.reduce((s, w) => s + (w.totalParties || 0), 0)} party wallets
+                    </td>
+                    <td className="px-6 py-4"></td>
+                    <td className="px-6 py-4"></td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         )}
@@ -839,7 +1651,7 @@ export default function WalletManagementPage() {
                     doc.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 26);
                     autoTable(doc, {
                       startY: 32,
-                      head: [['Party Name', 'Party Code', 'Mobile', 'Credited (Rs)', 'Wallet Balance (Rs)', 'Status']],
+                      head: [['Party Name', 'Party Code', 'Mobile Number', 'Credited Amount (Rs)', 'Current Balance (Rs)', 'Status']],
                       body: filteredParties.map(p => [
                         p.companyName,
                         p.accountNumber,
@@ -865,7 +1677,7 @@ export default function WalletManagementPage() {
                 <button
                   onClick={async () => {
                     const XLSX = await import('xlsx');
-                    const head = ['Party Name', 'Party Code', 'Mobile', 'Credited (Rs)', 'Wallet Balance (Rs)', 'Status'];
+                    const head = ['Party Name', 'Party Code', 'Mobile Number', 'Credited Amount (Rs)', 'Current Balance (Rs)', 'Status'];
                     const body = filteredParties.map(p => [
                       p.companyName, p.accountNumber, p.mobileNumber,
                       Number(p.creditedAmount).toFixed(2),
