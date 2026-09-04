@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import SortableTh from '@/components/SortableTh';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -89,6 +90,8 @@ export default function AdminInvoicesPage() {
   const [loading, setLoading]           = useState(true);
   const [pagination, setPagination]     = useState({ total: 0, page: 1, pages: 1 });
   const [totalAmount, setTotalAmount]   = useState(0);
+  const [totalInvoiced, setTotalInvoiced] = useState(0);
+  const [totalRedeemed, setTotalRedeemed] = useState(0);
   const [pageStart, setPageStart]       = useState(1);
   const [activeDropdown, setActiveDropdown] = useState(null);
 
@@ -103,6 +106,60 @@ export default function AdminInvoicesPage() {
 
   // ── Filter Option Lists (from DB) ─────────────────────────────────
   const [divisions, setDivisions]         = useState([]);
+  const [wallets, setWallets]             = useState([]);
+  const [walletFilter, setWalletFilter]   = useState('');
+  const [sort, setSort]                   = useState({ by: '', order: '' });   // Point 11
+
+  // ── POINT 19 — wallet reassignment ──────────────────────────────────────
+  const [reassign, setReassign] = useState(null);   // { invoice, sources, targets }
+  const [raFrom, setRaFrom] = useState('');
+  const [raTo, setRaTo] = useState('');
+  const [raAmount, setRaAmount] = useState('');
+  const [raReason, setRaReason] = useState('');
+  const [raOverride, setRaOverride] = useState(false);
+  const [raBusy, setRaBusy] = useState(false);
+  const [raError, setRaError] = useState('');
+
+  const openReassign = async (row) => {
+    setRaError(''); setRaFrom(''); setRaTo(''); setRaAmount(''); setRaReason(''); setRaOverride(false);
+    try {
+      const res = await fetch(`${API}/api/invoices/${row._id}/reassign-options`, {
+        headers: authHeaders(), credentials: 'include',
+      });
+      const json = await res.json();
+      if (!json.success) { alert(json.message); return; }
+      setReassign(json);
+      if (json.sources.length === 1) {
+        setRaFrom(json.sources[0].monthlyWalletId);
+        setRaAmount(String(json.sources[0].amount));
+      }
+    } catch { alert('Could not reach the server'); }
+  };
+
+  const submitReassign = async () => {
+    setRaBusy(true); setRaError('');
+    try {
+      const res = await fetch(`${API}/api/invoices/${reassign.invoice._id}/reassign`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          fromMonthlyWalletId: raFrom,
+          toMonthlyWalletId: raTo,
+          amount: parseFloat(raAmount),
+          reason: raReason.trim(),
+          overrideHold: raOverride,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) { setReassign(null); fetchInvoices(page); }
+      else {
+        setRaError(json.message);
+        if (json.needsConfirmation) setRaOverride(true);
+      }
+    } catch { setRaError('Could not reach the server'); }
+    finally { setRaBusy(false); }
+  };
   const [locationOptions, setLocationOptions] = useState([]);
 
   // Load divisions once
@@ -111,10 +168,16 @@ export default function AdminInvoicesPage() {
       .then(r => r.json())
       .then(d => { if (d.success) setDivisions(d.data || []); })
       .catch(() => {});
+
+    // Point 10 — wallet list for the wallet filter
+    fetch(`${API}/api/wallets`, { headers: authHeaders(), credentials: 'include' })
+      .then(r => r.json())
+      .then(d => { if (d.success) setWallets(d.data || []); })
+      .catch(() => {});
   }, []);
 
   // ── Active filter count badge ──────────────────────────────────────
-  const activeFilters = [timeline, divisionFilter, locationFilter, startDate || endDate, searchQuery].filter(Boolean).length;
+  const activeFilters = [timeline, divisionFilter, locationFilter, walletFilter, startDate || endDate, searchQuery].filter(Boolean).length;
 
   const clearAllFilters = () => {
     setSearchQuery(''); setSearchInput('');
@@ -143,6 +206,8 @@ export default function AdminInvoicesPage() {
       if (searchQuery)    params.append('q', searchQuery);
       if (locationFilter) params.append('location', locationFilter);
       if (divisionFilter) params.append('divisionId', divisionFilter);
+      if (walletFilter) params.append('walletId', walletFilter);
+      if (sort.by) { params.append('sortBy', sort.by); params.append('sortOrder', sort.order); }
 
       // Date range: manual dates override timeline preset
       if (startDate && endDate) {
@@ -159,13 +224,15 @@ export default function AdminInvoicesPage() {
         setInvoices(data.data);
         setPagination(data.pagination);
         setTotalAmount(data.totalAmount || 0);
+        setTotalInvoiced(data.totalInvoiced ?? data.totalAmount ?? 0);
+        setTotalRedeemed(data.totalRedeemed || 0);
         // Collect unique locations from results for the location dropdown
         const locs = [...new Set(data.data.map(inv => inv.location).filter(Boolean))];
         setLocationOptions(prev => [...new Set([...prev, ...locs])]);
       }
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
-  }, [searchQuery, timeline, divisionFilter, locationFilter, startDate, endDate]);
+  }, [searchQuery, timeline, divisionFilter, locationFilter, walletFilter, startDate, endDate, sort]);
 
   useEffect(() => { fetchInvoices(1); }, [fetchInvoices]);
 
@@ -244,6 +311,8 @@ export default function AdminInvoicesPage() {
     if (searchQuery)    params.append('q', searchQuery);
     if (locationFilter) params.append('location', locationFilter);
     if (divisionFilter) params.append('divisionId', divisionFilter);
+      if (walletFilter) params.append('walletId', walletFilter);
+      if (sort.by) { params.append('sortBy', sort.by); params.append('sortOrder', sort.order); }
     if (startDate && endDate) { params.append('startDate', startDate); params.append('endDate', endDate); }
     else if (timeline) { const r = getDateRange(timeline); if (r) { params.append('startDate', r.start); params.append('endDate', r.end); } }
     const res  = await fetch(`${API}/api/invoices?${params}`, { headers: authHeaders(), credentials: 'include' });
@@ -260,7 +329,7 @@ export default function AdminInvoicesPage() {
     doc.setFontSize(9);  doc.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 26);
     autoTable(doc, {
       startY: 32,
-      head: [['#', 'Party Name', 'Party Code', 'Mobile', 'Invoice No', 'Reference No', 'Invoice Date', 'Amount (Rs)', 'Redeemed (Rs)', 'Location', 'Division', 'Remark']],
+      head: [['#', 'Party Name', 'Party Code', 'Mobile Number', 'Invoice Number', 'Reference Number', 'Invoice Date', 'Amount (Rs)', 'Redeemed (Rs)', 'Location', 'Location', 'Remark']],
       body: all.map((inv, i) => [
         i + 1, inv.vendor?.companyName || 'N/A', inv.vendor?.accountNumber || 'N/A',
         inv.vendor?.mobileNumber || 'N/A', inv.invoiceNumber, inv.referenceNo || '—',
@@ -278,7 +347,7 @@ export default function AdminInvoicesPage() {
     const all  = await fetchAll();
     const XLSX = await import('xlsx');
     const ws = XLSX.utils.aoa_to_sheet([
-      ['#', 'Party Name', 'Party Code', 'Mobile', 'Invoice No', 'Reference No', 'Invoice Date', 'Amount (Rs)', 'Redeemed (Rs)', 'Location', 'Division', 'Remark', 'Created At'],
+      ['#', 'Party Name', 'Party Code', 'Mobile Number', 'Invoice Number', 'Reference Number', 'Invoice Date', 'Invoice Amount (Rs)', 'Redeemed Amount (Rs)', 'Location', 'Branch', 'Remark', 'Created At'],
       ...all.map((inv, i) => [
         i + 1, inv.vendor?.companyName || 'N/A', inv.vendor?.accountNumber || 'N/A',
         inv.vendor?.mobileNumber || 'N/A', inv.invoiceNumber, inv.referenceNo || '—',
@@ -297,6 +366,122 @@ export default function AdminInvoicesPage() {
   // ── Render ─────────────────────────────────────────────────────────
   return (
     <div className="p-6 md:p-10 max-w-[1700px] mx-auto">
+
+      {/* ── POINT 19 — reassign the wallet a redemption came from ────────── */}
+      {reassign && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-0 sm:p-4"
+             onClick={() => setReassign(null)}>
+          <div className="bg-white rounded-none sm:rounded-2xl shadow-xl w-full h-full sm:h-auto max-w-lg max-h-[88vh] overflow-auto p-6 space-y-4"
+               onClick={(e) => e.stopPropagation()}>
+            <div>
+              <h3 className="text-[18px] font-bold text-gray-900">Change source wallet</h3>
+              <p className="text-[13px] text-gray-500 mt-1">
+                {reassign.invoice.invoiceNumber} · {reassign.invoice.partyName} ·{' '}
+                ₹{Number(reassign.invoice.redeemedAmount).toLocaleString('en-IN')}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-3 text-[12px] text-gray-600 leading-relaxed">
+              The original entry is never altered. A <strong>reversal</strong> and a{' '}
+              <strong>re-application</strong> are added, so the party statement shows
+              exactly what happened. The party&rsquo;s total balance does not change.
+            </div>
+
+            {reassign.invoice.reassignmentCount > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
+                This invoice has already been reassigned {reassign.invoice.reassignmentCount} time
+                {reassign.invoice.reassignmentCount === 1 ? '' : 's'}.
+              </div>
+            )}
+
+            <div>
+              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                Move from
+              </label>
+              <select value={raFrom}
+                onChange={(e) => {
+                  setRaFrom(e.target.value);
+                  const s = reassign.sources.find((x) => x.monthlyWalletId === e.target.value);
+                  if (s) setRaAmount(String(s.amount));
+                }}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[14px] cursor-pointer focus:outline-none focus:border-[#2B3B8A]">
+                <option value="">Select the wallet it came from…</option>
+                {reassign.sources.map((s) => (
+                  <option key={s.monthlyWalletId} value={s.monthlyWalletId}>
+                    {s.label} — ₹{s.amount.toFixed(2)} drawn
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                Move to
+              </label>
+              <select value={raTo} onChange={(e) => setRaTo(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[14px] cursor-pointer focus:outline-none focus:border-[#2B3B8A]">
+                <option value="">Select the wallet it should have come from…</option>
+                {reassign.targets.map((tg) => (
+                  <option key={tg.monthlyWalletId} value={tg.monthlyWalletId}
+                    disabled={tg.balance < parseFloat(raAmount || 0)}>
+                    {tg.label} — balance ₹{tg.balance.toFixed(2)}
+                    {tg.isHold ? ' (on hold)' : ''}
+                    {tg.balance < parseFloat(raAmount || 0) ? ' — not enough' : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-gray-500 mt-1">
+                The target wallet must hold enough — the redemption moves onto it.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                Amount
+              </label>
+              <input type="number" inputMode="decimal" value={raAmount} onChange={(e) => setRaAmount(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[14px] tabular-nums focus:outline-none focus:border-[#2B3B8A]" />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                Reason — recorded against this invoice
+              </label>
+              <textarea value={raReason} onChange={(e) => setRaReason(e.target.value)} rows={2}
+                placeholder="e.g. Should have been drawn from July, not June"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[13px] focus:outline-none focus:border-[#2B3B8A]" />
+              {raReason.trim().length > 0 && raReason.trim().length < 10 && (
+                <p className="text-[11px] text-amber-700 mt-1">Please give a fuller reason.</p>
+              )}
+            </div>
+
+            {raError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
+                {raError}
+                {raOverride && (
+                  <label className="flex items-center gap-2 mt-2 text-[12px] font-medium cursor-pointer">
+                    <input type="checkbox" checked={raOverride}
+                      onChange={(e) => setRaOverride(e.target.checked)} className="cursor-pointer" />
+                    I understand — proceed anyway
+                  </label>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={() => setReassign(null)} disabled={raBusy}
+                className="px-4 py-2 text-[13px] font-semibold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer">
+                Cancel
+              </button>
+              <button onClick={submitReassign}
+                disabled={raBusy || !raFrom || !raTo || !(parseFloat(raAmount) > 0) || raReason.trim().length < 10}
+                className="px-5 py-2 text-[13px] font-semibold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl cursor-pointer">
+                {raBusy ? 'Moving…' : 'Move redemption'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── EDIT MODAL ──────────────────────────────────────────────── */}
       {editModal.isOpen && (
@@ -335,7 +520,7 @@ export default function AdminInvoicesPage() {
               </div>
               <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Invoice Amount (₹)</label>
-                <input type="number" value={editForm.invoiceAmount}
+                <input type="number" inputMode="decimal" value={editForm.invoiceAmount}
                   onChange={(e) => setEditForm(f => ({ ...f, invoiceAmount: e.target.value }))}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A]/20 focus:border-[#2B3B8A] transition-all"
                   min="0" step="0.01" placeholder="0.00" />
@@ -433,6 +618,15 @@ export default function AdminInvoicesPage() {
               activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} minWidth="160px" />
           </div>
 
+          {/* Wallet */}
+          <div>
+            <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Wallet</label>
+            <CustomDropdown id="wallet" label="All Wallets"
+              options={wallets.map(w => ({ value: w._id, label: w.name }))}
+              value={walletFilter} onChange={setWalletFilter}
+              activeDropdown={activeDropdown} setActiveDropdown={setActiveDropdown} minWidth="170px" />
+          </div>
+
           {/* Apply search button */}
           <button onClick={() => setSearchQuery(searchInput)}
             className="px-5 py-2 bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white text-[13px] font-semibold rounded-xl transition-colors">
@@ -494,6 +688,12 @@ export default function AdminInvoicesPage() {
                 <button onClick={() => setDivisionFilter('')} className="hover:text-red-500">×</button>
               </span>
             )}
+            {walletFilter && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#EEF2FF] text-[#2B3B8A] text-[12px] font-semibold rounded-full">
+                Wallet: {wallets.find(w => w._id === walletFilter)?.name}
+                <button onClick={() => setWalletFilter('')} className="hover:text-red-500">×</button>
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -508,14 +708,33 @@ export default function AdminInvoicesPage() {
             <span className="ml-2 text-[14px] font-normal text-gray-400">({pagination.total} total)</span>
           </h2>
           {!loading && pagination.total > 0 && (
-            <div className="flex items-center gap-2 bg-[#EEF2FF] border border-[#2B3B8A]/15 px-4 py-2 rounded-xl">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-[#2B3B8A]">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span className="text-[13px] text-gray-500 font-medium">Total Amount:</span>
-              <span className="text-[15px] font-bold text-[#2B3B8A]">
-                ₹{Number(totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Point 10 — Total Invoiced */}
+              <div className="flex items-center gap-2 bg-[#EEF2FF] border border-[#2B3B8A]/15 px-4 py-2 rounded-xl">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-[#2B3B8A]">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-[13px] text-gray-500 font-medium">Total Invoiced:</span>
+                <span className="text-[15px] font-bold text-[#2B3B8A] tabular-nums">
+                  ₹{Number(totalInvoiced).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+
+              {/* Point 10 — Total Redeemed */}
+              <div className="flex items-center gap-2 bg-[#FDEDEC] border border-[#E74C3C]/15 px-4 py-2 rounded-xl">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-[#E74C3C]">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-[13px] text-gray-500 font-medium">Total Redeemed:</span>
+                <span className="text-[15px] font-bold text-[#E74C3C] tabular-nums">
+                  ₹{Number(totalRedeemed).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+                {totalInvoiced > 0 && (
+                  <span className="text-[11px] text-gray-500 font-medium">
+                    ({((totalRedeemed / totalInvoiced) * 100).toFixed(1)}%)
+                  </span>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -524,19 +743,19 @@ export default function AdminInvoicesPage() {
           <table className="w-full text-left whitespace-nowrap">
             <thead>
               <tr className="border-b-2 border-gray-100 text-gray-500 text-[12px] uppercase tracking-wide">
-                <th className="pb-3 font-semibold px-2">#</th>
-                <th className="pb-3 font-semibold px-2">Party Name</th>
-                <th className="pb-3 font-semibold px-2">Party Code</th>
-                <th className="pb-3 font-semibold px-2">Mobile</th>
-                <th className="pb-3 font-semibold px-2">Invoice Number</th>
-                <th className="pb-3 font-semibold px-2">Reference No</th>
-                <th className="pb-3 font-semibold px-2">Invoice Date</th>
-                <th className="pb-3 font-semibold px-2">Amount (₹)</th>
-                <th className="pb-3 font-semibold px-2">Redeemed (₹)</th>
-                <th className="pb-3 font-semibold px-2">Location</th>
-                <th className="pb-3 font-semibold px-2">Division</th>
-                <th className="pb-3 font-semibold px-2">Remark</th>
-                <th className="pb-3 font-semibold px-2 text-center">Actions</th>
+                <th className="pb-3 font-semibold px-3 sticky left-0 bg-white z-10">#</th>
+                <SortableTh field="companyName" sort={sort} setSort={setSort} className="pb-3 font-semibold px-3">Party Name</SortableTh>
+                <SortableTh field="accountNumber" sort={sort} setSort={setSort} className="pb-3 font-semibold px-3">Party Code</SortableTh>
+                <SortableTh field="mobileNumber" sort={sort} setSort={setSort} className="pb-3 font-semibold px-3">Mobile</SortableTh>
+                <SortableTh field="invoiceNumber" sort={sort} setSort={setSort} className="pb-3 font-semibold px-3 sticky left-0 z-20 bg-white">Invoice Number</SortableTh>
+                <SortableTh field="referenceNo" sort={sort} setSort={setSort} className="pb-3 font-semibold px-3">Reference No</SortableTh>
+                <SortableTh field="invoiceDate" sort={sort} setSort={setSort} className="pb-3 font-semibold px-3">Invoice Date</SortableTh>
+                <SortableTh field="invoiceAmount" sort={sort} setSort={setSort} align="right" className="pb-3 font-semibold px-3">Amount (₹)</SortableTh>
+                <SortableTh field="redeemedAmount" sort={sort} setSort={setSort} align="right" className="pb-3 font-semibold px-3">Redeemed (₹)</SortableTh>
+                <SortableTh field="location" sort={sort} setSort={setSort} className="pb-3 font-semibold px-3">Location</SortableTh>
+                <SortableTh field="divisionName" sort={sort} setSort={setSort} className="pb-3 font-semibold px-3">Division</SortableTh>
+                <SortableTh field="remark" sort={sort} setSort={setSort} className="pb-3 font-semibold px-3">Remark</SortableTh>
+                <th className="pb-3 font-semibold px-3 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="text-gray-700 font-medium text-[13px]">
@@ -554,42 +773,49 @@ export default function AdminInvoicesPage() {
                 </tr>
               ) : invoices.length > 0 ? invoices.map((row, index) => (
                 <tr key={row._id} className="border-b border-gray-50 last:border-0 hover:bg-[#F8FAFF] transition-colors">
-                  <td className="py-4 px-2 text-gray-400">{String((pagination.page - 1) * 10 + index + 1).padStart(2, '0')}</td>
-                  <td className="py-4 px-2">
+                  <td className="py-4 px-3 text-gray-400">{String((pagination.page - 1) * 10 + index + 1).padStart(2, '0')}</td>
+                  <td className="py-4 px-3">
                     {row.vendor?.companyName || <span className="text-gray-400 italic text-[12px]">Deleted Party</span>}
                   </td>
-                  <td className="py-4 px-2 font-semibold text-[#2B3B8A]">{row.vendor?.accountNumber || '—'}</td>
-                  <td className="py-4 px-2 text-gray-500">{row.vendor?.mobileNumber || '—'}</td>
-                  <td className="py-4 px-2 font-semibold font-mono text-[12px]">{row.invoiceNumber}</td>
-                  <td className="py-4 px-2 font-mono font-medium text-gray-800">{row.referenceNo || '—'}</td>
-                  <td className="py-4 px-2">{new Date(row.invoiceDate).toLocaleDateString('en-IN')}</td>
-                  <td className="py-4 px-2 font-semibold text-gray-900">₹{Number(row.invoiceAmount).toLocaleString('en-IN')}</td>
-                  <td className="py-4 px-2 font-semibold text-[#E74C3C]">
+                  <td className="py-4 px-3 font-semibold text-[#2B3B8A]">{row.vendor?.accountNumber || '—'}</td>
+                  <td className="py-4 px-3 text-gray-500">{row.vendor?.mobileNumber || '—'}</td>
+                  <td className="py-4 px-3 font-semibold font-mono text-[12px] sticky left-0 z-10 bg-white">{row.invoiceNumber}</td>
+                  <td className="py-4 px-3 font-mono font-medium text-gray-800">{row.referenceNo || '—'}</td>
+                  <td className="py-4 px-3">{new Date(row.invoiceDate).toLocaleDateString('en-IN')}</td>
+                  <td className="py-4 px-3 font-semibold text-gray-900 text-right tabular-nums whitespace-nowrap">₹{Number(row.invoiceAmount).toLocaleString('en-IN')}</td>
+                  <td className="py-4 px-3 font-semibold text-[#E74C3C] text-right tabular-nums whitespace-nowrap">
                     {row.redeemAmount > 0
                       ? `₹${Number(row.redeemAmount).toLocaleString('en-IN')}`
                       : <span className="text-gray-300">—</span>}
                   </td>
-                  <td className="py-4 px-2 text-gray-500">{row.location || '—'}</td>
-                  <td className="py-4 px-2">
+                  <td className="py-4 px-3 text-gray-500 max-w-[160px] truncate" title={row.location || <span className='text-gray-300'>—</span>}>{row.location || '—'}</td>
+                  <td className="py-4 px-3">
                     <span className="px-2.5 py-1 bg-[#EEF2FF] text-[#2B3B8A] text-[11px] font-semibold rounded-lg">
                       {row.division?.name || '—'}
                     </span>
                   </td>
-                  <td className="py-4 px-2 max-w-[140px]">
+                  <td className="py-4 px-3 max-w-[140px]">
                     {row.remark ? (
                       <span className="text-gray-500 text-[12px]" title={row.remark}>
                         {row.remark.length > 28 ? row.remark.substring(0, 28) + '…' : row.remark}
                       </span>
                     ) : <span className="text-gray-300">—</span>}
                   </td>
-                  <td className="py-4 px-2 text-center">
+                  <td className="py-4 px-3 text-center">
                     <div className="flex items-center justify-center gap-1.5">
                       <button onClick={() => openEditModal(row)}
-                        className="px-3 py-1.5 bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white text-[11px] font-bold rounded-lg transition-colors">
+                        className="px-3 py-2 sm:py-1.5 min-h-[36px] bg-[#2B3B8A] hover:bg-[#1a2d6b] text-white text-[11px] font-bold rounded-lg transition-colors cursor-pointer">
                         Edit
                       </button>
+                      {row.redeemAmount > 0 && (
+                        <button onClick={() => openReassign(row)}
+                          title="Change which wallet this was redeemed from"
+                          className="px-3 py-1.5 bg-amber-50 hover:bg-amber-500 text-amber-700 hover:text-white text-[11px] font-bold rounded-lg transition-colors border border-amber-200 hover:border-amber-500 cursor-pointer">
+                          Wallet
+                        </button>
+                      )}
                       <button onClick={() => handleDelete(row._id)}
-                        className="px-3 py-1.5 bg-red-50 hover:bg-red-500 text-red-500 hover:text-white text-[11px] font-bold rounded-lg transition-colors border border-red-200 hover:border-red-500">
+                        className="px-3 py-2 sm:py-1.5 min-h-[36px] bg-red-50 hover:bg-red-500 text-red-500 hover:text-white text-[11px] font-bold rounded-lg transition-colors border border-red-200 hover:border-red-500 cursor-pointer">
                         Delete
                       </button>
                     </div>

@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useLang } from '@/context/LanguageContext';
+import SortableTh from '@/components/SortableTh';
+import useClientSort from '@/components/useClientSort';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -12,6 +14,16 @@ const authHeaders = () => {
 
 export default function BranchesPage() {
   const [branches, setBranches] = useState([]);
+
+  // Point 11
+  const { sort, setSort, sorted: sortedBranches } = useClientSort(branches, {
+    name:      (b) => b.name,
+    email:     (b) => b.email,
+    location:  (b) => b.division?.name || b.location,
+    code:      (b) => b.division?.locationCode || b.code,
+    isActive:  (b) => (b.isActive ? 'Active' : 'Inactive'),
+    createdAt: (b) => b.createdAt,
+  });
   const [divisions, setDivisions] = useState([]);
   const [loading, setLoading] = useState(true);
   const { t } = useLang();
@@ -136,7 +148,7 @@ export default function BranchesPage() {
   };
 
   return (
-    <div className="p-8 md:p-10 max-w-[1600px] mx-auto space-y-6">
+    <div className="p-4 sm:p-8 md:p-10 max-w-[1600px] mx-auto space-y-6">
 
       {/* Edit Modal */}
       {editBranch && (
@@ -290,17 +302,17 @@ export default function BranchesPage() {
               <thead>
                 <tr className="border-b-2 border-gray-100 text-gray-900">
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">#</th>
-                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Location Name</th>
-                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Email</th>
-                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Location</th>
-                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Code</th>
-                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Created</th>
-                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Status</th>
+                  <SortableTh field="name" sort={sort} setSort={setSort} className="pb-3 pt-1 px-3 font-bold text-[13px]">Location Name</SortableTh>
+                  <SortableTh field="email" sort={sort} setSort={setSort} className="pb-3 pt-1 px-3 font-bold text-[13px]">Email</SortableTh>
+                  <SortableTh field="location" sort={sort} setSort={setSort} className="pb-3 pt-1 px-3 font-bold text-[13px]">Location</SortableTh>
+                  <SortableTh field="code" sort={sort} setSort={setSort} className="pb-3 pt-1 px-3 font-bold text-[13px]">Code</SortableTh>
+                  <SortableTh field="createdAt" sort={sort} setSort={setSort} className="pb-3 pt-1 px-3 font-bold text-[13px]">Created</SortableTh>
+                  <SortableTh field="isActive" sort={sort} setSort={setSort} className="pb-3 pt-1 px-3 font-bold text-[13px]">Status</SortableTh>
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Actions</th>
                 </tr>
               </thead>
               <tbody className="text-gray-700 font-medium">
-                {branches.map((branch, i) => (
+                {sortedBranches.map((branch, i) => (
                   <tr key={branch._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
                     <td className="py-4 px-3 text-gray-400 text-[13px]">{String(i + 1).padStart(2, '0')}</td>
                     <td className="py-4 px-3 font-semibold text-gray-900">{branch.name}</td>

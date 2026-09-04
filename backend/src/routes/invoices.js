@@ -1,15 +1,39 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Invoice = require('../models/Invoice');
 const Vendor = require('../models/Vendor');
 const WalletTransaction = require('../models/WalletTransaction');
 const MonthlyWallet = require('../models/MonthlyWallet');
 const Wallet = require('../models/Wallet');
 const OtpToken = require('../models/OtpToken');
+const SystemSetting = require('../models/SystemSetting');
+const { audit } = require('../services/audit');
 const Division = require('../models/Division');
 const { protect, authorize } = require('../middleware/auth');
 const { sendSmsOtp, sendRedemptionConfirmation } = require('../config/sms');
 
 const router = express.Router();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POINT 7 — server-side freeze check.
+// Enforced here, not only in the UI. Disabling a button in the browser is not
+// a control; anyone can bypass it. This is the control.
+// ─────────────────────────────────────────────────────────────────────────────
+async function redemptionFrozen(res) {
+  const doc = await SystemSetting.get('redemptionFreeze', false);
+  if (doc.value) {
+    res.status(423).json({
+      success: false,
+      frozen: true,
+      message: doc.reason
+        ? `Redemption is temporarily suspended: ${doc.reason}. Please contact head office.`
+        : 'Redemption is temporarily suspended. Please contact head office.',
+    });
+    return true;
+  }
+  return false;
+}
+
 
 const generateOtp = () => String(Math.floor(100000 + Math.random() * 900000));
 
@@ -33,6 +57,7 @@ const generateUniqueReferenceNo = async () => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/redeem/send-otp', protect, authorize('branch'), async (req, res) => {
   try {
+    if (await redemptionFrozen(res)) return;
     const { vendorId, redeemAmount, invoiceAmount } = req.body;
 
     if (!vendorId || !redeemAmount) {
@@ -148,113 +173,30 @@ router.post('/redeem/send-otp', protect, authorize('branch'), async (req, res) =
 // @desc    Verify OTP then debit wallet + send confirmation SMS
 // @access  Branch only
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/redeem', protect, authorize('branch'), async (req, res) => {
-  try {
-    const { vendorId, redeemAmount, invoiceAmount, invoiceId, otp } = req.body;
-
-    if (!vendorId || !redeemAmount || !otp) {
-      return res.status(400).json({ success: false, message: 'Vendor ID, redeem amount and OTP are required' });
-    }
-
-    // Verify OTP
-    const otpRecord = await OtpToken.findOne({
-      user: req.user._id,
-      otpCode: otp,
-      purpose: 'redemption',
-      used: false,
-      expiresAt: { $gt: new Date() },
-    });
-
-    if (!otpRecord) {
-      return res.status(400).json({ success: false, message: 'Invalid or expired OTP. Please request a new one.' });
-    }
-
-    const amount = parseFloat(redeemAmount);
-    if (isNaN(amount) || amount <= 0) {
-      return res.status(400).json({ success: false, message: 'Amount must be greater than 0' });
-    }
-
-    if (invoiceAmount) {
-      const invoiceAmt = parseFloat(invoiceAmount);
-      if (isNaN(invoiceAmt) || invoiceAmt <= 0) {
-        return res.status(400).json({ success: false, message: 'Invoice amount must be greater than 0' });
-      }
-      if (amount > invoiceAmt) {
-        return res.status(400).json({ success: false, message: 'Wallet redemption amount cannot exceed invoice amount' });
-      }
-    }
-
-    const vendor = await Vendor.findById(vendorId);
-    if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
-
-    if (amount > vendor.walletBalance) {
-      return res.status(400).json({
-        success: false,
-        message: `Insufficient balance! Only ₹${vendor.walletBalance.toFixed(2)} available`,
-      });
-    }
-
-    // Mark OTP used
-    otpRecord.used = true;
-    await otpRecord.save();
-
-    const newBalance = parseFloat((vendor.walletBalance - amount).toFixed(2));
-
-    await Vendor.findByIdAndUpdate(vendorId, {
-      walletBalance: newBalance,
-      lastRedemptionAmount: amount,
-      lastRedemptionDate: new Date(),
-    });
-
-    await WalletTransaction.create({
-      vendor: vendorId,
-      invoice: invoiceId || null,
-      type: 'debit',
-      amount,
-      balanceAfter: newBalance,
-      description: `Wallet redemption of ₹${amount}`,
-      processedBy: req.user._id,
-    });
-
-    const invoiceRecord = invoiceId ? await Invoice.findById(invoiceId).select('invoiceNumber referenceNo').lean() : null;
-    const invoiceNumberText = invoiceRecord?.invoiceNumber || invoiceId || 'N/A';
-
-    // Send confirmation SMS (non-blocking — redemption already done)
-    sendRedemptionConfirmation(
-      vendor.mobileNumber,
-      vendor.companyName,
-      amount,
-      invoiceNumberText,
-      newBalance,
-      invoiceRecord?.referenceNo
-    ).then(r => console.log('[REDEMPTION MSG RESULT]', JSON.stringify(r)))
-     .catch(e => console.error('[REDEMPTION MSG ERROR]', e.message));
-
-    res.status(200).json({
-      success: true,
-      message: `₹${amount} redeemed successfully`,
-      data: {
-        redeemedAmount: amount,
-        newWalletBalance: newBalance,
-        vendorName: vendor.companyName,
-        mobileNumber: vendor.mobileNumber,
-      },
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
+// ─────────────────────────────────────────────────────────────────────────────
+// POINT 6 — REMOVED: POST /api/invoices/redeem
+//
+// This endpoint debited Vendor.walletBalance but never touched the party's
+// month wallets, so every call left the two ledgers permanently disagreeing.
+// It was unused by the frontend but still mounted and reachable.
+//
+// Redemption now goes through POST /api/invoices only, which deducts from both
+// inside a transaction. Anything still calling the old route gets a clear
+// error rather than silently corrupting a balance.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/redeem', protect, (req, res) => {
+  res.status(410).json({
+    success: false,
+    message:
+      'This endpoint has been removed because it corrupted wallet balances. ' +
+      'Use POST /api/invoices instead.',
+  });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// @route   POST /api/invoices
-// @desc    Create invoice and deduct wallet balance (with monthly sub-wallet support)
-// @access  Branch only
-// Body: vendorId, invoiceDate, invoiceNumber, invoiceAmount, location, remark,
-//       redeemAmount, otp,
-//       redemptions: [{monthlyWalletId, amount}]  ← optional array for split deduction
-// ─────────────────────────────────────────────────────────────────────────────
+
 router.post('/', protect, authorize('branch'), async (req, res) => {
   try {
+    if (await redemptionFrozen(res)) return;
     const { vendorId, invoiceDate, invoiceNumber, invoiceAmount, location, redeemAmount, otp, remark, redemptions } = req.body;
 
     if (!vendorId || !invoiceDate || !invoiceNumber || !invoiceAmount) {
@@ -389,84 +331,168 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
       }
     }
 
-    // Mark OTP used
-    otpRecord.used = true;
-    await otpRecord.save();
+    // ═══════════════════════════════════════════════════════════════════════
+    // POINT 6 — every write below happens inside one transaction.
+    //
+    // A redemption touches four collections: MonthlyWallet, Vendor, Invoice
+    // and WalletTransaction. Previously these ran one after another with no
+    // safety net, so a failure part-way through left the party's month wallets
+    // and their master balance permanently disagreeing, with no invoice and no
+    // ledger entry to explain it. Nobody saw an error.
+    //
+    // Deductions are also ATOMIC: the balance check and the write are a single
+    // conditional update, so two counters redeeming at the same instant cannot
+    // both pass a check against the same balance.
+    // ═══════════════════════════════════════════════════════════════════════
+    const session = await mongoose.startSession();
+    let invoice;
+    let walletDeductions = [];
+    let newBalance;
+    let referenceNo;
 
-    // ── Deduct from monthly wallets ───────────────────────────────────────────
-    let remainingToDeduct = redeemAmt;
-    const walletDeductions = []; // [{monthlyWallet, amount, label}]
+    try {
+      await session.withTransaction(async () => {
+        walletDeductions = [];
 
-    if (redemptionList) {
-      // Explicit split provided by frontend
-      for (const r of redemptionList) {
-        const mw = await MonthlyWallet.findById(r.monthlyWalletId);
-        const amt = parseFloat(r.amount);
-        const newMwBalance = parseFloat((mw.balance - amt).toFixed(2));
-        await MonthlyWallet.findByIdAndUpdate(mw._id, { balance: newMwBalance });
-        walletDeductions.push({ monthlyWallet: mw._id, amount: amt, label: mw.label });
-        remainingToDeduct = parseFloat((remainingToDeduct - amt).toFixed(2));
-      }
-    } else {
-      // Auto-deduct: oldest months first (FIFO), skipping held wallets
-      const allWallets = await MonthlyWallet.find({ vendor: vendorId, balance: { $gt: 0 } })
-        .sort({ year: 1, month: 1 });
-      for (const mw of allWallets) {
-        if (remainingToDeduct <= 0) break;
-        if (mw.isHold) continue;
-        const parentWallet = mw.wallet ? await Wallet.findById(mw.wallet) : await Wallet.findOne({ name: mw.label });
-        if (parentWallet && parentWallet.isHold) continue;
+        // Consume the OTP conditionally, so a duplicate submission cannot
+        // spend the same approval twice.
+        const otpClaim = await OtpToken.findOneAndUpdate(
+          { _id: otpRecord._id, used: false },
+          { $set: { used: true } },
+          { new: true, session }
+        );
+        if (!otpClaim) {
+          throw new Error('This OTP has already been used. Please request a new one.');
+        }
 
-        const deduct = Math.min(mw.balance, remainingToDeduct);
-        const newMwBalance = parseFloat((mw.balance - deduct).toFixed(2));
-        await MonthlyWallet.findByIdAndUpdate(mw._id, { balance: newMwBalance });
-        walletDeductions.push({ monthlyWallet: mw._id, amount: deduct, label: mw.label });
-        remainingToDeduct = parseFloat((remainingToDeduct - deduct).toFixed(2));
-      }
-    }
+        const STALE =
+          'A balance changed while this redemption was being prepared. ' +
+          'Nothing has been deducted — please reload the party and try again.';
 
-    // ── Deduct from main vendor wallet ────────────────────────────────────────
-    const newBalance = parseFloat((vendor.walletBalance - redeemAmt).toFixed(2));
-    await Vendor.findByIdAndUpdate(vendorId, {
-      walletBalance: newBalance,
-      lastRedemptionAmount: redeemAmt,
-      lastRedemptionDate: new Date(),
-    });
-    vendor.walletBalance = newBalance;
+        if (redemptionList) {
+          for (const r of redemptionList) {
+            const amt = parseFloat(r.amount);
+            const updated = await MonthlyWallet.findOneAndUpdate(
+              { _id: r.monthlyWalletId, balance: { $gte: amt } },
+              { $inc: { balance: -amt } },
+              { new: true, session }
+            );
+            if (!updated) throw new Error(STALE);
+            walletDeductions.push({
+              monthlyWallet: updated._id, amount: amt, label: updated.label,
+            });
+          }
+        } else {
+          let remaining = redeemAmt;
 
-    // ── Create invoice ────────────────────────────────────────────────────────
-    const divisionId = division._id;
-    const invoiceLocation = location || division.location || '';
-    const referenceNo = await generateUniqueReferenceNo();
+          const candidates = await MonthlyWallet.find({ vendor: vendorId, balance: { $gt: 0 } })
+            .sort({ year: 1, month: 1 })
+            .session(session);
 
-    const invoice = await Invoice.create({
-      vendor: vendorId,
-      createdBy: req.user._id,
-      division: divisionId,
-      invoiceNumber: prefixedInvoiceNumber,
-      invoiceDate: new Date(invoiceDate),
-      invoiceAmount: invoiceAmt,
-      location: invoiceLocation,
-      remark: remark || '',
-      status: 'processed',
-      referenceNo,
-    });
+          // Resolve parent schemes in one query rather than one per wallet
+          const parents = await Wallet.find({
+            _id: { $in: candidates.map((m) => m.wallet).filter(Boolean) },
+          }).select('_id isHold').session(session);
+          const parentById = new Map(parents.map((w) => [String(w._id), w]));
 
-    // ── WalletTransaction records (one per monthly wallet) ────────────────────
-    const walletLabel = walletDeductions.map(d => d.label).join(' + ');
-    for (const d of walletDeductions) {
-      await WalletTransaction.create({
-        vendor: vendorId,
-        invoice: invoice._id,
-        type: 'debit',
-        amount: d.amount,
-        balanceAfter: newBalance,
-        description: `Redemption ₹${d.amount} from ${d.label}`,
-        processedBy: req.user._id,
-        monthlyWallet: d.monthlyWallet,
-        walletLabel: d.label,
+          for (const mw of candidates) {
+            if (remaining <= 0) break;
+            if (mw.isHold) continue;
+            if (mw.wallet && parentById.get(String(mw.wallet))?.isHold) continue;
+
+            const deduct = parseFloat(Math.min(mw.balance, remaining).toFixed(2));
+            if (deduct <= 0) continue;
+
+            const updated = await MonthlyWallet.findOneAndUpdate(
+              { _id: mw._id, balance: { $gte: deduct } },
+              { $inc: { balance: -deduct } },
+              { new: true, session }
+            );
+            if (!updated) throw new Error(STALE);
+
+            walletDeductions.push({
+              monthlyWallet: updated._id, amount: deduct, label: updated.label,
+            });
+            remaining = parseFloat((remaining - deduct).toFixed(2));
+          }
+
+          if (remaining > 0.01) {
+            throw new Error(
+              `Only ₹${(redeemAmt - remaining).toFixed(2)} could be drawn from available ` +
+              'wallets. Nothing has been deducted.'
+            );
+          }
+        }
+
+        // Master balance — conditional, so two simultaneous redemptions cannot
+        // both succeed against the same figure.
+        const updatedVendor = await Vendor.findOneAndUpdate(
+          { _id: vendorId, walletBalance: { $gte: redeemAmt } },
+          {
+            $inc: { walletBalance: -redeemAmt },
+            $set: { lastRedemptionAmount: redeemAmt, lastRedemptionDate: new Date() },
+          },
+          { new: true, session }
+        );
+        if (!updatedVendor) throw new Error(STALE);
+
+        newBalance = parseFloat(updatedVendor.walletBalance.toFixed(2));
+        vendor.walletBalance = newBalance;
+
+        referenceNo = await generateUniqueReferenceNo();
+        const created = await Invoice.create([{
+          vendor: vendorId,
+          createdBy: req.user._id,
+          division: division._id,
+          invoiceNumber: prefixedInvoiceNumber,
+          invoiceDate: new Date(invoiceDate),
+          invoiceAmount: invoiceAmt,
+          redeemedAmount: redeemAmt,
+          location: location || division.location || '',
+          remark: remark || '',
+          status: 'processed',
+          referenceNo,
+        }], { session });
+        invoice = created[0];
+
+        // balanceAfter is a RUNNING balance. Previously a three-wallet split
+        // wrote three rows all claiming the same closing figure, so party
+        // statements would not foot.
+        let running = parseFloat((newBalance + redeemAmt).toFixed(2));
+        const rows = walletDeductions.map((d) => {
+          running = parseFloat((running - d.amount).toFixed(2));
+          return {
+            vendor: vendorId,
+            invoice: invoice._id,
+            type: 'debit',
+            amount: d.amount,
+            balanceAfter: running,
+            description: `Redemption ₹${d.amount} from ${d.label}`,
+            processedBy: req.user._id,
+            monthlyWallet: d.monthlyWallet,
+            walletLabel: d.label,
+          };
+        });
+        await WalletTransaction.create(rows, { session, ordered: true });
       });
+    } catch (txErr) {
+      await session.endSession();
+      console.error('[redemption] rolled back —', txErr.message);
+      // Nothing was written. Every balance is exactly as it was.
+      return res.status(409).json({ success: false, message: txErr.message });
     }
+
+    await session.endSession();
+
+    audit({
+      vendor, eventType: 'redemption', actor: req.user, source: 'branch',
+      amount: redeemAmt, balanceAfter: newBalance,
+      walletLabel: walletDeductions.map((d) => d.label).join(', '),
+      invoiceNumber: prefixedInvoiceNumber, referenceNo,
+      summary:
+        `Redeemed ₹${redeemAmt.toFixed(2)} against ${prefixedInvoiceNumber} ` +
+        `from ${walletDeductions.map((d) => d.label).join(', ')}`,
+    });
 
     // Send WhatsApp confirmation (non-blocking)
     sendRedemptionConfirmation(
@@ -486,6 +512,646 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
         newWalletBalance: vendor.walletBalance,
         walletDeductions,
       },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// POINT 19 — REASSIGN THE WALLET AN INVOICE WAS REDEEMED FROM
+//
+// This is NOT an edit to a field. It is a reversal and a re-application:
+//   1. Credit the amount back to the original wallet
+//   2. Debit it from the target wallet
+//   3. Record both as visible transactions
+//   4. Note the change on the invoice
+//
+// All four in one transaction. The original debit is never touched — deleting
+// or altering it would falsify the audit trail, and the party statement must
+// show what actually happened rather than a tidied version of it.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// @route   GET /api/invoices/:id/reassign-options
+// @desc    Which wallets this invoice drew from, and where it could move to
+// @access  Admin
+router.get('/:id/reassign-options', protect, authorize('admin'), async (req, res) => {
+  try {
+    const invoice = await Invoice.findById(req.params.id)
+      .populate('vendor', 'companyName accountNumber walletBalance')
+      .lean();
+    if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
+
+    // What this invoice actually drew from
+    const debits = await WalletTransaction.find({
+      invoice: invoice._id, type: 'debit', monthlyWallet: { $ne: null },
+    }).lean();
+
+    const mwIds = debits.map((d) => d.monthlyWallet);
+    const sources = await MonthlyWallet.find({ _id: { $in: mwIds } }).lean();
+    const sourceById = new Map(sources.map((m) => [String(m._id), m]));
+
+    // Every other wallet this party holds
+    const allWallets = await MonthlyWallet.find({ vendor: invoice.vendor._id })
+      .sort({ year: 1, month: 1 })
+      .lean();
+
+    const parents = await Wallet.find({
+      _id: { $in: allWallets.map((m) => m.wallet).filter(Boolean) },
+    }).select('_id name isHold').lean();
+    const parentById = new Map(parents.map((w) => [String(w._id), w]));
+
+    res.status(200).json({
+      success: true,
+      invoice: {
+        _id: invoice._id,
+        invoiceNumber: invoice.invoiceNumber,
+        referenceNo: invoice.referenceNo,
+        invoiceDate: invoice.invoiceDate,
+        redeemedAmount: invoice.redeemedAmount,
+        partyName: invoice.vendor?.companyName,
+        partyCode: invoice.vendor?.accountNumber,
+        reassignmentCount: invoice.reassignmentCount || 0,
+      },
+      // Where the money came from — one row per wallet used
+      sources: debits.map((d) => {
+        const mw = sourceById.get(String(d.monthlyWallet));
+        return {
+          monthlyWalletId: d.monthlyWallet,
+          label: d.walletLabel || mw?.label || '',
+          amount: parseFloat((d.amount || 0).toFixed(2)),
+          currentBalance: mw ? parseFloat((mw.balance || 0).toFixed(2)) : null,
+        };
+      }),
+      // Where it could go instead
+      targets: allWallets
+        .filter((m) => !mwIds.some((id) => String(id) === String(m._id)))
+        .map((m) => {
+          const parent = m.wallet ? parentById.get(String(m.wallet)) : null;
+          return {
+            monthlyWalletId: m._id,
+            label: parent?.name || m.label || '',
+            balance: parseFloat((m.balance || 0).toFixed(2)),
+            creditedAmount: parseFloat((m.creditedAmount || 0).toFixed(2)),
+            isHold: !!(m.isHold || parent?.isHold),
+            holdReason: m.holdReason || parent?.holdReason || null,
+            // Moving a redemption ONTO a wallet spends it, so it needs the room
+            hasRoom: (m.balance || 0),
+          };
+        }),
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   PATCH /api/invoices/:id/reassign
+// @desc    Move a redemption from one wallet to another
+// @access  Admin
+router.patch('/:id/reassign', protect, authorize('admin'), async (req, res) => {
+  const session = await mongoose.startSession();
+  try {
+    const { fromMonthlyWalletId, toMonthlyWalletId, amount, reason, overrideHold } = req.body;
+    const amt = parseFloat(amount);
+
+    if (!reason?.trim() || reason.trim().length < 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'A reason of at least 10 characters is required — this is recorded.',
+      });
+    }
+    if (!fromMonthlyWalletId || !toMonthlyWalletId) {
+      return res.status(400).json({ success: false, message: 'Choose both wallets' });
+    }
+    if (String(fromMonthlyWalletId) === String(toMonthlyWalletId)) {
+      return res.status(400).json({ success: false, message: 'Those are the same wallet' });
+    }
+    if (isNaN(amt) || amt <= 0) {
+      return res.status(400).json({ success: false, message: 'Amount must be greater than zero' });
+    }
+
+    const invoice = await Invoice.findById(req.params.id).populate('vendor', 'companyName accountNumber');
+    if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
+
+    // Repeated reassignment makes the trail very hard to follow
+    if ((invoice.reassignmentCount || 0) >= 1 && !overrideHold) {
+      return res.status(400).json({
+        success: false,
+        message:
+          'This invoice has already been reassigned once. Reassigning again makes the ' +
+          'audit trail hard to follow — confirm explicitly if you are sure.',
+        needsConfirmation: true,
+      });
+    }
+
+    // The original debit must actually exist and cover the amount
+    const originalDebit = await WalletTransaction.findOne({
+      invoice: invoice._id, type: 'debit', monthlyWallet: fromMonthlyWalletId,
+    });
+    if (!originalDebit) {
+      return res.status(400).json({
+        success: false,
+        message: 'This invoice did not draw from that wallet',
+      });
+    }
+    if (amt > originalDebit.amount + 0.01) {
+      return res.status(400).json({
+        success: false,
+        message: `Only ₹${originalDebit.amount.toFixed(2)} was drawn from that wallet`,
+      });
+    }
+
+    const target = await MonthlyWallet.findById(toMonthlyWalletId);
+    if (!target) return res.status(404).json({ success: false, message: 'Target wallet not found' });
+    if (String(target.vendor) !== String(invoice.vendor._id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'That wallet belongs to a different party',
+      });
+    }
+
+    const targetParent = target.wallet ? await Wallet.findById(target.wallet).lean() : null;
+    if ((target.isHold || targetParent?.isHold) && !overrideHold) {
+      return res.status(400).json({
+        success: false,
+        message: 'The target wallet is on hold. Confirm explicitly to proceed.',
+        needsConfirmation: true,
+      });
+    }
+
+    let fromLabel, toLabel;
+
+    try {
+      await session.withTransaction(async () => {
+        // 1. Give the money back to the original wallet
+        const from = await MonthlyWallet.findByIdAndUpdate(
+          fromMonthlyWalletId,
+          { $inc: { balance: amt } },
+          { new: true, session }
+        );
+        if (!from) throw new Error('Original wallet no longer exists');
+        fromLabel = from.label;
+
+        // 2. Take it from the target — atomic, so it cannot go negative
+        const to = await MonthlyWallet.findOneAndUpdate(
+          { _id: toMonthlyWalletId, balance: { $gte: amt } },
+          { $inc: { balance: -amt } },
+          { new: true, session }
+        );
+        if (!to) {
+          throw new Error(
+            `The target wallet does not hold ₹${amt.toFixed(2)}. Nothing has been changed.`
+          );
+        }
+        toLabel = to.label;
+
+        // 3. Two visible entries. The original debit is left exactly as it was.
+        //    The pair nets to zero, so the party's balance is unaffected.
+        const stamp = new Date().toLocaleDateString('en-IN');
+        await WalletTransaction.create([
+          {
+            vendor: invoice.vendor._id,
+            invoice: invoice._id,
+            type: 'credit',
+            amount: amt,
+            balanceAfter: null,
+            description: `Reversal — reassigned from ${fromLabel} to ${toLabel} on ${stamp}`,
+            processedBy: req.user._id,
+            monthlyWallet: from._id,
+            walletLabel: fromLabel,
+            isReassignment: true,
+          },
+          {
+            vendor: invoice.vendor._id,
+            invoice: invoice._id,
+            type: 'debit',
+            amount: amt,
+            balanceAfter: null,
+            description: `Re-applied — reassigned from ${fromLabel} to ${toLabel} on ${stamp}`,
+            processedBy: req.user._id,
+            monthlyWallet: to._id,
+            walletLabel: toLabel,
+            isReassignment: true,
+          },
+        ], { session, ordered: true });
+
+        // 4. Note it on the invoice
+        await Invoice.findByIdAndUpdate(
+          invoice._id,
+          {
+            $inc: { reassignmentCount: 1 },
+            $push: {
+              reassignments: {
+                fromWallet: fromLabel,
+                toWallet: toLabel,
+                amount: amt,
+                reason: reason.trim(),
+                byUser: req.user._id,
+                byUserName: req.user.name || null,
+                at: new Date(),
+              },
+            },
+          },
+          { session }
+        );
+      });
+    } catch (txErr) {
+      await session.endSession();
+      console.error('[reassign] rolled back —', txErr.message);
+      return res.status(409).json({ success: false, message: txErr.message });
+    }
+    await session.endSession();
+
+    console.warn(
+      `[REASSIGN] ${req.user.name} moved ₹${amt} on invoice ${invoice.invoiceNumber} ` +
+      `from ${fromLabel} to ${toLabel}. Reason: ${reason.trim()}`
+    );
+
+    audit({
+      vendor: invoice.vendor, eventType: 'redemption.reassigned',
+      actor: req.user, source: 'admin',
+      amount: amt, walletLabel: `${fromLabel} → ${toLabel}`,
+      invoiceNumber: invoice.invoiceNumber,
+      reason: reason.trim(),
+      changes: [{ field: 'sourceWallet', from: fromLabel, to: toLabel }],
+      summary: `Moved ₹${amt.toFixed(2)} from ${fromLabel} to ${toLabel}`,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Moved ₹${amt.toFixed(2)} from ${fromLabel} to ${toLabel}`,
+      data: { fromWallet: fromLabel, toWallet: toLabel, amount: amt },
+    });
+  } catch (error) {
+    console.error('[reassign]', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   GET /api/invoices/reassignments
+// @desc    POINT 20.11 — every invoice whose source wallet was changed
+// @access  Admin
+router.get('/reassignments', protect, authorize('admin'), async (req, res) => {
+  try {
+    const invoices = await Invoice.find({ reassignmentCount: { $gt: 0 } })
+      .populate('vendor', 'companyName accountNumber')
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    const rows = [];
+    for (const inv of invoices) {
+      for (const r of inv.reassignments || []) {
+        rows.push({
+          date: r.at,
+          adminUser: r.byUserName || '(unknown)',
+          partyCode: inv.vendor?.accountNumber || '(deleted party)',
+          partyName: inv.vendor?.companyName || '(deleted party)',
+          invoiceNumber: inv.invoiceNumber,
+          amount: parseFloat((r.amount || 0).toFixed(2)),
+          movedFrom: r.fromWallet,
+          movedTo: r.toWallet,
+          reason: r.reason,
+          timesReassigned: inv.reassignmentCount,
+        });
+      }
+    }
+
+    rows.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    res.status(200).json({
+      success: true,
+      generatedAt: new Date(),
+      summary: {
+        total: rows.length,
+        totalValue: parseFloat(rows.reduce((a, r) => a + r.amount, 0).toFixed(2)),
+        invoicesAffected: invoices.length,
+        // More than once is worth a look — the trail gets hard to follow
+        multipleReassignments: invoices.filter((i) => i.reassignmentCount > 1).length,
+      },
+      rows,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// POINT 14 — ADMIN REDEMPTION (OTP override)
+//
+// For when the SMS service is down or the party cannot be reached.
+//
+// ⚠️ This bypasses the ONLY control protecting a party's balance from being
+// spent without their approval. The safeguards below are not optional:
+//
+//   • Admin role only — branch users are rejected at the server
+//   • A typed reason is mandatory and stored
+//   • The invoice and every ledger row are flagged as an override
+//   • The party is still notified afterwards
+//   • Every use appears in the override report (GET /api/invoices/overrides)
+//
+// If any of these are removed the feature becomes a liability rather than a
+// convenience.
+// ═════════════════════════════════════════════════════════════════════════════
+router.post('/admin-redeem', protect, authorize('admin'), async (req, res) => {
+  try {
+    if (await redemptionFrozen(res)) return;
+
+    const {
+      vendorId, invoiceNumber, invoiceDate, invoiceAmount, redeemAmount,
+      redemptionList, divisionId, location, remark, reason, confirmAmount,
+    } = req.body;
+
+    // ── Override-specific checks ──────────────────────────────────────────
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'A reason is required. It is recorded against this redemption.',
+      });
+    }
+    if (reason.trim().length < 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please give a fuller reason — this is an audited override.',
+      });
+    }
+
+    const redeemAmt = parseFloat(redeemAmount);
+    // Typed confirmation. A single click is too easy on a screen that spends money.
+    if (parseFloat(confirmAmount) !== redeemAmt) {
+      return res.status(400).json({
+        success: false,
+        message: 'The typed amount does not match the redemption amount.',
+      });
+    }
+
+    // ── Standard validation, same as the counter ──────────────────────────
+    const invoiceAmt = parseFloat(invoiceAmount);
+    if (!vendorId || !invoiceNumber || !invoiceDate || isNaN(invoiceAmt)) {
+      return res.status(400).json({ success: false, message: 'All invoice fields are required' });
+    }
+    if (isNaN(redeemAmt) || redeemAmt <= 0) {
+      return res.status(400).json({ success: false, message: 'Redemption amount must be greater than zero' });
+    }
+    if (redeemAmt > invoiceAmt) {
+      return res.status(400).json({ success: false, message: 'Redemption cannot exceed the invoice amount' });
+    }
+
+    // The admin chooses which branch the invoice is booked under
+    const division = await Division.findById(divisionId);
+    if (!division) {
+      return res.status(400).json({ success: false, message: 'Select the branch this invoice belongs to' });
+    }
+
+    const prefixedInvoiceNumber = invoiceNumber.trim();
+    const existing = await Invoice.findOne({ invoiceNumber: prefixedInvoiceNumber });
+    if (existing) {
+      return res.status(400).json({ success: false, message: 'This invoice number already exists' });
+    }
+
+    const vendor = await Vendor.findById(vendorId);
+    if (!vendor) return res.status(404).json({ success: false, message: 'Party not found' });
+    if (vendor.status === 'blocked') {
+      return res.status(400).json({ success: false, message: 'This party is blocked' });
+    }
+    if (redeemAmt > vendor.walletBalance) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot redeem ₹${redeemAmt.toFixed(2)} — the balance is ₹${vendor.walletBalance.toFixed(2)}`,
+      });
+    }
+
+    if (redemptionList?.length) {
+      const listTotal = redemptionList.reduce((s, r) => s + parseFloat(r.amount || 0), 0);
+      if (Math.abs(listTotal - redeemAmt) > 0.01) {
+        return res.status(400).json({
+          success: false,
+          message: 'The split amounts do not add up to the redemption total',
+        });
+      }
+    }
+
+    // ── Write, transactionally (same guarantees as Point 6) ───────────────
+    const session = await mongoose.startSession();
+    let invoice;
+    let deductions = [];
+    let newBalance;
+    let referenceNo;
+
+    try {
+      await session.withTransaction(async () => {
+        deductions = [];
+        const STALE =
+          'A balance changed while this was being prepared. Nothing has been ' +
+          'deducted — please reload and try again.';
+
+        if (redemptionList?.length) {
+          for (const r of redemptionList) {
+            const amt = parseFloat(r.amount);
+            const updated = await MonthlyWallet.findOneAndUpdate(
+              { _id: r.monthlyWalletId, balance: { $gte: amt } },
+              { $inc: { balance: -amt } },
+              { new: true, session }
+            );
+            if (!updated) throw new Error(STALE);
+            deductions.push({ monthlyWallet: updated._id, amount: amt, label: updated.label });
+          }
+        } else {
+          let remaining = redeemAmt;
+          const candidates = await MonthlyWallet.find({ vendor: vendorId, balance: { $gt: 0 } })
+            .sort({ year: 1, month: 1 })
+            .session(session);
+
+          const parents = await Wallet.find({
+            _id: { $in: candidates.map((m) => m.wallet).filter(Boolean) },
+          }).select('_id isHold').session(session);
+          const parentById = new Map(parents.map((w) => [String(w._id), w]));
+
+          for (const mw of candidates) {
+            if (remaining <= 0) break;
+            if (mw.isHold) continue;
+            if (mw.wallet && parentById.get(String(mw.wallet))?.isHold) continue;
+
+            const deduct = parseFloat(Math.min(mw.balance, remaining).toFixed(2));
+            if (deduct <= 0) continue;
+
+            const updated = await MonthlyWallet.findOneAndUpdate(
+              { _id: mw._id, balance: { $gte: deduct } },
+              { $inc: { balance: -deduct } },
+              { new: true, session }
+            );
+            if (!updated) throw new Error(STALE);
+
+            deductions.push({ monthlyWallet: updated._id, amount: deduct, label: updated.label });
+            remaining = parseFloat((remaining - deduct).toFixed(2));
+          }
+
+          if (remaining > 0.01) {
+            throw new Error(
+              `Only ₹${(redeemAmt - remaining).toFixed(2)} could be drawn from available wallets.`
+            );
+          }
+        }
+
+        const updatedVendor = await Vendor.findOneAndUpdate(
+          { _id: vendorId, walletBalance: { $gte: redeemAmt } },
+          {
+            $inc: { walletBalance: -redeemAmt },
+            $set: { lastRedemptionAmount: redeemAmt, lastRedemptionDate: new Date() },
+          },
+          { new: true, session }
+        );
+        if (!updatedVendor) throw new Error(STALE);
+        newBalance = parseFloat(updatedVendor.walletBalance.toFixed(2));
+
+        referenceNo = await generateUniqueReferenceNo();
+        const created = await Invoice.create([{
+          vendor: vendorId,
+          createdBy: req.user._id,
+          division: division._id,
+          invoiceNumber: prefixedInvoiceNumber,
+          invoiceDate: new Date(invoiceDate),
+          invoiceAmount: invoiceAmt,
+          redeemedAmount: redeemAmt,
+          location: location || division.location || '',
+          remark: remark || '',
+          status: 'processed',
+          referenceNo,
+          // The flags that make this reviewable later
+          isAdminOverride: true,
+          overrideReason: reason.trim(),
+          overrideBy: req.user._id,
+          overrideByName: req.user.name || null,
+        }], { session });
+        invoice = created[0];
+
+        let running = parseFloat((newBalance + redeemAmt).toFixed(2));
+        const rows = deductions.map((d) => {
+          running = parseFloat((running - d.amount).toFixed(2));
+          return {
+            vendor: vendorId,
+            invoice: invoice._id,
+            type: 'debit',
+            amount: d.amount,
+            balanceAfter: running,
+            description: `Redemption ₹${d.amount} from ${d.label} — ADMIN OVERRIDE (no party OTP)`,
+            processedBy: req.user._id,
+            monthlyWallet: d.monthlyWallet,
+            walletLabel: d.label,
+            isAdminOverride: true,
+          };
+        });
+        await WalletTransaction.create(rows, { session, ordered: true });
+      });
+    } catch (txErr) {
+      await session.endSession();
+      console.error('[admin-redeem] rolled back —', txErr.message);
+      return res.status(409).json({ success: false, message: txErr.message });
+    }
+    await session.endSession();
+
+    console.warn(
+      `[ADMIN OVERRIDE] ${req.user.name} redeemed ₹${redeemAmt} for ` +
+      `${vendor.accountNumber} without party OTP. Reason: ${reason.trim()}`
+    );
+
+    audit({
+      vendor, eventType: 'redemption.adminOverride', actor: req.user, source: 'admin',
+      amount: redeemAmt, balanceAfter: newBalance,
+      walletLabel: deductions.map((d) => d.label).join(', '),
+      invoiceNumber: prefixedInvoiceNumber, referenceNo,
+      reason: reason.trim(),
+      summary:
+        `ADMIN OVERRIDE — redeemed ₹${redeemAmt.toFixed(2)} without party OTP approval`,
+    });
+
+    // The party is told regardless — they should learn their balance changed
+    // even though they were not asked to approve it.
+    let notified = false;
+    if (vendor.mobileNumber) {
+      try {
+        await sendRedemptionConfirmation(
+          vendor.mobileNumber, vendor.companyName, redeemAmt, newBalance, referenceNo
+        );
+        notified = true;
+        await Invoice.findByIdAndUpdate(invoice._id, { partyNotified: true });
+      } catch (err) {
+        console.error(`[ADMIN OVERRIDE] party not notified: ${err.message}`);
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Redemption completed as an admin override',
+      data: {
+        invoice, referenceNo, newBalance,
+        walletsUsed: deductions.map((d) => ({ label: d.label, amount: d.amount })),
+        partyNotified: notified,
+      },
+    });
+  } catch (error) {
+    console.error('[admin-redeem]', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   GET /api/invoices/overrides
+// @desc    POINT 20.10 — every redemption done without party OTP approval
+// @access  Admin
+//
+// This report is what makes the override feature safe to have. It should be
+// reviewed regularly, and that review should be someone's named job.
+router.get('/overrides', protect, authorize('admin'), async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const filter = { isAdminOverride: true };
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) filter.createdAt.$gte = new Date(startDate);
+      if (endDate) {
+        const e = new Date(endDate); e.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = e;
+      }
+    }
+
+    const invoices = await Invoice.find(filter)
+      .populate('vendor', 'companyName accountNumber mobileNumber')
+      .populate('division', 'name')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const fyStart = new Date(
+      now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1, 3, 1
+    );
+
+    res.status(200).json({
+      success: true,
+      generatedAt: now,
+      summary: {
+        total: invoices.length,
+        totalValue: parseFloat(invoices.reduce((a, i) => a + (i.redeemedAmount || 0), 0).toFixed(2)),
+        thisMonth: invoices.filter((i) => new Date(i.createdAt) >= monthStart).length,
+        thisMonthValue: parseFloat(
+          invoices.filter((i) => new Date(i.createdAt) >= monthStart)
+            .reduce((a, i) => a + (i.redeemedAmount || 0), 0).toFixed(2)
+        ),
+        thisYear: invoices.filter((i) => new Date(i.createdAt) >= fyStart).length,
+        notNotified: invoices.filter((i) => !i.partyNotified).length,
+      },
+      rows: invoices.map((i) => ({
+        date: i.createdAt,
+        adminUser: i.overrideByName || '(unknown)',
+        partyCode: i.vendor?.accountNumber || '(deleted party)',
+        partyName: i.vendor?.companyName || '(deleted party)',
+        mobileNumber: i.vendor?.mobileNumber || '',
+        amount: parseFloat((i.redeemedAmount || 0).toFixed(2)),
+        invoiceNumber: i.invoiceNumber,
+        referenceNo: i.referenceNo,
+        branch: i.division?.name || '',
+        reason: i.overrideReason || '',
+        partyNotified: !!i.partyNotified,
+      })),
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -513,9 +1179,39 @@ router.get('/all', protect, authorize('admin'), async (req, res) => {
       ];
     }
 
+    // ── Filter by wallet ────────────────────────────────────────────────────
+    // The invoice itself does not record which wallet was drawn from — that
+    // link lives on WalletTransaction. So work backwards: find the debits
+    // against this wallet, then restrict to the invoices they belong to.
+    if (walletId) {
+      const wallet = await Wallet.findById(walletId).select('name').lean();
+
+      const monthlyWalletIds = (
+        await MonthlyWallet.find({
+          $or: [{ wallet: walletId }, ...(wallet ? [{ label: wallet.name }] : [])],
+        })
+          .select('_id')
+          .lean()
+      ).map((mw) => mw._id);
+
+      const invoiceIds = (
+        await WalletTransaction.find({
+          type: 'debit',
+          monthlyWallet: { $in: monthlyWalletIds },
+          invoice: { $ne: null },
+        })
+          .select('invoice')
+          .lean()
+      ).map((wt) => wt.invoice);
+
+      // No matches means no invoices — not "ignore the filter"
+      filter._id = { $in: invoiceIds };
+    }
+
     const total = await Invoice.countDocuments(filter);
     const invoices = await Invoice.find(filter)
-      .sort({ createdAt: -1 })
+      .collation({ locale: 'en', strength: 2 })
+      .sort({ [sortField]: sortDir })
       .skip((page - 1) * limit)
       .limit(parseInt(limit))
       .populate('vendor', 'companyName accountNumber mobileNumber')
@@ -537,8 +1233,31 @@ router.get('/all', protect, authorize('admin'), async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/', protect, async (req, res) => {
   try {
-    const { vendorId, page = 1, limit = 10, q, location, startDate, endDate, divisionId } = req.query;
+    const { vendorId, page = 1, limit = 10, q, location, startDate, endDate, divisionId, walletId, sortBy, sortOrder } = req.query;
     const filter = {};
+
+    // Point 11 — whitelisted server-side sort
+    // Fields on the invoice itself
+    const INVOICE_SORTABLE = {
+      invoiceNumber: 'invoiceNumber',
+      referenceNo: 'referenceNo',
+      invoiceDate: 'invoiceDate',
+      invoiceAmount: 'invoiceAmount',
+      redeemedAmount: 'redeemedAmount',
+      location: 'location',
+      remark: 'remark',
+      status: 'status',
+      createdAt: 'createdAt',
+      // Fields on the joined party / division. These cannot be sorted by a
+      // plain .sort() because the join has not happened yet, so the query
+      // below switches to an aggregation when one of these is requested.
+      companyName: 'vendorDoc.companyName',
+      accountNumber: 'vendorDoc.accountNumber',
+      mobileNumber: 'vendorDoc.mobileNumber',
+      divisionName: 'divisionDoc.name',
+    };
+    const sortField = INVOICE_SORTABLE[sortBy] || 'createdAt';
+    const sortDir = sortOrder === 'asc' ? 1 : -1;
 
     if (vendorId) filter.vendor = vendorId;
     if (req.user.role === 'branch') filter.division = req.user.division._id || req.user.division;
@@ -568,20 +1287,65 @@ router.get('/', protect, async (req, res) => {
 
     const total = await Invoice.countDocuments(filter);
 
-    // Sum of all filtered invoices (across all pages)
-    const totalAmountAgg = await Invoice.aggregate([
+    // Point 10 — totals across the whole filtered set, not just this page
+    const totalsAgg = await Invoice.aggregate([
       { $match: filter },
-      { $group: { _id: null, totalAmount: { $sum: '$invoiceAmount' } } },
+      {
+        $group: {
+          _id: null,
+          totalInvoiced: { $sum: '$invoiceAmount' },
+          totalRedeemed: { $sum: '$redeemedAmount' },
+        },
+      },
     ]);
-    const totalAmount = totalAmountAgg[0]?.totalAmount || 0;
+    const totalInvoiced = totalsAgg[0]?.totalInvoiced || 0;
+    const totalRedeemed = totalsAgg[0]?.totalRedeemed || 0;
+    const totalAmount = totalInvoiced; // kept so nothing else breaks
 
-    const invoices = await Invoice.find(filter)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit))
-      .populate('vendor', 'companyName accountNumber mobileNumber')
-      .populate('division', 'name location')
-      .lean();
+    // Point 11 — join first, then sort, so party and branch columns can be
+    // sorted across the whole dataset rather than just the visible page.
+    const invoices = await Invoice.aggregate([
+      { $match: filter },
+      {
+        $lookup: {
+          from: 'vendors',
+          localField: 'vendor',
+          foreignField: '_id',
+          as: 'vendorDoc',
+        },
+      },
+      { $unwind: { path: '$vendorDoc', preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: 'divisions',
+          localField: 'division',
+          foreignField: '_id',
+          as: 'divisionDoc',
+        },
+      },
+      { $unwind: { path: '$divisionDoc', preserveNullAndEmptyArrays: true } },
+      { $sort: { [sortField]: sortDir } },
+      { $skip: (parseInt(page) - 1) * parseInt(limit) },
+      { $limit: parseInt(limit) },
+      {
+        // Reshape to match what .populate() used to return, so the frontend
+        // continues to work unchanged.
+        $addFields: {
+          vendor: {
+            _id: '$vendorDoc._id',
+            companyName: '$vendorDoc.companyName',
+            accountNumber: '$vendorDoc.accountNumber',
+            mobileNumber: '$vendorDoc.mobileNumber',
+          },
+          division: {
+            _id: '$divisionDoc._id',
+            name: '$divisionDoc.name',
+            location: '$divisionDoc.location',
+          },
+        },
+      },
+      { $project: { vendorDoc: 0, divisionDoc: 0 } },
+    ]).collation({ locale: 'en', strength: 2 });
 
     // Attach redemption amount (sum of debit wallet transactions per invoice)
     const invoiceIds = invoices.map(inv => inv._id);
@@ -605,7 +1369,9 @@ router.get('/', protect, async (req, res) => {
       success: true,
       data: invoicesWithRedeem,
       pagination: { total, page: parseInt(page), limit: parseInt(limit), pages: Math.ceil(total / limit) },
-      totalAmount: parseFloat(totalAmount.toFixed(2)),
+      totalAmount: parseFloat(totalInvoiced.toFixed(2)),
+      totalInvoiced: parseFloat(totalInvoiced.toFixed(2)),
+      totalRedeemed: parseFloat(totalRedeemed.toFixed(2)),
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
