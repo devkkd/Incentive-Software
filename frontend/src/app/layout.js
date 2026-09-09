@@ -2,7 +2,6 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { LanguageProvider } from "@/context/LanguageContext";
 import Script from "next/script";
-import MockApi from "@/components/MockApi";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -49,7 +48,6 @@ export default function RootLayout({ children }) {
         {/* Hidden Google Translate element — required by the widget */}
         <div id="google_translate_element" style={{ display: 'none' }} />
 
-        <MockApi />
         <LanguageProvider>
           {children}
         </LanguageProvider>
