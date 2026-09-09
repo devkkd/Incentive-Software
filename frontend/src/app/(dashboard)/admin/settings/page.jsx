@@ -102,7 +102,7 @@ export default function AdminSettingsPage() {
   );
 
   return (
-    <div className="p-8 md:p-10 max-w-[1600px] mx-auto space-y-6">
+    <div className="p-4 sm:p-8 md:p-10 max-w-[1600px] mx-auto space-y-6">
       <div>
         <h2 className="text-[14px] text-gray-700 mb-1">Welcome to Friends Trading Corporation - Incentive Management</h2>
         <h1 className="text-[28px] font-bold text-black tracking-tight">Admin Portal</h1>

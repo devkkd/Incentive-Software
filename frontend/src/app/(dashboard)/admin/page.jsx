@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { AreaChart, Area, LineChart, Line, Legend, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+
+const CHART_COLORS = ['#2B3B8A', '#D97706', '#059669', '#0088FE', '#E74C3C', '#8B5CF6', '#EC4899', '#14B8A6'];
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -15,6 +17,7 @@ const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractio
 export default function AdminDashboardPage() {
   const [stats, setStats] = useState(null);
   const [year, setYear] = useState(new Date().getFullYear());
+  const [branchFilter, setBranchFilter] = useState('all');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -28,9 +31,11 @@ export default function AdminDashboardPage() {
 
   const kpi1 = stats?.kpi1 || {};
   const kpi2 = stats?.kpi2 || {};
-  const areaData = stats?.areaData || Array(12).fill(0).map((_, i) => ({ name: ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][i], value: 0 }));
+  // Point 9 — weekly redemption by branch
+  const weeklyRedemptionData = stats?.weeklyRedemptionData || [];
+  const branches = stats?.branches || [];
+  const branchTotals = stats?.branchTotals || [];
   const pieData = stats?.pieData || [];
-  const peakMonth = stats?.peakMonth;
 
   const kpi2Items = [
     { title: 'Total Invoices Created', value: loading ? '...' : kpi2.totalInvoices?.toLocaleString() || '0', icon: <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /> },
@@ -40,11 +45,9 @@ export default function AdminDashboardPage() {
   ];
 
   // Find peak index for marker position
-  const peakIndex = peakMonth ? areaData.findIndex(d => d.name === peakMonth.name) : -1;
-  const peakLeftPct = peakIndex >= 0 ? `${(peakIndex / 11) * 80 + 5}%` : '38%';
 
   return (
-    <div className="p-8 md:p-10 max-w-[1500px] mx-auto">
+    <div className="p-4 sm:p-8 md:p-10 max-w-[1500px] mx-auto">
       <div className="mb-6">
         <h2 className="text-[14px] text-gray-700 mb-1">Welcome to Friends Trading Corporation - Incentive Management</h2>
         <h1 className="text-[28px] font-bold text-black tracking-tight">Admin Portal</h1>
@@ -57,43 +60,50 @@ export default function AdminDashboardPage() {
           <h3 className="text-2xl font-bold text-black mt-2">{loading ? '...' : fmt(kpi1.totalIncentives)}</h3>
         </div>
 
+        {/* ── POINT 8 — Incentive REDEEMED, not distributed ─────────────── */}
         <div className="bg-[#FDEDEC] border border-[#E74C3C]/30 rounded-2xl p-6 shadow-sm flex flex-col justify-between min-h-[110px]">
-          <p className="text-sm text-gray-700 font-medium">Average Weekly Incentives Distributed</p>
+          <p className="text-sm text-gray-700 font-medium">Total Incentive Redeemed &mdash; This Week</p>
           <div className="flex items-end justify-between mt-2 gap-2">
-            <h3 className="text-2xl font-bold text-black">{loading ? '...' : fmt(kpi1.weeklyTotal)}</h3>
+            <h3 className="text-2xl font-bold text-black tabular-nums">{loading ? '...' : fmt(kpi1.weeklyRedeemed)}</h3>
             {!loading && kpi1.weeklyChange !== undefined && (
               <p className={`text-[11px] font-bold text-right leading-tight shrink-0 ${kpi1.weeklyChange >= 0 ? 'text-[#2ECC71]' : 'text-[#E74C3C]'}`}>
                 {kpi1.weeklyChange >= 0 ? '▲' : '▼'} {Math.abs(kpi1.weeklyChange)}%<br/>
-                <span className="text-gray-500 font-normal">Last Week</span>
+                <span className="text-gray-500 font-normal">vs last week</span>
               </p>
             )}
           </div>
+          <p className="text-[10px] text-gray-500 mt-1">Monday to date</p>
         </div>
 
         <div className="bg-[#E4F8ED] border border-[#2ECC71]/30 rounded-2xl p-6 shadow-sm flex flex-col justify-between min-h-[110px]">
-          <p className="text-sm text-gray-700 font-medium">Average Monthly Incentives Distributed</p>
+          <p className="text-sm text-gray-700 font-medium">Total Incentive Redeemed &mdash; This Month</p>
           <div className="flex items-end justify-between mt-2 gap-2">
-            <h3 className="text-2xl font-bold text-black">{loading ? '...' : fmt(kpi1.monthlyTotal)}</h3>
+            <h3 className="text-2xl font-bold text-black tabular-nums">{loading ? '...' : fmt(kpi1.monthlyRedeemed)}</h3>
             {!loading && kpi1.monthlyChange !== undefined && (
               <p className={`text-[11px] font-bold text-right leading-tight shrink-0 ${kpi1.monthlyChange >= 0 ? 'text-[#2ECC71]' : 'text-[#E74C3C]'}`}>
                 {kpi1.monthlyChange >= 0 ? '▲' : '▼'} {Math.abs(kpi1.monthlyChange)}%<br/>
-                <span className="text-gray-500 font-normal">Last Month</span>
+                <span className="text-gray-500 font-normal">vs last month</span>
               </p>
             )}
           </div>
+          <p className="text-[10px] text-gray-500 mt-1">Same point last month</p>
         </div>
 
         <div className="bg-[#E4F8ED] border border-[#2ECC71]/30 rounded-2xl p-6 shadow-sm flex flex-col justify-between min-h-[110px]">
-          <p className="text-sm text-gray-700 font-medium">Average Yearly Incentives Distributed</p>
+          <p className="text-sm text-gray-700 font-medium">
+            Total Incentive Redeemed &mdash; This Year
+            {kpi1.fyLabel && <span className="text-gray-500 font-normal"> ({kpi1.fyLabel})</span>}
+          </p>
           <div className="flex items-end justify-between mt-2 gap-2">
-            <h3 className="text-2xl font-bold text-black">{loading ? '...' : fmt(kpi1.yearlyTotal)}</h3>
+            <h3 className="text-2xl font-bold text-black tabular-nums">{loading ? '...' : fmt(kpi1.yearlyRedeemed)}</h3>
             {!loading && kpi1.yearlyChange !== undefined && (
               <p className={`text-[11px] font-bold text-right leading-tight shrink-0 ${kpi1.yearlyChange >= 0 ? 'text-[#2ECC71]' : 'text-[#E74C3C]'}`}>
                 {kpi1.yearlyChange >= 0 ? '▲' : '▼'} {Math.abs(kpi1.yearlyChange)}%<br/>
-                <span className="text-gray-500 font-normal">Last Year</span>
+                <span className="text-gray-500 font-normal">vs last FY</span>
               </p>
             )}
           </div>
+          <p className="text-[10px] text-gray-500 mt-1">1 April to date</p>
         </div>
       </div>
 
@@ -120,12 +130,21 @@ export default function AdminDashboardPage() {
         {/* Area Chart */}
         <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 relative">
           <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-bold text-black">Incentives Distributed</h3>
+            <div>
+              <h3 className="text-xl font-bold text-black">Incentive Redeemed &mdash; Weekly</h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {branchFilter === 'all' ? 'All locations' : branchFilter} &middot; last 12 weeks
+              </p>
+            </div>
             <div className="relative">
-              <select value={year} onChange={(e) => setYear(parseInt(e.target.value))}
-                className="appearance-none bg-white border border-gray-200 text-gray-700 text-sm rounded-lg px-4 py-1.5 pr-8 focus:outline-none cursor-pointer">
-                {[new Date().getFullYear(), new Date().getFullYear() - 1, new Date().getFullYear() - 2].map(y => (
-                  <option key={y} value={y}>{y}</option>
+              <select
+                value={branchFilter}
+                onChange={(e) => setBranchFilter(e.target.value)}
+                className="appearance-none bg-white border border-gray-200 text-gray-700 text-sm rounded-lg px-4 py-1.5 pr-8 focus:outline-none cursor-pointer"
+              >
+                <option value="all">All Locations</option>
+                {branches.map((b) => (
+                  <option key={b} value={b}>{b}</option>
                 ))}
               </select>
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3.5 h-3.5 absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
@@ -136,29 +155,65 @@ export default function AdminDashboardPage() {
 
           <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={areaData} margin={{ top: 20, right: 0, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#4196FF" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#4196FF" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#9CA3AF' }} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#9CA3AF' }} tickFormatter={(v) => `₹${v >= 1000 ? `${(v/1000).toFixed(0)}K` : v}`} />
-                <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} labelStyle={{ fontWeight: 'bold', color: '#111827' }} formatter={(v) => [`₹${v.toLocaleString('en-IN')}`, 'Amount']} />
-                <Area type="monotone" dataKey="value" stroke="#4196FF" strokeWidth={3} fillOpacity={1} fill="url(#colorValue)" />
-              </AreaChart>
+              {branchFilter === 'all' ? (
+                <LineChart data={weeklyRedemptionData} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#9CA3AF' }} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#9CA3AF' }} tickFormatter={(v) => `₹${v >= 100000 ? `${(v/100000).toFixed(1)}L` : v >= 1000 ? `${(v/1000).toFixed(0)}K` : v}`} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }}
+                    labelStyle={{ fontWeight: 'bold', color: '#111827' }}
+                    formatter={(v, n) => [`₹${Number(v).toLocaleString('en-IN')}`, n]}
+                  />
+                  <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} iconType="line" />
+                  {branches.map((b, i) => (
+                    <Line
+                      key={b}
+                      type="monotone"
+                      dataKey={b}
+                      stroke={CHART_COLORS[i % CHART_COLORS.length]}
+                      strokeWidth={2}
+                      dot={false}
+                      activeDot={{ r: 4 }}
+                    />
+                  ))}
+                </LineChart>
+              ) : (
+                <AreaChart data={weeklyRedemptionData} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorBranch" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#4196FF" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#4196FF" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#9CA3AF' }} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#9CA3AF' }} tickFormatter={(v) => `₹${v >= 100000 ? `${(v/100000).toFixed(1)}L` : v >= 1000 ? `${(v/1000).toFixed(0)}K` : v}`} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }}
+                    labelStyle={{ fontWeight: 'bold', color: '#111827' }}
+                    formatter={(v) => [`₹${Number(v).toLocaleString('en-IN')}`, branchFilter]}
+                  />
+                  <Area type="monotone" dataKey={branchFilter} stroke="#4196FF" strokeWidth={3} fillOpacity={1} fill="url(#colorBranch)" />
+                </AreaChart>
+              )}
             </ResponsiveContainer>
           </div>
 
-          {peakMonth && peakMonth.value > 0 && (
-            <>
-              <div className="absolute top-[80px] -translate-x-1/2 bg-[#007BFF] text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-md z-10 pointer-events-none" style={{ left: peakLeftPct }}>
-                {fmt(peakMonth.value)}
-              </div>
-              <div className="absolute top-[105px] h-[220px] border-l border-dashed border-gray-400 z-0 pointer-events-none" style={{ left: peakLeftPct }} />
-            </>
+          {branchFilter === 'all' && branchTotals.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap gap-x-6 gap-y-1.5">
+              {branchTotals.map((b, i) => (
+                <button
+                  key={b.name}
+                  onClick={() => setBranchFilter(b.name)}
+                  className="flex items-center gap-2 text-xs cursor-pointer hover:opacity-70 transition-opacity"
+                >
+                  <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: CHART_COLORS[branches.indexOf(b.name) % CHART_COLORS.length] }} />
+                  <span className="text-gray-600">{b.name}</span>
+                  <span className="font-semibold text-gray-900 tabular-nums">{fmt(b.total)}</span>
+                </button>
+              ))}
+            </div>
           )}
         </div>
 

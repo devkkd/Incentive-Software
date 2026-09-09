@@ -510,7 +510,7 @@ export default function BranchDashboard() {
   };
 
   return (
-    <div className="p-8 md:p-10 relative">
+    <div className="p-4 sm:p-8 md:p-10 relative">
       {/* SUCCESS MODAL */}
       {showSuccessModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
@@ -798,6 +798,28 @@ export default function BranchDashboard() {
                                 <p className="text-[11px] font-medium text-[#16a34a]">
                                   Available: ₹{Number(mw.balance).toFixed(2)}
                                 </p>
+
+                                {/* Point 22 — head office notice for this wallet.
+                                    Amber, not red: this is information, not a hold. */}
+                                {mw.notice && (
+                                  <div className="mt-1.5 flex items-start gap-1.5 rounded-lg border-l-[3px] border-amber-500 bg-amber-50 px-2 py-1.5 animate-pulse-slow">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-px">
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                                    </svg>
+                                    <div className="min-w-0">
+                                      <p className="text-[11px] font-semibold text-amber-800 leading-snug">
+                                        {mw.notice.message}
+                                      </p>
+                                      {mw.notice.lapseDate && (
+                                        <p className="text-[10px] text-amber-700 mt-0.5">
+                                          Lapses {new Date(mw.notice.lapseDate).toLocaleDateString('en-IN', {
+                                            day: 'numeric', month: 'short', year: 'numeric',
+                                          })}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                               {/* "Use Full" quick-fill button */}
                               {!isSelected && (

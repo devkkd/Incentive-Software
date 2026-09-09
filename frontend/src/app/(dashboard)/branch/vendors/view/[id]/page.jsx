@@ -143,7 +143,7 @@ export default function ViewVendorPage() {
                 </div>
 
                 {/* Details Body */}
-                <div className="p-8 flex flex-col lg:flex-row gap-10">
+                <div className="p-4 sm:p-8 flex flex-col lg:flex-row gap-10">
                   
                   {/* Info Columns Wrapper */}
                   <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6 border-r border-gray-100 pr-0 lg:pr-10">

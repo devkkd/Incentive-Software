@@ -92,7 +92,7 @@ export default function AdminCreateVendorPage() {
   const selectedDivision = divisions.find(d => d._id === form.divisionId);
 
   return (
-    <div className="p-8 md:p-10 max-w-[1600px] mx-auto">
+    <div className="p-4 sm:p-6 md:p-10 max-w-[1600px] mx-auto">
       <div className="mb-6">
         <div className="flex items-center gap-2 text-[13px] text-gray-500 mb-3">
           <Link href="/admin/vendors" className="hover:text-[#2B3B8A] transition-colors">Vendors</Link>
@@ -117,7 +117,7 @@ export default function AdminCreateVendorPage() {
             </div>
           )}
 
-          <div className="p-8 md:p-10">
+          <div className="p-4 sm:p-8 md:p-10">
             <h3 className="text-[16px] font-bold text-gray-900 mb-6">Vendor / Party Details</h3>
 
             {/* Row 1: Location, Party Code, Party Name */}

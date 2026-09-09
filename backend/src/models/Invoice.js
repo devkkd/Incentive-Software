@@ -43,6 +43,55 @@ const invoiceSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    // ── POINT 14 — admin override ──────────────────────────────────────────
+    // Set when a redemption was completed from the admin portal WITHOUT the
+    // party approving by OTP. Every one of these must be reviewable.
+    isAdminOverride: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    overrideReason: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    overrideBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    overrideByName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    partyNotified: {
+      type: Boolean,
+      default: false,
+    },
+
+    // ── POINT 19 — wallet reassignment ─────────────────────────────────────
+    // Set when the wallet a redemption was drawn from has been changed after
+    // the fact. The original entries are never edited — a reversal and a
+    // re-application are added instead, so the statement tells the whole story.
+    reassignmentCount: {
+      type: Number,
+      default: 0,
+    },
+    reassignments: [
+      {
+        fromWallet: String,
+        toWallet: String,
+        amount: Number,
+        reason: String,
+        byUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        byUserName: String,
+        at: { type: Date, default: Date.now },
+        _id: false,
+      },
+    ],
+
     remark: {
       type: String,
       trim: true,

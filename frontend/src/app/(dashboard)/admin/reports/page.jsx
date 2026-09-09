@@ -1,6 +1,12 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import ExceptionReport from '@/components/ExceptionReport';
+import LiabilityAgeing from '@/components/LiabilityAgeing';
+import DormantParties from '@/components/DormantParties';
+import AnalyticsReport from '@/components/AnalyticsReport';
+import PartyScorecard from '@/components/PartyScorecard';
+import UnusualPatterns from '@/components/UnusualPatterns';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -198,7 +204,7 @@ export default function AdminReportsPage() {
     doc.text(`Wallet Bal.  : Rs. ${Number(v?.walletBalance || 0).toFixed(2)}`, 14, 59);
     doc.text(`Generated    : ${genDate}`, 200, 35);
 
-    const head = ['#', 'Date', 'Particulars / Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited (Rs)', 'Debited (Rs)', 'Wallet Balance (Rs)', 'Location'];
+    const head = ['#', 'Date', 'Particulars / Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited Amount (Rs)', 'Debited (Rs)', 'Current Balance (Rs)', 'Location'];
     const body = filteredStatementData.map((row, i) => [
       i + 1,
       row.date.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }),
@@ -233,7 +239,7 @@ export default function AdminReportsPage() {
       [`Wallet Balance: Rs. ${Number(v?.walletBalance || 0).toFixed(2)}`, '', `Generated: ${genDate}`],
       [],
     ];
-    const head = ['#', 'Date', 'Particulars / Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited (Rs)', 'Debited (Rs)', 'Wallet Balance (Rs)', 'Location'];
+    const head = ['#', 'Date', 'Particulars / Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited Amount (Rs)', 'Debited (Rs)', 'Current Balance (Rs)', 'Location'];
     const body = filteredStatementData.map((row, i) => [
       i + 1,
       row.date.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }),
@@ -323,7 +329,7 @@ export default function AdminReportsPage() {
       if (locationFilter && row.location?.toLowerCase() !== locationFilter.toLowerCase()) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
-        if (!`${row.invoiceNumber} ${row.referenceNo || ''} ${row.vendor?.companyName} ${row.location}`.toLowerCase().includes(q)) return false;
+        if (!`${row.invoiceNumber} ${row.referenceNo || <span className='text-gray-300'>—</span>} ${row.vendor?.companyName} ${row.location}`.toLowerCase().includes(q)) return false;
       }
     }
     if (reportType === 'incentives') {
@@ -380,7 +386,7 @@ export default function AdminReportsPage() {
   const getTableData = () => {
     if (reportType === 'wallet_balances') {
       const allMonths = [...new Set(filteredData.flatMap(v => (v.monthlyWallets || []).map(w => w.label)))].sort();
-      const head = ['#', 'Party Name', 'Party Code', 'Mobile', 'Division', 'Status', 'Total Wallet (Rs)', ...allMonths];
+      const head = ['#', 'Party Name', 'Party Code', 'Mobile Number', 'Location', 'Status', 'Current Balance (Rs)', ...allMonths];
       const body = filteredData.map((v, i) => {
         const monthCols = allMonths.map(month => {
           const mw = (v.monthlyWallets || []).find(w => w.label === month);
@@ -391,17 +397,17 @@ export default function AdminReportsPage() {
       return { head, body };
     }
     if (reportType === 'invoices') return {
-      head: ['#', 'Invoice No', 'Reference No', 'Vendor', 'Account No', 'Invoice Amount', 'Amount Redeemed', 'Location', 'Division', 'Date', 'Remark'],
+      head: ['#', 'Invoice Number', 'Reference Number', 'Party Name', 'Party Code', 'Invoice Amount', 'Redeemed Amount', 'Location', 'Location', 'Date', 'Remark'],
       body: filteredData.map((inv, i) => [i+1, inv.invoiceNumber, inv.referenceNo || '—', inv.vendor?.companyName||'N/A', inv.vendor?.accountNumber||'N/A', `Rs. ${Number(inv.invoiceAmount).toFixed(2)}`, inv.redeemAmount > 0 ? `Rs. ${Number(inv.redeemAmount).toFixed(2)}` : '—', inv.location, inv.division?.name||'', new Date(inv.invoiceDate).toLocaleDateString('en-IN'), inv.remark || '—']),
     };
     return {
-      head: ['#', 'Vendor', 'Account No', 'Type', 'Amount', 'Balance After', 'Date'],
+      head: ['#', 'Party Name', 'Party Code', 'Type', 'Amount', 'Balance After', 'Date'],
       body: filteredData.map((t, i) => [i+1, t.vendor?.companyName||'N/A', t.vendor?.accountNumber||'N/A', t.type, `Rs. ${t.amount}`, `Rs. ${t.balanceAfter}`, new Date(t.createdAt).toLocaleDateString('en-IN')]),
     };
   };
 
   return (
-    <div className="p-8 md:p-10 max-w-[1600px] mx-auto space-y-6">
+    <div className="p-4 sm:p-8 md:p-10 max-w-[1600px] mx-auto space-y-6">
 
       <div>
         <h2 className="text-[14px] text-gray-700 mb-1">Welcome to Friends Trading Corporation - Incentive Management</h2>
@@ -413,7 +419,7 @@ export default function AdminReportsPage() {
         <div className="flex flex-col md:flex-row">
 
           {/* Column 1: Report Type + Division Filter */}
-          <div className="p-8 md:w-1/3 border-b md:border-b-0 md:border-r border-gray-100">
+          <div className="p-4 sm:p-8 md:w-1/3 border-b md:border-b-0 md:border-r border-gray-100">
             <h3 className="text-[22px] font-bold text-gray-900 mb-6 tracking-tight">Reports</h3>
             <p className="text-[15px] text-gray-800 mb-4">Select a Report to Download</p>
             <div className="flex flex-wrap gap-3 mb-6">
@@ -421,6 +427,18 @@ export default function AdminReportsPage() {
                 { id: 'wallet_balances', label: 'Wallet Balances' },
                 { id: 'invoices', label: 'Invoices' },
                 { id: 'incentives', label: 'Incentives Wallet' },
+                { id: 'exceptions', label: 'Exception Report' },
+                { id: 'ageing', label: 'Liability Ageing' },
+                { id: 'dormant', label: 'Dormant Parties' },
+                { id: 'movement', label: 'Liability Movement' },
+                { id: 'scheme', label: 'Scheme Performance' },
+                { id: 'velocity', label: 'Redemption Velocity' },
+                { id: 'ratio', label: 'Incentive Ratio' },
+                { id: 'branch', label: 'Branch Performance' },
+                { id: 'scorecard', label: 'Party Scorecard' },
+                { id: 'patterns', label: 'Unusual Patterns' },
+                { id: 'overrides', label: 'Admin Overrides' },
+                { id: 'reassignments', label: 'Reassignments' },
               ].map((r) => (
                 <button key={r.id} onClick={() => { setReportType(r.id); setShowResults(false); }}
                   className={`px-5 py-2.5 rounded-xl text-[13px] font-semibold transition-colors ${reportType === r.id ? 'bg-[#2B3B8A] text-white shadow-sm' : 'bg-[#8492A6] text-white hover:bg-gray-500'}`}>
@@ -449,8 +467,12 @@ export default function AdminReportsPage() {
             )} */}
           </div>
 
+          {/* Exception Report needs no timeline or filters — it is a snapshot
+              of the data as it stands right now. */}
+          {['exceptions', 'ageing', 'dormant', 'movement', 'scheme', 'velocity', 'ratio', 'branch', 'scorecard', 'patterns', 'overrides', 'reassignments'].includes(reportType) ? null : (
+          <>
           {/* Column 2: Timeline Presets */}
-          <div className="p-8 md:w-1/3 border-b md:border-b-0 md:border-r border-gray-100">
+          <div className="p-4 sm:p-8 md:w-1/3 border-b md:border-b-0 md:border-r border-gray-100">
             <p className="text-[15px] text-gray-800 mb-6">Select A Reports Timeline</p>
             <div className="space-y-4">
               {[
@@ -475,7 +497,7 @@ export default function AdminReportsPage() {
           </div>
 
           {/* Column 3: Manual Date */}
-          <div className="p-8 md:w-1/3 flex flex-col justify-center">
+          <div className="p-4 sm:p-8 md:w-1/3 flex flex-col justify-center">
             <p className="text-[15px] text-gray-800 mb-6">Select A Reports Timeline Manually</p>
             <div className="space-y-5">
               <div className="space-y-2">
@@ -492,16 +514,30 @@ export default function AdminReportsPage() {
               </div>
             </div>
           </div>
+          </>
+          )}
         </div>
 
-        {/* Action */}
-        <div className="border-t border-gray-100 p-6 flex justify-center bg-white">
-          <button onClick={handleGetReports} disabled={loading}
-            className="bg-[#2B3B8A] hover:bg-[#1a2d6b] disabled:opacity-60 transition-colors text-white font-semibold px-10 py-3 rounded-xl flex items-center justify-center gap-2">
-            {loading ? 'Loading...' : 'Get Reports →'}
-          </button>
-        </div>
+        {/* Action — the Exception Report loads itself, so no button */}
+        {!['exceptions', 'ageing', 'dormant', 'movement', 'scheme', 'velocity', 'ratio', 'branch', 'scorecard', 'patterns', 'overrides', 'reassignments'].includes(reportType) && (
+          <div className="border-t border-gray-100 p-6 flex justify-center bg-white">
+            <button onClick={handleGetReports} disabled={loading}
+              className="bg-[#2B3B8A] hover:bg-[#1a2d6b] disabled:opacity-60 transition-colors text-white font-semibold px-10 py-3 rounded-xl flex items-center justify-center gap-2">
+              {loading ? 'Loading...' : 'Get Reports →'}
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Exception Report panel */}
+      {reportType === 'exceptions' && <ExceptionReport />}
+      {reportType === 'ageing' && <LiabilityAgeing />}
+      {reportType === 'dormant' && <DormantParties />}
+      {['movement', 'scheme', 'velocity', 'ratio', 'branch', 'overrides', 'reassignments'].includes(reportType) && (
+        <AnalyticsReport type={reportType} />
+      )}
+      {reportType === 'scorecard' && <PartyScorecard />}
+      {reportType === 'patterns' && <UnusualPatterns />}
 
       {/* QUICK STATEMENT LOOKUP */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 md:p-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -576,7 +612,7 @@ export default function AdminReportsPage() {
                       <th className="pb-4 font-bold px-2">Mobile</th>
                       <th className="pb-4 font-bold px-2">Division</th>
                       <th className="pb-4 font-bold px-2">Status</th>
-                      <th className="pb-4 font-bold px-2">Total Wallet (₹)</th>
+                      <th className="pb-4 font-bold px-2 text-right">Total Wallet (₹)</th>
                       {allMonths.map(m => <th key={m} className="pb-4 font-bold px-2 text-right">{m} (₹)</th>)}
                       <th className="pb-4 font-bold px-2 text-center">Action</th>
                     </>;
@@ -586,7 +622,7 @@ export default function AdminReportsPage() {
                     <th className="pb-4 font-bold px-2">Reference No</th>
                     <th className="pb-4 font-bold px-2">Party Name</th>
                     <th className="pb-4 font-bold px-2">Party Code</th>
-                    <th className="pb-4 font-bold px-2">Invoice Amount (₹)</th>
+                    <th className="pb-4 font-bold px-2 text-right">Invoice Amount (₹)</th>
                     <th className="pb-4 font-bold px-2">Amount Redeemed (₹)</th>
                     <th className="pb-4 font-bold px-2">Location</th>
                     <th className="pb-4 font-bold px-2">Division</th>
@@ -597,7 +633,7 @@ export default function AdminReportsPage() {
                     <th className="pb-4 font-bold px-2">Party Name</th>
                     <th className="pb-4 font-bold px-2">Party Code</th>
                     <th className="pb-4 font-bold px-2">Type</th>
-                    <th className="pb-4 font-bold px-2">Amount (₹)</th>
+                    <th className="pb-4 font-bold px-2 text-right">Amount (₹)</th>
                     <th className="pb-4 font-bold px-2">Balance After</th>
                     <th className="pb-4 font-bold px-2">Date</th>
                   </>}
@@ -606,18 +642,18 @@ export default function AdminReportsPage() {
               <tbody className="text-gray-700 font-medium text-[13px]">
                 {filteredData.length > 0 ? filteredData.map((row, i) => (
                   <tr key={row._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
-                    <td className="py-5 px-2">{String(i+1).padStart(2,'0')}</td>
+                    <td className="py-4 px-3">{String(i+1).padStart(2,'0')}</td>
                     {reportType === 'wallet_balances' && (() => {
                       const allMonths = [...new Set(filteredData.flatMap(v => (v.monthlyWallets || []).map(w => w.label)))].sort();
                       return <>
-                        <td className="py-5 px-2">{row.companyName}</td>
-                        <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{row.accountNumber}</td>
-                        <td className="py-5 px-2">{row.mobileNumber}</td>
-                        <td className="py-5 px-2">{row.division?.name || '—'}</td>
-                        <td className="py-5 px-2">
+                        <td className="py-4 px-3">{row.companyName}</td>
+                        <td className="py-4 px-3 font-semibold text-[#2B3B8A]">{row.accountNumber}</td>
+                        <td className="py-4 px-3">{row.mobileNumber}</td>
+                        <td className="py-4 px-3">{row.division?.name || '—'}</td>
+                        <td className="py-4 px-3">
                           <span className={`px-3 py-1.5 rounded-lg border text-[13px] font-semibold capitalize ${statusStyles[row.status] || ''}`}>{row.status}</span>
                         </td>
-                        <td className="py-5 px-2 font-semibold text-[#2B3B8A]">₹{Number(row.walletBalance).toFixed(2)}</td>
+                        <td className="py-4 px-3 font-semibold text-[#2B3B8A] text-right tabular-nums whitespace-nowrap">₹{Number(row.walletBalance).toFixed(2)}</td>
                         {allMonths.map(month => {
                           const mw = (row.monthlyWallets || []).find(w => w.label === month);
                           const bal = mw ? Number(mw.balance) : 0;
@@ -625,7 +661,7 @@ export default function AdminReportsPage() {
                             {bal > 0 ? `₹${bal.toFixed(2)}` : '—'}
                           </td>;
                         })}
-                        <td className="py-5 px-2 text-center">
+                        <td className="py-4 px-3 text-center">
                           <button onClick={() => handleOpenStatement(row)} className="px-3 py-1.5 bg-[#2B3B8A] text-white text-[12px] font-medium rounded hover:bg-[#1e2a61] transition-colors">
                             Statement
                           </button>
@@ -633,32 +669,32 @@ export default function AdminReportsPage() {
                       </>;
                     })()}
                     {reportType === 'invoices' && <>
-                      <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{row.invoiceNumber}</td>
-                      <td className="py-5 px-2 font-mono font-medium text-gray-800">{row.referenceNo || '—'}</td>
-                      <td className="py-5 px-2">{row.vendor?.companyName || 'N/A'}</td>
-                      <td className="py-5 px-2">{row.vendor?.accountNumber || 'N/A'}</td>
-                      <td className="py-5 px-2">₹{Number(row.invoiceAmount).toFixed(2)}</td>
-                      <td className="py-5 px-2 font-semibold text-[#E74C3C]">
+                      <td className="py-4 px-3 font-semibold text-[#2B3B8A]">{row.invoiceNumber}</td>
+                      <td className="py-4 px-3 font-mono font-medium text-gray-800">{row.referenceNo || '—'}</td>
+                      <td className="py-4 px-3">{row.vendor?.companyName || 'N/A'}</td>
+                      <td className="py-4 px-3">{row.vendor?.accountNumber || 'N/A'}</td>
+                      <td className="py-4 px-3 text-right tabular-nums whitespace-nowrap">₹{Number(row.invoiceAmount).toFixed(2)}</td>
+                      <td className="py-4 px-3 font-semibold text-[#E74C3C]">
                         {row.redeemAmount > 0 ? `₹${Number(row.redeemAmount).toFixed(2)}` : <span className="text-gray-400">—</span>}
                       </td>
-                      <td className="py-5 px-2">{row.location}</td>
-                      <td className="py-5 px-2">{row.division?.name || '—'}</td>
-                      <td className="py-5 px-2">{new Date(row.invoiceDate).toLocaleDateString('en-IN')}</td>
-                      <td className="py-5 px-2 max-w-[140px] text-gray-500">
+                      <td className="py-4 px-3">{row.location}</td>
+                      <td className="py-4 px-3">{row.division?.name || '—'}</td>
+                      <td className="py-4 px-3">{new Date(row.invoiceDate).toLocaleDateString('en-IN')}</td>
+                      <td className="py-4 px-3 max-w-[140px] text-gray-500">
                         {row.remark ? (
                           <span title={row.remark}>{row.remark.length > 25 ? row.remark.substring(0, 25) + '…' : row.remark}</span>
                         ) : <span className="text-gray-300">—</span>}
                       </td>
                     </>}
                     {reportType === 'incentives' && <>
-                      <td className="py-5 px-2">{row.vendor?.companyName || 'N/A'}</td>
-                      <td className="py-5 px-2 font-semibold text-[#2B3B8A]">{row.vendor?.accountNumber || 'N/A'}</td>
-                      <td className="py-5 px-2">
+                      <td className="py-4 px-3">{row.vendor?.companyName || 'N/A'}</td>
+                      <td className="py-4 px-3 font-semibold text-[#2B3B8A]">{row.vendor?.accountNumber || 'N/A'}</td>
+                      <td className="py-4 px-3">
                         <span className={`font-semibold ${row.type === 'credit' ? 'text-[#2ECC71]' : 'text-[#E74C3C]'}`}>{row.type}</span>
                       </td>
-                      <td className="py-5 px-2">₹{row.amount}</td>
-                      <td className="py-5 px-2">₹{row.balanceAfter}</td>
-                      <td className="py-5 px-2">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
+                      <td className="py-4 px-3 text-right tabular-nums whitespace-nowrap">₹{row.amount}</td>
+                      <td className="py-4 px-3 text-right tabular-nums whitespace-nowrap">₹{row.balanceAfter}</td>
+                      <td className="py-4 px-3">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
                     </>}
                   </tr>
                 )) : (
@@ -684,7 +720,7 @@ export default function AdminReportsPage() {
                       <tr className="border-t border-gray-100">
                         <td className="py-3 px-2" />
                         <td colSpan="5" className="py-3 px-2 text-right font-semibold">Total Wallet Balance</td>
-                        <td className="py-3 px-2 font-semibold text-[#2B3B8A]">₹{Number(totals.walletTotal).toFixed(2)}</td>
+                        <td className="py-3 px-2 font-semibold text-[#2B3B8A] text-right tabular-nums whitespace-nowrap">₹{Number(totals.walletTotal).toFixed(2)}</td>
                         {allMonths.map(m => {
                           const t = filteredData.reduce((s, v) => { const mw = (v.monthlyWallets||[]).find(w=>w.label===m); return s+(mw?Number(mw.balance):0); }, 0);
                           return <td key={m} className="py-3 px-2 text-right font-semibold text-[#2B3B8A]">{t>0?`₹${t.toFixed(2)}`:'—'}</td>;
@@ -697,8 +733,8 @@ export default function AdminReportsPage() {
                     <tr className="border-t border-gray-100">
                       <td className="py-3 px-2" />
                       <td colSpan="3" className="py-3 px-2 text-right font-semibold">Total</td>
-                      <td className="py-3 px-2 font-semibold">₹{Number(totals.invoiceTotal).toFixed(2)}</td>
-                      <td className="py-3 px-2 font-semibold text-[#E74C3C]">₹{Number(totals.redeemTotal).toFixed(2)}</td>
+                      <td className="py-3 px-2 font-semibold text-right tabular-nums whitespace-nowrap">₹{Number(totals.invoiceTotal).toFixed(2)}</td>
+                      <td className="py-3 px-2 font-semibold text-[#E74C3C] text-right tabular-nums whitespace-nowrap">₹{Number(totals.redeemTotal).toFixed(2)}</td>
                       <td className="py-3 px-2" />
                       <td className="py-3 px-2" />
                       <td className="py-3 px-2" />
@@ -709,7 +745,7 @@ export default function AdminReportsPage() {
                     <tr className="border-t border-gray-100">
                       <td className="py-3 px-2" />
                       <td colSpan="2" className="py-3 px-2 text-right">Total Incentive</td>
-                      <td className="py-3 px-2">₹{Number(totals.incentiveTotal).toFixed(2)}</td>
+                      <td className="py-3 px-2 text-right tabular-nums whitespace-nowrap">₹{Number(totals.incentiveTotal).toFixed(2)}</td>
                       <td className="py-3 px-2" />
                       <td className="py-3 px-2" />
                       <td className="py-3 px-2" />

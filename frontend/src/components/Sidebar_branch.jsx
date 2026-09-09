@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import MarutiPartnerBadge from '@/components/MarutiPartnerBadge';
 
-export default function Sidebar_branch() {
+export default function Sidebar_branch({ frozen = false, open = false, onClose = () => {} }) {
   const pathname = usePathname();
 
   // Define navigation items with their active checking logic
@@ -40,7 +40,22 @@ export default function Sidebar_branch() {
   ];
 
   return (
-    <aside className="w-[260px] bg-white border-r border-gray-200 flex flex-col shrink-0 h-full">
+    <>
+      {/* Backdrop — small screens only, closes the drawer on tap */}
+      {open && (
+        <div
+          onClick={onClose}
+          className="fixed inset-0 bg-black/40 z-40 lg:hidden"
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={`w-[260px] bg-white border-r border-gray-200 flex flex-col shrink-0 h-full
+          fixed inset-y-0 left-0 z-50 transition-transform duration-200
+          lg:static lg:translate-x-0 lg:z-auto
+          ${open ? 'translate-x-0' : '-translate-x-full'}`}
+      >
       {/* Sidebar Logo */}
       <Link href="/branch" className="h-[72px] flex items-center px-6 border-b border-gray-200 hover:opacity-80 transition-opacity shrink-0">
         <div className="flex items-center gap-1">
@@ -51,22 +66,47 @@ export default function Sidebar_branch() {
 
       {/* Sidebar Navigation */}
       <nav className="flex-1 py-4 flex flex-col gap-1 overflow-y-auto">
-        {navItems.map((item) => (
-          <Link 
-            key={item.name} 
-            href={item.href} 
-            className={`mx-3 flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-              item.isActive 
-                ? 'bg-[#2B3B8A] text-white' 
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-            }`}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-              {item.icon}
-            </svg>
-            <span className="text-sm font-medium">{item.name}</span>
-          </Link>
-        ))}
+        {navItems.map((item) => {
+          // Point 7 — while redemption is frozen only Account Settings is reachable
+          const isSettings = item.href.startsWith('/branch/settings');
+          const isDisabled = frozen && !isSettings;
+
+          if (isDisabled) {
+            return (
+              <div
+                key={item.name}
+                title="Unavailable while redemption is suspended"
+                className="mx-3 flex items-center gap-3 px-4 py-3 rounded-xl text-gray-300 cursor-not-allowed select-none"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                  {item.icon}
+                </svg>
+                <span className="text-sm font-medium">{item.name}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5 ml-auto">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                </svg>
+              </div>
+            );
+          }
+
+          return (
+            <Link
+              key={item.name}
+              href={item.href}
+              onClick={onClose}
+              className={`mx-3 flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
+                item.isActive
+                  ? 'bg-[#2B3B8A] text-white'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+              }`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                {item.icon}
+              </svg>
+              <span className="text-sm font-medium">{item.name}</span>
+            </Link>
+          );
+        })}
       </nav>
 
       {/* Partner Badge */}
@@ -74,5 +114,6 @@ export default function Sidebar_branch() {
         <MarutiPartnerBadge size="lg" />
       </div>
     </aside>
+    </>
   );
 }

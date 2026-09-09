@@ -11,7 +11,7 @@ import MarutiPartnerBadge from '@/components/MarutiPartnerBadge';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
-export default function Admin_header() {
+export default function Admin_header({ onMenuClick = () => {} }) {
   const router = useRouter();
   const { t } = useLang();
 
@@ -28,7 +28,19 @@ export default function Admin_header() {
   };
 
   return (
-    <header className="h-[72px] bg-white border-b border-gray-200 flex items-center justify-between px-8 shrink-0 z-10 relative">
+    <header className="h-[72px] bg-white border-b border-gray-200 flex items-center justify-between px-4 lg:px-8 shrink-0 z-10 relative">
+
+      {/* Menu button — small screens only (Point 23) */}
+      <button
+        type="button"
+        onClick={onMenuClick}
+        aria-label="Open menu"
+        className="lg:hidden p-2 -ml-2 mr-1 rounded-lg hover:bg-gray-100 text-gray-700 cursor-pointer shrink-0"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+        </svg>
+      </button>
       {/* Search */}
       <GlobalSearch role="admin" />
 

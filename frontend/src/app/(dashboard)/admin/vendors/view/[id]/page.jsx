@@ -146,7 +146,7 @@ export default function AdminViewVendorPage() {
       )}
 
       {/* Main Dashboard Content */}
-      <div className="p-8 md:p-10 max-w-[1400px] mx-auto space-y-6">
+      <div className="p-4 sm:p-8 md:p-10 max-w-[1400px] mx-auto space-y-6">
 
         {/* TOP CARD: Vendors Account Details */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -184,7 +184,7 @@ export default function AdminViewVendorPage() {
           </div>
 
           {/* Details Body */}
-          <div className="p-8 flex flex-col lg:flex-row gap-10">
+          <div className="p-4 sm:p-8 flex flex-col lg:flex-row gap-10">
             
             {/* Info Columns Wrapper */}
             <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6 border-r border-gray-100 pr-0 lg:pr-10">

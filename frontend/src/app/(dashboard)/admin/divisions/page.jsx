@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import SortableTh from '@/components/SortableTh';
+import useClientSort from '@/components/useClientSort';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -12,6 +14,15 @@ const authHeaders = () => {
 
 export default function DivisionsPage() {
   const [divisions, setDivisions] = useState([]);
+
+  // Point 11 — full list is loaded, so sort here
+  const { sort, setSort, sorted: sortedDivisions } = useClientSort(divisions, {
+    locationCode: (d) => d.locationCode,
+    name:         (d) => d.name,
+    invoiceCount: (d) => d.invoiceCount || 0,
+    isActive:     (d) => (d.isActive ? 'Active' : 'Inactive'),
+    createdAt:    (d) => d.createdAt,
+  });
   const [loading, setLoading] = useState(true);
 
   // Create form
@@ -117,7 +128,7 @@ export default function DivisionsPage() {
   };
 
   return (
-    <div className="p-8 md:p-10 max-w-[1600px] mx-auto space-y-6">
+    <div className="p-4 sm:p-8 md:p-10 max-w-[1600px] mx-auto space-y-6">
 
       {/* Edit Modal */}
       {editDiv && (
@@ -265,18 +276,18 @@ export default function DivisionsPage() {
               <thead>
                 <tr className="border-b-2 border-gray-100 text-gray-900">
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">#</th>
-                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Location Code</th>
-                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Location</th>
-                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Invoice No.</th>
+                  <SortableTh field="locationCode" sort={sort} setSort={setSort} className="pb-3 pt-1 px-3 font-bold text-[13px]">Location Code</SortableTh>
+                  <SortableTh field="name" sort={sort} setSort={setSort} className="pb-3 pt-1 px-3 font-bold text-[13px]">Location</SortableTh>
+                  <SortableTh field="invoiceCount" sort={sort} setSort={setSort} className="pb-3 pt-1 px-3 font-bold text-[13px]">Invoice No.</SortableTh>
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Invoice Prefix</th>
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Party Code Prefix</th>
-                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Status</th>
-                  <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Created</th>
+                  <SortableTh field="isActive" sort={sort} setSort={setSort} className="pb-3 pt-1 px-3 font-bold text-[13px]">Status</SortableTh>
+                  <SortableTh field="createdAt" sort={sort} setSort={setSort} className="pb-3 pt-1 px-3 font-bold text-[13px]">Created</SortableTh>
                   <th className="pb-3 pt-1 px-3 font-bold text-[13px]">Actions</th>
                 </tr>
               </thead>
               <tbody className="text-gray-700 font-medium">
-                {divisions.map((div, i) => (
+                {sortedDivisions.map((div, i) => (
                   <tr key={div._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50 transition-colors">
                     <td className="py-4 px-3 text-gray-400 text-[13px]">{String(i + 1).padStart(2, '0')}</td>
                     <td className="py-4 px-3 font-semibold text-gray-900 font-mono">{div.name}</td>

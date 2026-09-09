@@ -35,6 +35,19 @@ const walletTransactionSchema = new mongoose.Schema(
       ref: 'User',
       required: true,
     },
+    // POINT 19 — marks the reversal / re-application pair created when an
+    // invoice's source wallet is changed. Never applied to an original entry.
+    isReassignment: {
+      type: Boolean,
+      default: false,
+    },
+
+    // POINT 14 — flags a debit taken without party OTP approval
+    isAdminOverride: {
+      type: Boolean,
+      default: false,
+    },
+
     location: {
       type: String,
       trim: true,

@@ -120,7 +120,7 @@ export default function AdminEditVendorPage() {
     <main className="flex-1 p-8 md:p-10 overflow-auto relative z-10 flex flex-col items-center justify-start min-h-full">
       <div className="bg-white rounded-[20px] shadow-sm border border-gray-100 w-full max-w-[900px]">
         <form onSubmit={handleSubmit}>
-          <div className="p-8 md:p-10">
+          <div className="p-4 sm:p-8 md:p-10">
             <div className="mb-8">
               <button type="button" onClick={() => router.back()}
                 className="text-[13px] text-gray-500 hover:text-gray-800 flex items-center gap-1.5 mb-4 transition-colors">
