@@ -43,6 +43,18 @@ const invoiceSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+
+    // ── How much incentive was redeemed against this invoice ───────────────
+    // This field was missing from the schema. The redemption code was setting
+    // it, but Mongoose silently discards fields a schema does not define — so
+    // every redemption recorded ₹0 and every "total redeemed" figure read zero
+    // while the money itself moved correctly.
+    redeemedAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+      index: true,
+    },
     // ── POINT 14 — admin override ──────────────────────────────────────────
     // Set when a redemption was completed from the admin portal WITHOUT the
     // party approving by OTP. Every one of these must be reviewable.
