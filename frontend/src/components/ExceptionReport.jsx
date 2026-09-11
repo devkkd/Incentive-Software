@@ -114,6 +114,47 @@ export default function ExceptionReport() {
   const [backupRunning, setBackupRunning] = useState(false);
   const [backupResult, setBackupResult] = useState(null);
 
+  // Correcting a wallet that a bug pushed negative
+  const [negatives, setNegatives] = useState(null);
+  const [fixRow, setFixRow] = useState(null);
+  const [fixTarget, setFixTarget] = useState('');
+  const [fixReason, setFixReason] = useState('');
+  const [fixBusy, setFixBusy] = useState(false);
+  const [fixError, setFixError] = useState('');
+
+  const loadNegatives = async () => {
+    try {
+      const res = await fetch(`${API}/api/wallets/negative-wallets`, {
+        headers: authHeaders(), credentials: 'include',
+      });
+      const json = await res.json();
+      if (json.success) setNegatives(json);
+    } catch (err) { console.error('[negatives]', err); }
+  };
+
+  const applyFix = async () => {
+    setFixBusy(true); setFixError('');
+    try {
+      const res = await fetch(`${API}/api/wallets/correct-negative`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          fromMonthlyWalletId: fixRow.monthlyWalletId,
+          toMonthlyWalletId: fixTarget,
+          reason: fixReason.trim(),
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setFixRow(null); setFixTarget(''); setFixReason('');
+        await loadNegatives();
+        await load();
+      } else setFixError(json.message);
+    } catch { setFixError('Could not reach the server'); }
+    finally { setFixBusy(false); }
+  };
+
   const runBackup = async () => {
     setBackupRunning(true);
     setBackupResult(null);
@@ -148,7 +189,7 @@ export default function ExceptionReport() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); loadNegatives(); }, []);
 
   const cell = (row, [key, , type]) => {
     const v = row[key];
@@ -232,6 +273,148 @@ export default function ExceptionReport() {
       {error && (
         <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
           {error}
+        </div>
+      )}
+
+      {/* Negative wallets — correctable in place */}
+      {negatives?.count > 0 && (
+        <div className="mb-6 rounded-2xl border-2 border-red-200 bg-red-50 overflow-hidden">
+          <div className="px-5 py-4">
+            <h3 className="text-[15px] font-bold text-red-800">
+              {negatives.count} wallet{negatives.count === 1 ? '' : 's'} below zero
+              &nbsp;·&nbsp; {fmt(negatives.totalShortfall)}
+            </h3>
+            <p className="text-[12px] text-red-700 mt-1 leading-relaxed">
+              More was taken from these wallets than they held — the money came
+              from the wrong month. Moving the shortfall to the correct month
+              fixes it. <strong>The party&rsquo;s total balance does not change.</strong>
+            </p>
+          </div>
+
+          <div className="overflow-x-auto bg-white">
+            <table className="w-full text-[13px]">
+              <thead className="bg-gray-50">
+                <tr className="text-left text-gray-500 uppercase text-[11px] tracking-wider">
+                  <th className="px-4 py-2.5 font-semibold">Party Code</th>
+                  <th className="px-4 py-2.5 font-semibold">Party Name</th>
+                  <th className="px-4 py-2.5 font-semibold">Wallet</th>
+                  <th className="px-4 py-2.5 font-semibold text-right">Balance</th>
+                  <th className="px-4 py-2.5 font-semibold text-right">Shortfall</th>
+                  <th className="px-4 py-2.5 font-semibold text-center">Fix</th>
+                </tr>
+              </thead>
+              <tbody>
+                {negatives.rows.map((r) => (
+                  <tr key={r.monthlyWalletId} className="border-t border-gray-100">
+                    <td className="px-4 py-2.5 font-medium text-gray-900 whitespace-nowrap">{r.partyCode}</td>
+                    <td className="px-4 py-2.5 max-w-[200px] truncate" title={r.partyName}>{r.partyName}</td>
+                    <td className="px-4 py-2.5 whitespace-nowrap">{r.wallet}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-red-700 font-semibold whitespace-nowrap">
+                      {fmt(r.balance)}
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap">{fmt(r.shortfall)}</td>
+                    <td className="px-4 py-2.5 text-center">
+                      <button
+                        onClick={() => {
+                          setFixRow(r);
+                          setFixTarget(r.candidates.find((c) => c.canCover && !c.isHold)?.monthlyWalletId || '');
+                          setFixReason('');
+                          setFixError('');
+                        }}
+                        className="px-3 py-1.5 bg-[#2B3B8A] hover:bg-[#222f70] text-white text-[11px] font-bold rounded-lg cursor-pointer">
+                        Move
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Move the shortfall */}
+      {fixRow && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+             onClick={() => setFixRow(null)}>
+          <div className="bg-white rounded-none sm:rounded-2xl shadow-xl w-full h-full sm:h-auto max-w-lg p-6 space-y-4 overflow-auto"
+               onClick={(e) => e.stopPropagation()}>
+            <div>
+              <h3 className="text-[18px] font-bold text-gray-900">Move the shortfall</h3>
+              <p className="text-[13px] text-gray-500 mt-1">
+                {fixRow.partyName} · {fixRow.partyCode}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 divide-y divide-gray-100 text-[13px]">
+              <div className="flex justify-between px-4 py-2">
+                <span className="text-gray-500">Wallet in deficit</span>
+                <span className="font-medium">{fixRow.wallet}</span>
+              </div>
+              <div className="flex justify-between px-4 py-2">
+                <span className="text-gray-500">Its balance</span>
+                <span className="font-medium text-red-700 tabular-nums">{fmt(fixRow.balance)}</span>
+              </div>
+              <div className="flex justify-between px-4 py-2">
+                <span className="text-gray-500">Amount to move</span>
+                <span className="font-bold tabular-nums">{fmt(fixRow.shortfall)}</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                Take it from
+              </label>
+              <select value={fixTarget} onChange={(e) => setFixTarget(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[14px] cursor-pointer focus:outline-none focus:border-[#2B3B8A]">
+                <option value="">Select the wallet it should have come from…</option>
+                {fixRow.candidates.map((c) => (
+                  <option key={c.monthlyWalletId} value={c.monthlyWalletId} disabled={!c.canCover}>
+                    {c.label} — balance {fmt(c.balance)}
+                    {c.isHold ? ' (on hold)' : ''}
+                    {!c.canCover ? ' — not enough' : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-gray-500 mt-1">
+                Only wallets holding at least {fmt(fixRow.shortfall)} can be used —
+                otherwise this would just move the deficit elsewhere.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                Reason — recorded on the party statement
+              </label>
+              <textarea value={fixReason} onChange={(e) => setFixReason(e.target.value)} rows={2}
+                placeholder="e.g. Over-deducted from June by a system bug, should have come from July"
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-[13px] focus:outline-none focus:border-[#2B3B8A]" />
+            </div>
+
+            {fixError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
+                {fixError}
+              </div>
+            )}
+
+            <p className="text-[11px] text-gray-500 leading-relaxed">
+              Two entries are added to the party statement — the return and the
+              re-application — so the correction is visible rather than silent.
+              The party&rsquo;s total balance is unchanged.
+            </p>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button onClick={() => setFixRow(null)} disabled={fixBusy}
+                className="px-4 py-2 text-[13px] font-semibold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer">
+                Cancel
+              </button>
+              <button onClick={applyFix}
+                disabled={fixBusy || !fixTarget || fixReason.trim().length < 10}
+                className="px-5 py-2 text-[13px] font-semibold text-white bg-[#2B3B8A] hover:bg-[#222f70] disabled:opacity-40 disabled:cursor-not-allowed rounded-xl cursor-pointer">
+                {fixBusy ? 'Moving…' : 'Move shortfall'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

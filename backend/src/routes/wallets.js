@@ -640,6 +640,208 @@ router.patch('/party-hold', protect, authorize('branch', 'admin'), async (req, r
   }
 });
 
+// ═════════════════════════════════════════════════════════════════════════════
+// CORRECT A NEGATIVE WALLET
+//
+// A bug over-deducted from some wallets, leaving them negative. The money was
+// taken from the wrong month — it should have come from a later one.
+//
+// This moves the shortfall: the negative wallet is brought back to zero, and
+// the same amount is taken from the wallet it should have come from.
+//
+// The party's TOTAL balance does not change. Only which month it came from.
+//
+// Like a reassignment, this is never a silent edit — two visible transactions
+// are written so the party statement explains itself.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// @route   GET /api/wallets/negative-wallets
+// @desc    Every wallet sitting below zero, with the party's other wallets
+// @access  Admin
+router.get('/negative-wallets', protect, authorize('admin'), async (req, res) => {
+  try {
+    const negatives = await MonthlyWallet.find({ balance: { $lt: 0 } })
+      .populate('vendor', 'companyName accountNumber walletBalance status')
+      .lean();
+
+    const rows = [];
+    for (const neg of negatives) {
+      if (!neg.vendor) continue;
+
+      // The party's other wallets — where the money should have come from
+      const others = await MonthlyWallet.find({
+        vendor: neg.vendor._id,
+        _id: { $ne: neg._id },
+      })
+        .sort({ year: 1, month: 1 })
+        .lean();
+
+      const parents = await Wallet.find({
+        _id: { $in: others.map((o) => o.wallet).filter(Boolean) },
+      }).select('_id name isHold').lean();
+      const parentById = new Map(parents.map((w) => [String(w._id), w]));
+
+      rows.push({
+        monthlyWalletId: neg._id,
+        partyCode: neg.vendor.accountNumber,
+        partyName: neg.vendor.companyName,
+        partyStatus: neg.vendor.status,
+        masterBalance: parseFloat((neg.vendor.walletBalance || 0).toFixed(2)),
+        wallet: neg.label,
+        balance: parseFloat((neg.balance || 0).toFixed(2)),
+        shortfall: parseFloat(Math.abs(neg.balance || 0).toFixed(2)),
+        creditedAmount: parseFloat((neg.creditedAmount || 0).toFixed(2)),
+        candidates: others.map((o) => {
+          const parent = o.wallet ? parentById.get(String(o.wallet)) : null;
+          return {
+            monthlyWalletId: o._id,
+            label: parent?.name || o.label || '',
+            balance: parseFloat((o.balance || 0).toFixed(2)),
+            isHold: !!(o.isHold || parent?.isHold),
+            canCover: (o.balance || 0) >= Math.abs(neg.balance || 0),
+          };
+        }),
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      count: rows.length,
+      totalShortfall: parseFloat(rows.reduce((a, r) => a + r.shortfall, 0).toFixed(2)),
+      rows: rows.sort((a, b) => b.shortfall - a.shortfall),
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   PATCH /api/wallets/correct-negative
+// @desc    Move a wallet's shortfall to the wallet it should have come from
+// @access  Admin
+router.patch('/correct-negative', protect, authorize('admin'), async (req, res) => {
+  const session = await mongoose.startSession();
+  try {
+    const { fromMonthlyWalletId, toMonthlyWalletId, reason } = req.body;
+
+    if (!reason?.trim() || reason.trim().length < 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'A reason of at least 10 characters is required — this is recorded.',
+      });
+    }
+    if (!fromMonthlyWalletId || !toMonthlyWalletId) {
+      return res.status(400).json({ success: false, message: 'Choose both wallets' });
+    }
+
+    const negative = await MonthlyWallet.findById(fromMonthlyWalletId)
+      .populate('vendor', 'companyName accountNumber');
+    if (!negative) {
+      return res.status(404).json({ success: false, message: 'Wallet not found' });
+    }
+    if ((negative.balance || 0) >= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'That wallet is not negative — nothing to correct',
+      });
+    }
+
+    const shortfall = parseFloat(Math.abs(negative.balance).toFixed(2));
+
+    const target = await MonthlyWallet.findById(toMonthlyWalletId);
+    if (!target) return res.status(404).json({ success: false, message: 'Target wallet not found' });
+    if (String(target.vendor) !== String(negative.vendor._id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'That wallet belongs to a different party',
+      });
+    }
+
+    let fromLabel, toLabel;
+
+    try {
+      await session.withTransaction(async () => {
+        // Bring the negative wallet back to zero
+        const from = await MonthlyWallet.findByIdAndUpdate(
+          fromMonthlyWalletId,
+          { $inc: { balance: shortfall } },
+          { new: true, session }
+        );
+        fromLabel = from.label;
+
+        // Take it from where it should have come from — atomic, so this
+        // cannot simply move the problem to another wallet
+        const to = await MonthlyWallet.findOneAndUpdate(
+          { _id: toMonthlyWalletId, balance: { $gte: shortfall } },
+          { $inc: { balance: -shortfall } },
+          { new: true, session }
+        );
+        if (!to) {
+          throw new Error(
+            `${target.label} does not hold ₹${shortfall.toFixed(2)}. ` +
+            'Nothing has been changed — moving it there would only create a ' +
+            'second negative wallet.'
+          );
+        }
+        toLabel = to.label;
+
+        const stamp = new Date().toLocaleDateString('en-IN');
+        await WalletTransaction.create([
+          {
+            vendor: negative.vendor._id,
+            type: 'credit',
+            amount: shortfall,
+            balanceAfter: null,
+            description: `Correction — over-deduction of ₹${shortfall} returned to ${fromLabel} on ${stamp}`,
+            processedBy: req.user._id,
+            monthlyWallet: from._id,
+            walletLabel: fromLabel,
+            isReassignment: true,
+          },
+          {
+            vendor: negative.vendor._id,
+            type: 'debit',
+            amount: shortfall,
+            balanceAfter: null,
+            description: `Correction — ₹${shortfall} moved from ${fromLabel} to ${toLabel} on ${stamp}`,
+            processedBy: req.user._id,
+            monthlyWallet: to._id,
+            walletLabel: toLabel,
+            isReassignment: true,
+          },
+        ], { session, ordered: true });
+      });
+    } catch (txErr) {
+      await session.endSession();
+      console.error('[correct-negative] rolled back —', txErr.message);
+      return res.status(409).json({ success: false, message: txErr.message });
+    }
+    await session.endSession();
+
+    audit({
+      vendor: negative.vendor, eventType: 'reconciliation.adjusted',
+      actor: req.user, source: 'admin',
+      amount: shortfall, walletLabel: `${fromLabel} → ${toLabel}`,
+      reason: reason.trim(),
+      changes: [{ field: 'shortfallMovedFrom', from: fromLabel, to: toLabel }],
+      summary: `Corrected ₹${shortfall.toFixed(2)} over-deduction — moved from ${fromLabel} to ${toLabel}`,
+    });
+
+    console.warn(
+      `[CORRECTION] ${req.user.name} moved ₹${shortfall} from ${fromLabel} to ${toLabel} ` +
+      `for ${negative.vendor.accountNumber}. Reason: ${reason.trim()}`
+    );
+
+    res.status(200).json({
+      success: true,
+      message: `Moved ₹${shortfall.toFixed(2)} from ${fromLabel} to ${toLabel}`,
+      data: { shortfall, fromWallet: fromLabel, toWallet: toLabel },
+    });
+  } catch (error) {
+    console.error('[correct-negative]', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // @route   GET /api/wallets/diagnostics
 // @desc    Cross-check all balance sources to find mismatches
 // @access  Admin only

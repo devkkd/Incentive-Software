@@ -320,9 +320,21 @@ const median = (arr) => {
  */
 router.get('/liability-movement', protect, authorize('admin'), async (req, res) => {
   try {
-    const monthsBack = parseInt(req.query.months || 12, 10);
     const now = new Date();
-    const from = new Date(now.getFullYear(), now.getMonth() - (monthsBack - 1), 1);
+
+    // Never show months before the system went live — empty rows for Oct 2025
+    // when trading began in April 2026 are noise, not information.
+    // Defaults to the start of the current financial year.
+    const LIVE_FROM = process.env.DATA_STARTS || '2026-04-01';
+    const liveFrom = new Date(LIVE_FROM);
+
+    const requested = parseInt(req.query.months || 12, 10);
+    let from = new Date(now.getFullYear(), now.getMonth() - (requested - 1), 1);
+    if (from < liveFrom) from = new Date(liveFrom.getFullYear(), liveFrom.getMonth(), 1);
+
+    // How many months that actually covers
+    const monthsBack =
+      (now.getFullYear() - from.getFullYear()) * 12 + (now.getMonth() - from.getMonth()) + 1;
 
     const txns = await WalletTransaction.find({ createdAt: { $gte: from } })
       .select('type amount createdAt')
@@ -390,6 +402,7 @@ router.get('/liability-movement', protect, authorize('admin'), async (req, res) 
         variance: rows.at(-1)?.variance || 0,
         reconciles: Math.abs(rows.at(-1)?.variance || 0) < 0.01,
       },
+      windowFrom: from,
       note:
         'Only the closing month can be verified against a live figure — there ' +
         'is no stored month-end snapshot for earlier periods. A non-zero ' +
