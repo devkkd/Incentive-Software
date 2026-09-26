@@ -7,6 +7,7 @@ const { audit, diff } = require('../services/audit');
 const Division = require('../models/Division');
 const Invoice = require('../models/Invoice');
 const { protect, authorize } = require('../middleware/auth');
+const { normalizePartyCode, findCodeConflict, findPartyByCode } = require('../services/partyCode');
 
 const router = express.Router();
 
@@ -42,27 +43,30 @@ router.post('/', protect, authorize('admin'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Division not found' });
     }
 
-    // Prefix account number with branch code (name): AJM-12345
-    const prefixedAccountNumber = `${division.name}-${accountNumber}`;
+    // Party code is stored WITHOUT the branch. Any branch prefix typed in
+    // ("WSG-123", "WSG-WSG-123") is stripped, so one party = one code.
+    const cleanCode = await normalizePartyCode(accountNumber);
+    if (!cleanCode) {
+      return res.status(400).json({ success: false, message: 'Party code cannot be empty' });
+    }
 
-    // Check duplicate
-    const existing = await Vendor.findOne({
-      $or: [{ accountNumber: prefixedAccountNumber }, { mobileNumber }],
-    });
-
-    if (existing) {
+    const codeConflict = await findCodeConflict(cleanCode);
+    if (codeConflict) {
       return res.status(409).json({
         success: false,
-        message: existing.accountNumber === prefixedAccountNumber
-          ? 'This account number already exists'
-          : 'This mobile number is already registered',
+        message: `Party code ${cleanCode} already exists — ${codeConflict.companyName} (${codeConflict.division?.name || 'no branch'}, stored as ${codeConflict.accountNumber})`,
       });
+    }
+
+    const mobileConflict = await Vendor.findOne({ mobileNumber }).select('_id').lean();
+    if (mobileConflict) {
+      return res.status(409).json({ success: false, message: 'This mobile number is already registered' });
     }
 
     const vendor = await Vendor.create({
       companyName,
       personName: resolvedPersonName,
-      accountNumber: prefixedAccountNumber,
+      accountNumber: cleanCode,
       mobileNumber,
       email: email || null,
       address: address || '',
@@ -138,20 +142,22 @@ router.post('/bulk-import', protect, authorize('admin'), upload.single('file'), 
         continue;
       }
 
-      const prefixedAccountNumber = `${loc}-${consPartyCode}`;
+      const cleanCode = await normalizePartyCode(consPartyCode);
+      if (!cleanCode) {
+        results.failed.push({ row: consPartyCode, reason: 'Invalid party code' });
+        continue;
+      }
 
-      // Check duplicate
-      const existing = await Vendor.findOne({
-        $or: [{ accountNumber: prefixedAccountNumber }, { mobileNumber }],
-      });
-
-      if (existing) {
+      const codeConflict = await findCodeConflict(cleanCode);
+      if (codeConflict) {
         results.failed.push({
           row: consPartyCode,
-          reason: existing.accountNumber === prefixedAccountNumber
-            ? 'Account number already exists'
-            : 'Mobile number already registered',
+          reason: `Party code ${cleanCode} already exists (${codeConflict.companyName}, ${codeConflict.division?.name || 'no branch'})`,
         });
+        continue;
+      }
+      if (await Vendor.exists({ mobileNumber })) {
+        results.failed.push({ row: consPartyCode, reason: 'Mobile number already registered' });
         continue;
       }
 
@@ -159,7 +165,7 @@ router.post('/bulk-import', protect, authorize('admin'), upload.single('file'), 
         const vendor = await Vendor.create({
           companyName: consPartyName,
           personName: consPartyName,
-          accountNumber: prefixedAccountNumber,
+          accountNumber: cleanCode,
           mobileNumber,
           address: address || city || '',
           partyCity: city || null,
@@ -169,7 +175,7 @@ router.post('/bulk-import', protect, authorize('admin'), upload.single('file'), 
           division: division._id,
           createdBy: req.user._id,
         });
-        results.success.push({ accountNumber: prefixedAccountNumber, companyName: consPartyName });
+        results.success.push({ accountNumber: cleanCode, companyName: consPartyName });
       } catch (err) {
         results.failed.push({ row: consPartyCode, reason: err.message });
       }
@@ -293,14 +299,23 @@ router.get('/search', protect, async (req, res) => {
     // 1. Exact mobile number match
     // 2. Exact full account number match (e.g. ETY-TRJ020)
     // 3. Suffix match — account number ends with the query (e.g. TRJ020 matches ETY-TRJ020)
-    let vendor = await Vendor.findOne({
-      $or: [
-        { mobileNumber: trimmed },
-        { accountNumber: trimmed },
-        { accountNumber: { $regex: `-${trimmed}$`, $options: 'i' } },
-      ],
-      status: { $ne: 'blocked' },
-    }).populate('division', 'name location locationCode');
+    let vendor = await Vendor.findOne({ mobileNumber: trimmed, status: { $ne: 'blocked' } })
+      .populate('division', 'name location locationCode');
+
+    if (!vendor) {
+      const { vendor: byCode, ambiguous } = await findPartyByCode(trimmed);
+      if (ambiguous.length > 1) {
+        return res.status(409).json({
+          success: false,
+          message: `Party code ${trimmed} matches ${ambiguous.length} parties (` +
+            ambiguous.map((v) => v.accountNumber).join(', ') +
+            '). Search by mobile number, or ask admin to merge the duplicates.',
+        });
+      }
+      if (byCode && byCode.status !== 'blocked') {
+        vendor = await Vendor.findById(byCode._id).populate('division', 'name location locationCode');
+      }
+    }
 
     if (!vendor) {
       const invoice = await Invoice.findOne({
@@ -367,42 +382,34 @@ router.put('/:id', protect, authorize('admin'), async (req, res) => {
       const division = await Division.findById(divId);
       if (!division) return res.status(400).json({ success: false, message: 'Division not found' });
       updatedDivision = division._id;
-      // ── POINT 15a ──────────────────────────────────────────────────────
-      // The edit form sends back the full displayed code (e.g. "JODHPUR-12345").
-      // Strip any division prefixes already present before rebuilding, or every
-      // save appends another one: JODHPUR-JODHPUR-12345, and so on.
-      const raw = (accountNumber || vendor.accountNumber || '').toString().trim();
-
-      // Remove one or more leading "<DIVISION>-" prefixes, whichever division
-      // they came from — historic records may carry a different one.
-      const divisionNames = (await Division.find().select('name').lean()).map((d) => d.name);
-      let suffix = raw;
-      let stripped = true;
-      while (stripped) {
-        stripped = false;
-        for (const name of divisionNames) {
-          const prefix = `${name}-`;
-          if (suffix.toUpperCase().startsWith(prefix.toUpperCase())) {
-            suffix = suffix.slice(prefix.length);
-            stripped = true;
-            break;
-          }
-        }
-      }
-
+      // Party codes are stored WITHOUT the branch. Strip any branch prefixes
+      // still on the code ("WSG-WSG-123" → "123"). Changing the branch no
+      // longer changes the code.
+      const suffix = await normalizePartyCode(accountNumber || vendor.accountNumber || '');
       if (!suffix) {
         return res.status(400).json({ success: false, message: 'Party code cannot be empty' });
       }
+      updatedAccountNumber = suffix;
 
-      updatedAccountNumber = `${division.name}-${suffix}`;
+      const codeConflict = await findCodeConflict(suffix, vendor._id);
+      const codeUnchanged = suffix === (await normalizePartyCode(vendor.accountNumber));
+      if (codeConflict && codeUnchanged) {
+        // A not-yet-merged duplicate: allow other edits, leave its code alone
+        // until it is merged.
+        updatedAccountNumber = vendor.accountNumber;
+      } else if (codeConflict) {
+        return res.status(409).json({
+          success: false,
+          message: `Party code ${suffix} is also used by ${codeConflict.companyName} (${codeConflict.division?.name || 'no branch'}). Merge the two parties from Party List → Duplicate Parties.`,
+        });
+      }
 
       // Check duplicates excluding current vendor
-      const existing = await Vendor.findOne({
-        $or: [{ accountNumber: updatedAccountNumber }, { mobileNumber }],
-        _id: { $ne: vendor._id },
-      });
-      if (existing) {
-        return res.status(409).json({ success: false, message: existing.accountNumber === updatedAccountNumber ? 'This account number already exists' : 'This mobile number is already registered' });
+      if (mobileNumber) {
+        const existing = await Vendor.findOne({ mobileNumber, _id: { $ne: vendor._id } }).select('_id').lean();
+        if (existing) {
+          return res.status(409).json({ success: false, message: 'This mobile number is already registered' });
+        }
       }
     }
 
@@ -519,6 +526,18 @@ router.get('/:id/transactions', protect, async (req, res) => {
         running = parseFloat((running - amount).toFixed(2));
       }
       return { ...trx, balanceAfter: running };
+    });
+
+    // Current wallet name for each entry (a wallet may have been renamed since)
+    const MonthlyWallet = require('../models/MonthlyWallet');
+    const Wallet = require('../models/Wallet');
+    const mwIds = [...new Set(corrected.map((t) => t.monthlyWallet).filter(Boolean).map(String))];
+    const mws = mwIds.length ? await MonthlyWallet.find({ _id: { $in: mwIds } }).select('_id label wallet').lean() : [];
+    const parents = await Wallet.find({ _id: { $in: mws.map((m) => m.wallet).filter(Boolean) } }).select('_id name').lean();
+    const parentName = new Map(parents.map((w) => [String(w._id), w.name]));
+    const mwName = new Map(mws.map((m) => [String(m._id), (m.wallet && parentName.get(String(m.wallet))) || m.label]));
+    corrected.forEach((t) => {
+      t.walletName = (t.monthlyWallet && mwName.get(String(t.monthlyWallet))) || t.walletLabel || null;
     });
 
     // Return newest-first as frontend expects

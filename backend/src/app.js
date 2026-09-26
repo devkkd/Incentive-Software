@@ -17,6 +17,7 @@ const userRoutes = require('./routes/users');
 const exceptionRoutes = require('./routes/exceptions');
 const analyticsRoutes = require('./routes/analytics');
 const walletRoutes = require('./routes/wallets');
+const partyMergeRoutes = require('./routes/partyMerge');
 
 const app = express();
 
@@ -79,6 +80,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/exceptions', exceptionRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/party-merge', partyMergeRoutes);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POINT 26 — nightly Excel backup at 11pm, after the day's trading.
@@ -107,7 +109,9 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ success: true, message: 'FTC Backend is running' });
 });
 
-app.get('/api/analysis', async (req, res) => {
+// Diagnostic figures — admin only (was previously open to anyone with the URL)
+const { protect: _protect, authorize: _authorize } = require('./middleware/auth');
+app.get('/api/analysis', _protect, _authorize('admin'), async (req, res) => {
   try {
     const Wallet = require('./models/Wallet');
     const MonthlyWallet = require('./models/MonthlyWallet');

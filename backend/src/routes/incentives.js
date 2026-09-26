@@ -8,6 +8,7 @@ const Wallet = require('../models/Wallet');
 const IncentiveUpload = require('../models/IncentiveUpload');
 const OtpToken = require('../models/OtpToken');
 const { protect, authorize } = require('../middleware/auth');
+const { findPartyByCode } = require('../services/partyCode');
 const { audit } = require('../services/audit');
 const { sendOtpEmail } = require('../config/email');
 const { sendIncentiveCreditNotification } = require('../config/sms');
@@ -175,12 +176,9 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
     for (const row of parsed) {
       if (!row.partCode || isNaN(row.amount) || row.amount <= 0) continue;
 
-      const vendor = await Vendor.findOne({
-        $or: [
-          { accountNumber: row.partCode },
-          { accountNumber: { $regex: `-${row.partCode}$`, $options: 'i' } },
-        ],
-      }).select('_id companyName accountNumber status').lean();
+      const { vendor } = await findPartyByCode(row.partCode, {
+        select: '_id companyName accountNumber status', lean: true,
+      });
       if (!vendor || vendor.status === 'blocked') continue;
 
       const existing = await MonthlyWallet.findOne({
@@ -257,12 +255,17 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
         continue;
       }
 
-      const vendor = await Vendor.findOne({
-        $or: [
-          { accountNumber: partCode },
-          { accountNumber: { $regex: `-${partCode}$`, $options: 'i' } },
-        ]
-      });
+      // Codes like "WSG-123" in older files are accepted — the branch prefix
+      // is stripped. A code shared by two not-yet-merged parties is refused
+      // rather than credited to whichever one the database returns first.
+      const { vendor, ambiguous } = await findPartyByCode(partCode);
+      if (ambiguous.length > 1) {
+        results.failed.push({
+          partCode,
+          reason: `Duplicate parties for this code (${ambiguous.map((v) => v.accountNumber).join(', ')}) — merge them first`,
+        });
+        continue;
+      }
       if (!vendor)                  { results.failed.push({ partCode, reason: 'Vendor not found' }); continue; }
       if (vendor.status === 'blocked') { results.failed.push({ partCode, reason: 'Vendor is blocked' }); continue; }
 

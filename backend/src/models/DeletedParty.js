@@ -40,6 +40,13 @@ const deletedPartySchema = new mongoose.Schema(
     deletedBy:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     deletedByName: { type: String, trim: true, default: null },
     deletionReason:{ type: String, trim: true, default: null },
+
+    // Set when the party was removed by MERGING it into another account.
+    // Everything it held (balances, invoices, transactions) now sits on
+    // mergedIntoVendorId; this record keeps who it used to be.
+    mergedIntoVendorId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
+    mergedIntoCode:     { type: String, trim: true, default: null },
+    mergedIntoName:     { type: String, trim: true, default: null },
   },
   { timestamps: true }
 );

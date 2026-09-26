@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import WalletBreakdown from '@/components/WalletBreakdown';
+import { buildStatementRows } from '@/components/ledgerGrouping';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -47,56 +49,9 @@ export default function ReportsPage() {
       const invoices = invData.success ? invData.data : [];
       const transactions = trxData.success ? trxData.data : [];
 
-      const mappedInvoices = invoices.map(inv => ({
-        _id: inv._id,
-        date: new Date(inv.invoiceDate),
-        type: 'Invoice / Bill',
-        particulars: inv.referenceNo 
-          ? `Ref: ${inv.referenceNo}` 
-          : '—',
-        invoiceNo: sanitize(inv.invoiceNumber),
-        debit: null,
-        credit: null,
-        invoiceAmount: inv.invoiceAmount,
-        division: inv.division?.name || vendor?.division?.name || '—',
-        location: inv.location || '—',
-        balanceAfter: '—',
-        isCredit: null,
-      }));
-
-      const mappedTransactions = transactions.map(trx => ({
-        _id: trx._id,
-        date: new Date(trx.createdAt),
-        type: trx.type === 'credit' ? 'Incentive Credited' : 'Wallet Redemption',
-        particulars: sanitize(trx.description || (trx.type === 'credit' ? 'Incentive Credited' : 'Wallet Redeemed')),
-        invoiceNo: trx.invoice?.invoiceNumber || null,
-        debit: trx.type === 'debit' ? trx.amount : null,
-        credit: trx.type === 'credit' ? trx.amount : null,
-        invoiceAmount: trx.invoice?.invoiceAmount ?? null,
-        division: trx.invoice?.division?.name || vendor?.division?.name || '—',
-        location: trx.invoice?.location || '—',
-        balanceAfter: trx.balanceAfter,   // DB snapshot — ground truth
-        isCredit: trx.type === 'credit',
-      }));
-
-      const combined = [...mappedInvoices, ...mappedTransactions].sort((a, b) => {
-        if (a.date.getTime() !== b.date.getTime()) return a.date - b.date;
-        // On same date: transactions after invoices
-        if (a.type === 'Invoice / Bill' && b.type !== 'Invoice / Bill') return -1;
-        if (a.type !== 'Invoice / Bill' && b.type === 'Invoice / Bill') return 1;
-        return 0;
-      });
-
-      // Backend returns correctly recalculated balanceAfter for each transaction.
-      // Invoice rows carry-forward the last known balance.
-      let lastKnownBalance = null;
-      const withBalance = combined.map((row) => {
-        if (row.balanceAfter != null && row.balanceAfter !== '—') {
-          lastKnownBalance = Number(row.balanceAfter);
-          return row;
-        }
-        return { ...row, balanceAfter: lastKnownBalance };
-      });
+      // One row per invoice (listing every wallet it drew from) and one per
+      // incentive credit — see buildStatementRows.
+      const withBalance = buildStatementRows({ invoices, transactions, vendor, sanitize });
 
       setStatementModal(prev => ({ ...prev, data: withBalance, loading: false }));
     } catch {
@@ -153,7 +108,7 @@ export default function ReportsPage() {
     doc.text(`Generated    : ${genDate}`, 200, 35);
     autoTable(doc, {
       startY: 66,
-      head: [['#', 'Date', 'Particulars', 'Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited Amount (Rs)', 'Debited (Rs)', 'Current Balance (Rs)', 'Location']],
+      head: [['#', 'Date', 'Particulars', 'Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited Amount (Rs)', 'Debited (Rs)', 'Wallets Used / Credited To', 'Current Balance (Rs)', 'Location']],
       body: filteredStatementData.map((row, i) => [
         i + 1,
         row.date.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }),
@@ -161,6 +116,7 @@ export default function ReportsPage() {
         row.invoiceAmount != null ? Number(row.invoiceAmount).toFixed(2) : '—',
         row.credit != null ? Number(row.credit).toFixed(2) : '—',
         row.debit != null ? Number(row.debit).toFixed(2) : '—',
+        (row.walletsText || '—').split(' | ').join('\n'),
         row.balanceAfter !== '—' ? `Rs. ${Number(row.balanceAfter).toFixed(2)}` : '—',
         row.division || '—',
       ]),
@@ -182,7 +138,7 @@ export default function ReportsPage() {
       [`Wallet Balance: Rs. ${Number(v?.walletBalance || 0).toFixed(2)}`, '', `Generated: ${genDate}`],
       [],
     ];
-    const head = ['#', 'Date', 'Particulars', 'Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited Amount (Rs)', 'Debited (Rs)', 'Current Balance (Rs)', 'Location'];
+    const head = ['#', 'Date', 'Particulars', 'Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited Amount (Rs)', 'Debited (Rs)', 'Wallets Used / Credited To', 'Current Balance (Rs)', 'Location'];
     const body = filteredStatementData.map((row, i) => [
       i + 1,
       row.date.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }),
@@ -190,6 +146,7 @@ export default function ReportsPage() {
       row.invoiceAmount != null ? Number(row.invoiceAmount).toFixed(2) : '—',
       row.credit != null ? Number(row.credit).toFixed(2) : '—',
       row.debit != null ? Number(row.debit).toFixed(2) : '—',
+      row.walletsText || '—',
       row.balanceAfter !== '—' ? Number(row.balanceAfter).toFixed(2) : '—',
       row.division || '—',
     ]);
@@ -213,6 +170,7 @@ export default function ReportsPage() {
         '<td class="right">' + (row.invoiceAmount!=null?'Rs. '+Number(row.invoiceAmount).toFixed(2):'—') + '</td>' +
         '<td class="right credit">' + (row.credit!=null?'+Rs. '+Number(row.credit).toFixed(2):'—') + '</td>' +
         '<td class="right debit">' + (row.debit!=null?'-Rs. '+Number(row.debit).toFixed(2):'—') + '</td>' +
+        '<td>' + (row.walletsText || '—').split(' | ').join('<br/>') + '</td>' +
         '<td class="right"><strong>' + (row.balanceAfter!=='—'?'Rs. '+Number(row.balanceAfter).toFixed(2):'—') + '</strong></td>' +
         '<td>' + row.location + '</td>' +
         '</tr>';
@@ -248,12 +206,12 @@ export default function ReportsPage() {
       '<div class="party-field"><label>Party Type</label><span>' + (v?.partyType||'—') + '</span></div>' +
       '</div>' +
       '<table><thead><tr><th>#</th><th>Date</th><th>Particulars</th><th>Invoice No.</th><th>Type</th>' +
-      '<th class="right">Invoice Amt (Rs)</th><th class="right">Credited (Rs)</th><th class="right">Debited (Rs)</th><th class="right">Wallet Bal (Rs)</th><th>Location</th></tr></thead>' +
+      '<th class="right">Invoice Amt (Rs)</th><th class="right">Credited (Rs)</th><th class="right">Debited (Rs)</th><th>Wallets Used</th><th class="right">Wallet Bal (Rs)</th><th>Location</th></tr></thead>' +
       '<tbody>' + rows + '</tbody>' +
       '<tfoot><tr><td colspan="5">Total (' + filteredStatementData.length + ' entries)</td>' +
       '<td class="right">Rs. ' + totalInv.toFixed(2) + '</td>' +
       '<td class="right credit">+Rs. ' + totalCredit.toFixed(2) + '</td>' +
-      '<td class="right debit">-Rs. ' + totalDebit.toFixed(2) + '</td>' +
+      '<td class="right debit">-Rs. ' + totalDebit.toFixed(2) + '</td><td></td>' +
       '<td class="right" style="color:#2B3B8A">Rs. ' + Number(v?.walletBalance||0).toFixed(2) + '</td>' +
       '<td></td></tr></tfoot></table>' +
       '<div class="footer">This is a system-generated statement. — Friends Trading Corporation</div>' +
@@ -390,11 +348,12 @@ export default function ReportsPage() {
     }
     if (reportType === 'invoices') {
       return {
-        head: ['#', 'Invoice Number', 'Reference Number', 'Party Name', 'Invoice Amount', 'Redeemed Amount', 'Location', 'Date', 'Remark'],
+        head: ['#', 'Invoice Number', 'Reference Number', 'Party Name', 'Invoice Amount', 'Redeemed Amount', 'Wallets Used', 'Location', 'Date', 'Remark'],
         body: filteredData.map((inv, i) => [
           i + 1, inv.invoiceNumber, inv.referenceNo || '—', inv.vendor?.companyName || 'N/A',
           `Rs. ${Number(inv.invoiceAmount).toFixed(2)}`,
           inv.redeemAmount > 0 ? `Rs. ${Number(inv.redeemAmount).toFixed(2)}` : '—',
+          (inv.walletBreakdown || []).map(w => `${w.label}: Rs. ${Number(w.amount).toFixed(2)}`).join(' | ') || '—',
           inv.location || '—',
           new Date(inv.invoiceDate).toLocaleDateString('en-IN'),
           inv.remark || '—',
@@ -643,6 +602,7 @@ export default function ReportsPage() {
                             <th className="py-3.5 px-4 font-semibold text-right">Invoice Amt (₹)</th>
                             <th className="py-3.5 px-4 font-semibold text-right" style={{color:'#86efac'}}>Credited (₹)</th>
                             <th className="py-3.5 px-4 font-semibold text-right" style={{color:'#fca5a5'}}>Debited (₹)</th>
+                            <th className="py-3.5 px-4 font-semibold">Wallets Used</th>
                             <th className="py-3.5 px-4 font-semibold text-right">Wallet Bal. (₹)</th>
                             <th className="py-3.5 px-4 font-semibold">Division</th>
                           </tr>
@@ -676,6 +636,7 @@ export default function ReportsPage() {
                               <td className="py-3.5 px-4 text-right font-bold text-[#dc2626]">
                                 {row.debit != null ? `-₹${Number(row.debit).toFixed(2)}` : <span className="text-gray-300 font-normal">—</span>}
                               </td>
+                              <td className="py-3.5 px-4"><WalletBreakdown wallets={row.wallets} compact /></td>
                               <td className="py-3.5 px-4 text-right font-bold text-gray-900">
                                 {row.balanceAfter != null && row.balanceAfter !== '—'
                                   ? `₹${Number(row.balanceAfter).toFixed(2)}`
@@ -685,7 +646,7 @@ export default function ReportsPage() {
                             </tr>
                           )) : (
                             <tr>
-                              <td colSpan="10" className="py-12 text-center text-gray-400 text-[14px]">No transactions found for this party.</td>
+                              <td colSpan="11" className="py-12 text-center text-gray-400 text-[14px]">No transactions found for this party.</td>
                             </tr>
                           )}
                         </tbody>
@@ -700,6 +661,7 @@ export default function ReportsPage() {
                                 <td className="py-4 px-4 text-right text-gray-800">₹{totalInvoice.toFixed(2)}</td>
                                 <td className="py-4 px-4 text-right text-[#16a34a]">+₹{totalCredit.toFixed(2)}</td>
                                 <td className="py-4 px-4 text-right text-[#dc2626]">-₹{totalDebit.toFixed(2)}</td>
+                                <td className="py-4 px-4" />
                                 <td className="py-4 px-4 text-right text-[#2B3B8A]">₹{Number(statementModal.vendor?.walletBalance || 0).toFixed(2)}</td>
                                 <td className="py-4 px-4" />
                               </tr>
@@ -808,6 +770,7 @@ export default function ReportsPage() {
                           <th className="pb-4 pt-2 px-3 font-bold">Vendor</th>
                           <th className="pb-4 pt-2 px-3 font-bold">Invoice Amount (₹)</th>
                           <th className="pb-4 pt-2 px-3 font-bold">Amount Redeemed (₹)</th>
+                          <th className="pb-4 pt-2 px-3 font-bold">Wallets Used</th>
                           <th className="pb-4 pt-2 px-3 font-bold">Location</th>
                           <th className="pb-4 pt-2 px-3 font-bold">Invoice Date</th>
                           <th className="pb-4 pt-2 px-3 font-bold">Remark</th>
@@ -846,6 +809,7 @@ export default function ReportsPage() {
                             <td className="py-4 px-3 font-semibold text-[#E74C3C]">
                               {row.redeemAmount > 0 ? `₹${Number(row.redeemAmount).toFixed(2)}` : <span className="text-gray-400">—</span>}
                             </td>
+                            <td className="py-4 px-3"><WalletBreakdown wallets={row.walletBreakdown} compact /></td>
                             <td className="py-4 px-3">{row.location || '—'}</td>
                             <td className="py-4 px-3">{row.invoiceDate ? new Date(row.invoiceDate).toLocaleDateString('en-IN') : '—'}</td>
                             <td className="py-4 px-3 max-w-[140px] text-gray-500">
@@ -898,6 +862,7 @@ export default function ReportsPage() {
                             <td className="py-4 px-3"></td>
                             <td className="py-4 px-3 text-[#2B3B8A]">₹{Number(totals.invoiceTotal).toFixed(2)}</td>
                             <td className="py-4 px-3 text-[#E74C3C]">₹{Number(totals.redeemTotal).toFixed(2)}</td>
+                            <td className="py-4 px-3" />
                             <td className="py-4 px-3"></td>
                             <td className="py-4 px-3"></td>
                             <td className="py-4 px-3"></td>

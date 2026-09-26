@@ -5,6 +5,42 @@
 
 ---
 
+## 26 September 2026 — Party codes, merge, wallet breakdown
+
+### Party codes (no branch prefix)
+- New parties are saved with the code exactly as issued (`123`, not `WSG-123`). Any branch prefix typed in — even repeated (`WSG-WSG-123`) — is stripped on create, Excel import and edit.
+- Duplicate check is on the code alone, whatever the branch.
+- Incentive upload and counter search accept old-style codes (`WSG-123`) and match exactly. A code shared by two un-merged parties is refused (not credited to "the first one").
+- New admin screen **Party List → Duplicate Parties** (`/admin/vendors/duplicates`):
+  - Step 1: clean all unique codes (preview first).
+  - Step 2: merge duplicates. Most recent redemption is suggested as the account to keep. Scheme/month balances are combined, invoices + history move across, the kept account keeps its mobile/branch/status, the other is archived in DeletedParty ("merged into …") and removed. One database transaction.
+- CLI alternative: `node scripts/cleanup-party-codes.js` (preview) / `--apply`.
+- New API: `GET /api/party-merge/report`, `POST /api/party-merge/cleanup-codes`, `POST /api/party-merge/merge`.
+
+### Wallets used per invoice
+- `GET /api/invoices` and `GET /api/reports?type=invoices` return `walletBreakdown: [{label, amount}]`; `redeemAmount` is now net of reassignment reversals (was double-counted after a wallet change).
+- All Invoices (admin + branch), Reports → Invoices, party statements and branch Incentives Wallet History show a **Wallets Used** column, in the screen, PDF, Excel and print.
+- Party statements and wallet history now show **one row per invoice** (previously one row per wallet, each repeating the full invoice amount, plus a separate "Invoice / Bill" row).
+
+### Branch portal
+- New **All Invoices** page (`/branch/invoices`) — same list as admin, read-only, limited to invoices whose number prefix belongs to the branch.
+
+### Deleting an invoice — refund choice
+- Delete now opens a dialog showing the amount redeemed and the wallets it came from, and asks: **return it to the party** or **keep it as spent**.
+- Refund: each wallet is credited back (month wallet + party balance), with a "Refund … invoice X deleted" entry per wallet.
+- No refund: only the invoice is removed; balance unchanged.
+- Either way the original redemption entries are kept on the statement, marked "invoice deleted" — previously they were erased without returning the money, so the statement and the balance disagreed. Recorded in the audit trail.
+- API: `DELETE /api/invoices/:id` now requires `{ refund: true|false, reason? }`.
+
+### Fixes
+- All Invoices wallet filter returned nothing — filter now implemented on `GET /api/invoices`.
+- "Clear filters" now also clears the wallet filter; list refreshes correctly after a wallet reassignment.
+- Dashboard KPI cards: figures and % change no longer overflow the card.
+- `/api/analysis` now requires admin login (was public).
+- Seed script assigned no branch to the sample users/parties.
+
+---
+
 ## Summary of All Changes
 
 ---

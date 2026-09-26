@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import WalletBreakdown from '@/components/WalletBreakdown';
+import { buildStatementRows } from '@/components/ledgerGrouping';
 import ExceptionReport from '@/components/ExceptionReport';
 import LiabilityAgeing from '@/components/LiabilityAgeing';
 import DormantParties from '@/components/DormantParties';
@@ -119,54 +121,9 @@ export default function AdminReportsPage() {
         .replace(/₹/g, 'Rs.')     // replace rupee symbol (causes GT injection)
         .trim();
 
-      const mappedInvoices = invoices.map(inv => ({
-        _id: inv._id,
-        date: new Date(inv.invoiceDate),
-        type: 'Invoice / Bill',
-        particulars: inv.referenceNo ? `Ref: ${inv.referenceNo}` : '—',
-        invoiceNo: sanitize(inv.invoiceNumber),
-        debit: null,
-        credit: null,
-        invoiceAmount: inv.invoiceAmount,
-        division: inv.division?.name || vendor?.division?.name || '—',
-        location: inv.location || '—',
-        balanceAfter: '—',
-        isCredit: null,
-      }));
-
-      const mappedTransactions = transactions.map(trx => ({
-        _id: trx._id,
-        date: new Date(trx.createdAt),
-        type: trx.type === 'credit' ? 'Incentive Credited' : 'Wallet Redemption',
-        particulars: sanitize(trx.description || (trx.type === 'credit' ? 'Incentive Credited' : 'Wallet Redeemed')),
-        invoiceNo: trx.invoice?.invoiceNumber || null,
-        debit: trx.type === 'debit' ? trx.amount : null,
-        credit: trx.type === 'credit' ? trx.amount : null,
-        invoiceAmount: trx.invoice?.invoiceAmount ?? null,
-        division: trx.invoice?.division?.name || vendor?.division?.name || '—',
-        location: trx.invoice?.location || '—',
-        balanceAfter: trx.balanceAfter,   // DB snapshot — ground truth
-        isCredit: trx.type === 'credit',
-      }));
-
-      const combined = [...mappedInvoices, ...mappedTransactions].sort((a, b) => {
-        if (a.date.getTime() !== b.date.getTime()) return a.date - b.date;
-        // On same date: transactions after invoices
-        if (a.type === 'Invoice / Bill' && b.type !== 'Invoice / Bill') return -1;
-        if (a.type !== 'Invoice / Bill' && b.type === 'Invoice / Bill') return 1;
-        return 0;
-      });
-
-      // Backend returns correctly recalculated balanceAfter for each transaction.
-      // Invoice rows carry-forward the last known balance.
-      let lastKnownBalance = null;
-      const withBalance = combined.map((row) => {
-        if (row.balanceAfter != null && row.balanceAfter !== '—') {
-          lastKnownBalance = Number(row.balanceAfter);
-          return row;
-        }
-        return { ...row, balanceAfter: lastKnownBalance };
-      });
+      // One row per invoice (listing every wallet it drew from) and one per
+      // incentive credit — see buildStatementRows.
+      const withBalance = buildStatementRows({ invoices, transactions, vendor, sanitize });
 
       setStatementModal(prev => ({ ...prev, data: withBalance, loading: false }));
     } catch {
@@ -204,15 +161,16 @@ export default function AdminReportsPage() {
     doc.text(`Wallet Bal.  : Rs. ${Number(v?.walletBalance || 0).toFixed(2)}`, 14, 59);
     doc.text(`Generated    : ${genDate}`, 200, 35);
 
-    const head = ['#', 'Date', 'Particulars / Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited Amount (Rs)', 'Debited (Rs)', 'Current Balance (Rs)', 'Location'];
+    const head = ['#', 'Date', 'Particulars / Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited Amount (Rs)', 'Debited (Rs)', 'Wallets Used / Credited To', 'Current Balance (Rs)', 'Location'];
     const body = filteredStatementData.map((row, i) => [
       i + 1,
       row.date.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }),
-      row.particulars,
+      row.invoiceNo ? `${row.invoiceNo} · ${row.particulars}` : row.particulars,
       row.type,
       row.invoiceAmount != null ? Number(row.invoiceAmount).toFixed(2) : '—',
       row.credit != null ? Number(row.credit).toFixed(2) : '—',
       row.debit != null ? Number(row.debit).toFixed(2) : '—',
+      (row.walletsText || '—').split(' | ').join('\n'),
       row.balanceAfter !== '—' ? `Rs. ${Number(row.balanceAfter).toFixed(2)}` : '—',
       row.location,
     ]);
@@ -239,15 +197,16 @@ export default function AdminReportsPage() {
       [`Wallet Balance: Rs. ${Number(v?.walletBalance || 0).toFixed(2)}`, '', `Generated: ${genDate}`],
       [],
     ];
-    const head = ['#', 'Date', 'Particulars / Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited Amount (Rs)', 'Debited (Rs)', 'Current Balance (Rs)', 'Location'];
+    const head = ['#', 'Date', 'Particulars / Invoice No.', 'Type', 'Invoice Amt (Rs)', 'Credited Amount (Rs)', 'Debited (Rs)', 'Wallets Used / Credited To', 'Current Balance (Rs)', 'Location'];
     const body = filteredStatementData.map((row, i) => [
       i + 1,
       row.date.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }),
-      row.particulars,
+      row.invoiceNo ? `${row.invoiceNo} · ${row.particulars}` : row.particulars,
       row.type,
       row.invoiceAmount != null ? Number(row.invoiceAmount).toFixed(2) : '—',
       row.credit != null ? Number(row.credit).toFixed(2) : '—',
       row.debit != null ? Number(row.debit).toFixed(2) : '—',
+      row.walletsText || '—',
       row.balanceAfter !== '—' ? Number(row.balanceAfter).toFixed(2) : '—',
       row.location,
     ]);
@@ -397,8 +356,8 @@ export default function AdminReportsPage() {
       return { head, body };
     }
     if (reportType === 'invoices') return {
-      head: ['#', 'Invoice Number', 'Reference Number', 'Party Name', 'Party Code', 'Invoice Amount', 'Redeemed Amount', 'Location', 'Location', 'Date', 'Remark'],
-      body: filteredData.map((inv, i) => [i+1, inv.invoiceNumber, inv.referenceNo || '—', inv.vendor?.companyName||'N/A', inv.vendor?.accountNumber||'N/A', `Rs. ${Number(inv.invoiceAmount).toFixed(2)}`, inv.redeemAmount > 0 ? `Rs. ${Number(inv.redeemAmount).toFixed(2)}` : '—', inv.location, inv.division?.name||'', new Date(inv.invoiceDate).toLocaleDateString('en-IN'), inv.remark || '—']),
+      head: ['#', 'Invoice Number', 'Reference Number', 'Party Name', 'Party Code', 'Invoice Amount', 'Redeemed Amount', 'Wallets Used', 'Location', 'Branch', 'Date', 'Remark'],
+      body: filteredData.map((inv, i) => [i+1, inv.invoiceNumber, inv.referenceNo || '—', inv.vendor?.companyName||'N/A', inv.vendor?.accountNumber||'N/A', `Rs. ${Number(inv.invoiceAmount).toFixed(2)}`, inv.redeemAmount > 0 ? `Rs. ${Number(inv.redeemAmount).toFixed(2)}` : '—', (inv.walletBreakdown || []).map(w => `${w.label}: Rs. ${Number(w.amount).toFixed(2)}`).join(' | ') || '—', inv.location, inv.division?.name||'', new Date(inv.invoiceDate).toLocaleDateString('en-IN'), inv.remark || '—']),
     };
     return {
       head: ['#', 'Party Name', 'Party Code', 'Type', 'Amount', 'Balance After', 'Date'],
@@ -624,6 +583,7 @@ export default function AdminReportsPage() {
                     <th className="pb-4 font-bold px-2">Party Code</th>
                     <th className="pb-4 font-bold px-2 text-right">Invoice Amount (₹)</th>
                     <th className="pb-4 font-bold px-2">Amount Redeemed (₹)</th>
+                    <th className="pb-4 font-bold px-2">Wallets Used</th>
                     <th className="pb-4 font-bold px-2">Location</th>
                     <th className="pb-4 font-bold px-2">Division</th>
                     <th className="pb-4 font-bold px-2">Invoice Date</th>
@@ -677,6 +637,7 @@ export default function AdminReportsPage() {
                       <td className="py-4 px-3 font-semibold text-[#E74C3C]">
                         {row.redeemAmount > 0 ? `₹${Number(row.redeemAmount).toFixed(2)}` : <span className="text-gray-400">—</span>}
                       </td>
+                      <td className="py-4 px-3"><WalletBreakdown wallets={row.walletBreakdown} compact /></td>
                       <td className="py-4 px-3">{row.location}</td>
                       <td className="py-4 px-3">{row.division?.name || '—'}</td>
                       <td className="py-4 px-3">{new Date(row.invoiceDate).toLocaleDateString('en-IN')}</td>
@@ -735,6 +696,7 @@ export default function AdminReportsPage() {
                       <td colSpan="3" className="py-3 px-2 text-right font-semibold">Total</td>
                       <td className="py-3 px-2 font-semibold text-right tabular-nums whitespace-nowrap">₹{Number(totals.invoiceTotal).toFixed(2)}</td>
                       <td className="py-3 px-2 font-semibold text-[#E74C3C] text-right tabular-nums whitespace-nowrap">₹{Number(totals.redeemTotal).toFixed(2)}</td>
+                      <td className="py-3 px-2" />
                       <td className="py-3 px-2" />
                       <td className="py-3 px-2" />
                       <td className="py-3 px-2" />
@@ -858,6 +820,7 @@ export default function AdminReportsPage() {
                           <th className="py-3.5 px-4 font-semibold text-right">Invoice Amt (₹)</th>
                           <th className="py-3.5 px-4 font-semibold text-right" style={{color:'#86efac'}}>Credited (₹)</th>
                           <th className="py-3.5 px-4 font-semibold text-right" style={{color:'#fca5a5'}}>Debited (₹)</th>
+                          <th className="py-3.5 px-4 font-semibold">Wallets Used</th>
                           <th className="py-3.5 px-4 font-semibold text-right">Wallet Bal. (₹)</th>
                           <th className="py-3.5 px-4 font-semibold">Division</th>
                         </tr>
@@ -869,7 +832,10 @@ export default function AdminReportsPage() {
                             <td className="py-3.5 px-4 text-gray-700 font-medium whitespace-nowrap">
                               {row.date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                             </td>
-                            <td className="py-3.5 px-4 font-semibold text-[#2B3B8A] max-w-[220px] truncate">{row.particulars}</td>
+                            <td className="py-3.5 px-4 font-semibold text-[#2B3B8A] max-w-[260px] truncate">
+                              {row.invoiceNo && <span className="font-mono mr-1.5">{row.invoiceNo}</span>}
+                              <span className={row.invoiceNo ? 'text-gray-500 font-medium' : ''}>{row.particulars}</span>
+                            </td>
                             <td className="py-3.5 px-4">
                               <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold ${
                                 row.isCredit === true ? 'bg-green-50 text-green-700 border border-green-200' :
@@ -886,6 +852,7 @@ export default function AdminReportsPage() {
                             <td className="py-3.5 px-4 text-right font-bold text-[#dc2626]">
                               {row.debit != null ? `-₹${Number(row.debit).toFixed(2)}` : <span className="text-gray-300 font-normal">—</span>}
                             </td>
+                            <td className="py-3.5 px-4"><WalletBreakdown wallets={row.wallets} compact /></td>
                             <td className="py-3.5 px-4 text-right font-bold text-gray-900">
                               {row.balanceAfter != null && row.balanceAfter !== '—'
                                 ? `₹${Number(row.balanceAfter).toFixed(2)}`
@@ -895,7 +862,7 @@ export default function AdminReportsPage() {
                           </tr>
                         )) : (
                           <tr>
-                            <td colSpan="9" className="py-12 text-center text-gray-400 text-[14px]">No transactions found for this party.</td>
+                            <td colSpan="10" className="py-12 text-center text-gray-400 text-[14px]">No transactions found for this party.</td>
                           </tr>
                         )}
                       </tbody>
@@ -910,6 +877,7 @@ export default function AdminReportsPage() {
                               <td className="py-4 px-4 text-right text-gray-800">₹{totalInvoice.toFixed(2)}</td>
                               <td className="py-4 px-4 text-right text-[#16a34a]">+₹{totalCredit.toFixed(2)}</td>
                               <td className="py-4 px-4 text-right text-[#dc2626]">-₹{totalDebit.toFixed(2)}</td>
+                              <td className="py-4 px-4" />
                               <td className="py-4 px-4 text-right text-[#2B3B8A]">₹{Number(statementModal.vendor?.walletBalance || 0).toFixed(2)}</td>
                               <td className="py-4 px-4" />
                             </tr>
@@ -938,11 +906,12 @@ export default function AdminReportsPage() {
                           return '<tr>' +
                             '<td>' + String(idx+1).padStart(2,'0') + '</td>' +
                             '<td>' + row.date.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) + '</td>' +
-                            '<td><strong>' + row.particulars + '</strong></td>' +
+                            '<td><strong>' + (row.invoiceNo ? row.invoiceNo + ' · ' : '') + row.particulars + '</strong></td>' +
                             '<td><span class="badge ' + badgeCls + '">' + row.type + '</span></td>' +
                             '<td class="right">' + (row.invoiceAmount!=null?'Rs. '+Number(row.invoiceAmount).toFixed(2):'—') + '</td>' +
                             '<td class="right credit">' + (row.credit!=null?'+Rs. '+Number(row.credit).toFixed(2):'—') + '</td>' +
                             '<td class="right debit">' + (row.debit!=null?'-Rs. '+Number(row.debit).toFixed(2):'—') + '</td>' +
+                            '<td>' + (row.walletsText || '—').split(' | ').join('<br/>') + '</td>' +
                             '<td class="right"><strong>' + (row.balanceAfter!=='—'?'Rs. '+Number(row.balanceAfter).toFixed(2):'—') + '</strong></td>' +
                             '<td>' + row.location + '</td>' +
                             '</tr>';
@@ -977,12 +946,12 @@ export default function AdminReportsPage() {
                           '<div class="party-field"><label>Party Type</label><span>' + (v?.partyType||'—') + '</span></div>' +
                           '</div>' +
                           '<table><thead><tr><th>#</th><th>Date</th><th>Particulars / Invoice No.</th><th>Type</th>' +
-                          '<th class="right">Invoice Amt (Rs)</th><th class="right">Credited (Rs)</th><th class="right">Debited (Rs)</th><th class="right">Wallet Bal (Rs)</th><th>Location</th></tr></thead>' +
+                          '<th class="right">Invoice Amt (Rs)</th><th class="right">Credited (Rs)</th><th class="right">Debited (Rs)</th><th>Wallets Used</th><th class="right">Wallet Bal (Rs)</th><th>Location</th></tr></thead>' +
                           '<tbody>' + rows + '</tbody>' +
                           '<tfoot><tr><td colspan="4">Total (' + filteredStatementData.length + ' entries)</td>' +
                           '<td class="right">Rs. ' + totalInv.toFixed(2) + '</td>' +
                           '<td class="right credit">+Rs. ' + totalCredit.toFixed(2) + '</td>' +
-                          '<td class="right debit">-Rs. ' + totalDebit.toFixed(2) + '</td>' +
+                          '<td class="right debit">-Rs. ' + totalDebit.toFixed(2) + '</td><td></td>' +
                           '<td class="right" style="color:#2B3B8A">Rs. ' + Number(v?.walletBalance||0).toFixed(2) + '</td>' +
                           '<td></td></tr></tfoot></table>' +
                           '<div class="footer">This is a system-generated statement. — Friends Trading Corporation</div>' +

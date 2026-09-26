@@ -3,6 +3,7 @@ const Vendor = require('../models/Vendor');
 const Invoice = require('../models/Invoice');
 const WalletTransaction = require('../models/WalletTransaction');
 const { protect } = require('../middleware/auth');
+const { getInvoiceWalletBreakdown } = require('../services/invoiceWallets');
 
 const router = express.Router();
 
@@ -178,24 +179,16 @@ router.get('/', protect, async (req, res) => {
         .populate('division', 'name location')
         .lean();
 
-      // Attach redemption amount from linked wallet debit transactions (sum for split redemptions)
-      const invoiceIds = invoices.map(inv => inv._id);
-      const redemptions = await WalletTransaction.find({
-        invoice: { $in: invoiceIds },
-        type: 'debit',
-      }).select('invoice amount').lean();
-
-      // Sum all debit transactions per invoice (handles split multi-wallet redemptions)
-      const redemptionMap = {};
-      redemptions.forEach(r => {
-        const key = String(r.invoice);
-        redemptionMap[key] = (redemptionMap[key] || 0) + (r.amount || 0);
+      // Redeemed amount and the wallets it came from, net of reassignments
+      const breakdown = await getInvoiceWalletBreakdown(invoices.map((inv) => inv._id));
+      data = invoices.map((inv) => {
+        const b = breakdown.get(String(inv._id));
+        return {
+          ...inv,
+          redeemAmount: b ? b.total : parseFloat((inv.redeemedAmount || 0).toFixed(2)),
+          walletBreakdown: b ? b.wallets : [],
+        };
       });
-
-      data = invoices.map(inv => ({
-        ...inv,
-        redeemAmount: parseFloat((redemptionMap[String(inv._id)] || 0).toFixed(2)),
-      }));
     }
 
     // ---- INCENTIVES WALLET REPORT (wallet transactions) ----

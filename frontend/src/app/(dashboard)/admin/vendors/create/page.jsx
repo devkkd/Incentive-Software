@@ -134,7 +134,7 @@ export default function AdminCreateVendorPage() {
 
               <InputField label="Party Code" id="accountNumber" placeholder="e.g. TRJ028"
                 value={form.accountNumber} onChange={(v) => set('accountNumber', v)} error={fieldErrors.accountNumber}
-                hint={selectedDivision ? `Saved as: ${selectedDivision.name}-${form.accountNumber || 'XXXXX'}` : ''}
+                hint={`Saved as: ${(form.accountNumber || 'XXXXX').trim().toUpperCase()} — the branch is not added to the code`}
                 required />
 
               <InputField label="Party Name" id="companyName" placeholder="e.g. MAHESHWARI MOTORS"

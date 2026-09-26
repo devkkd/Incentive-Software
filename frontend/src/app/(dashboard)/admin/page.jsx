@@ -14,6 +14,30 @@ const authHeaders = () => {
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+function RedeemedCard({ title, value, change, compareLabel, note, loading, tone = 'green' }) {
+  const box = tone === 'red'
+    ? 'bg-[#FDEDEC] border-[#E74C3C]/30'
+    : 'bg-[#E4F8ED] border-[#2ECC71]/30';
+  const up = (change ?? 0) >= 0;
+  return (
+    <div className={`${box} border rounded-2xl p-5 shadow-sm flex flex-col min-w-0 min-h-[130px]`}>
+      <p className="text-sm text-gray-700 font-medium">{title}</p>
+      <h3 className="text-[22px] 2xl:text-2xl font-bold text-black tabular-nums mt-auto pt-3 break-all">
+        {loading ? '...' : fmt(value)}
+      </h3>
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mt-1.5">
+        <span className="text-[11px] text-gray-500">{note}</span>
+        {!loading && change !== undefined && change !== null && (
+          <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-white/70 whitespace-nowrap ${up ? 'text-[#16a34a]' : 'text-[#E74C3C]'}`}>
+            {up ? '▲' : '▼'} {Math.abs(change).toLocaleString('en-IN')}%
+            <span className="text-gray-500 font-normal">{compareLabel}</span>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminDashboardPage() {
   const [stats, setStats] = useState(null);
   const [year, setYear] = useState(new Date().getFullYear());
@@ -38,10 +62,10 @@ export default function AdminDashboardPage() {
   const pieData = stats?.pieData || [];
 
   const kpi2Items = [
-    { title: 'Total Invoices Created', value: loading ? '...' : kpi2.totalInvoices?.toLocaleString() || '0', icon: <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /> },
-    { title: 'Total Party', value: loading ? '...' : kpi2.totalVendors?.toLocaleString() || '0', icon: <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" /> },
-    { title: 'Total FTC All Location', value: loading ? '...' : kpi2.totalDivisions?.toLocaleString() || '0', icon: <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" /> },
-    { title: 'Total Incentives Uploaded', value: loading ? '...' : kpi2.totalUploads?.toLocaleString() || '0', icon: <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /> },
+    { title: 'Total Invoices Created', value: loading ? '...' : kpi2.totalInvoices?.toLocaleString('en-IN') || '0', icon: <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /> },
+    { title: 'Total Party', value: loading ? '...' : kpi2.totalVendors?.toLocaleString('en-IN') || '0', icon: <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" /> },
+    { title: 'Total FTC All Location', value: loading ? '...' : kpi2.totalDivisions?.toLocaleString('en-IN') || '0', icon: <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" /> },
+    { title: 'Total Incentives Uploaded', value: loading ? '...' : kpi2.totalUploads?.toLocaleString('en-IN') || '0', icon: <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /> },
   ];
 
   // Find peak index for marker position
@@ -53,70 +77,36 @@ export default function AdminDashboardPage() {
         <h1 className="text-[28px] font-bold text-black tracking-tight">Admin Portal</h1>
       </div>
 
-      {/* KPI Row 1 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-5">
-        <div className="bg-[#E4F8ED] border border-[#2ECC71]/30 rounded-2xl p-6 shadow-sm flex flex-col justify-between min-h-[110px]">
+      {/* KPI Row 1 — amount on its own line, change badge underneath, so a
+          large figure or a large % never pushes past the card edge */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 mb-5">
+        <div className="bg-[#E4F8ED] border border-[#2ECC71]/30 rounded-2xl p-5 shadow-sm flex flex-col min-w-0 min-h-[130px]">
           <p className="text-sm text-gray-700 font-medium">Total Incentives Distributed</p>
-          <h3 className="text-2xl font-bold text-black mt-2">{loading ? '...' : fmt(kpi1.totalIncentives)}</h3>
+          <h3 className="text-[22px] 2xl:text-2xl font-bold text-black tabular-nums mt-auto pt-3 break-all">{loading ? '...' : fmt(kpi1.totalIncentives)}</h3>
         </div>
 
         {/* ── POINT 8 — Incentive REDEEMED, not distributed ─────────────── */}
-        <div className="bg-[#FDEDEC] border border-[#E74C3C]/30 rounded-2xl p-6 shadow-sm flex flex-col justify-between min-h-[110px]">
-          <p className="text-sm text-gray-700 font-medium">Total Incentive Redeemed &mdash; This Week</p>
-          <div className="flex items-end justify-between mt-2 gap-2">
-            <h3 className="text-2xl font-bold text-black tabular-nums">{loading ? '...' : fmt(kpi1.weeklyRedeemed)}</h3>
-            {!loading && kpi1.weeklyChange !== undefined && (
-              <p className={`text-[11px] font-bold text-right leading-tight shrink-0 ${kpi1.weeklyChange >= 0 ? 'text-[#2ECC71]' : 'text-[#E74C3C]'}`}>
-                {kpi1.weeklyChange >= 0 ? '▲' : '▼'} {Math.abs(kpi1.weeklyChange)}%<br/>
-                <span className="text-gray-500 font-normal">vs last week</span>
-              </p>
-            )}
-          </div>
-          <p className="text-[10px] text-gray-500 mt-1">Monday to date</p>
-        </div>
-
-        <div className="bg-[#E4F8ED] border border-[#2ECC71]/30 rounded-2xl p-6 shadow-sm flex flex-col justify-between min-h-[110px]">
-          <p className="text-sm text-gray-700 font-medium">Total Incentive Redeemed &mdash; This Month</p>
-          <div className="flex items-end justify-between mt-2 gap-2">
-            <h3 className="text-2xl font-bold text-black tabular-nums">{loading ? '...' : fmt(kpi1.monthlyRedeemed)}</h3>
-            {!loading && kpi1.monthlyChange !== undefined && (
-              <p className={`text-[11px] font-bold text-right leading-tight shrink-0 ${kpi1.monthlyChange >= 0 ? 'text-[#2ECC71]' : 'text-[#E74C3C]'}`}>
-                {kpi1.monthlyChange >= 0 ? '▲' : '▼'} {Math.abs(kpi1.monthlyChange)}%<br/>
-                <span className="text-gray-500 font-normal">vs last month</span>
-              </p>
-            )}
-          </div>
-          <p className="text-[10px] text-gray-500 mt-1">Same point last month</p>
-        </div>
-
-        <div className="bg-[#E4F8ED] border border-[#2ECC71]/30 rounded-2xl p-6 shadow-sm flex flex-col justify-between min-h-[110px]">
-          <p className="text-sm text-gray-700 font-medium">
-            Total Incentive Redeemed &mdash; This Year
-            {kpi1.fyLabel && <span className="text-gray-500 font-normal"> ({kpi1.fyLabel})</span>}
-          </p>
-          <div className="flex items-end justify-between mt-2 gap-2">
-            <h3 className="text-2xl font-bold text-black tabular-nums">{loading ? '...' : fmt(kpi1.yearlyRedeemed)}</h3>
-            {!loading && kpi1.yearlyChange !== undefined && (
-              <p className={`text-[11px] font-bold text-right leading-tight shrink-0 ${kpi1.yearlyChange >= 0 ? 'text-[#2ECC71]' : 'text-[#E74C3C]'}`}>
-                {kpi1.yearlyChange >= 0 ? '▲' : '▼'} {Math.abs(kpi1.yearlyChange)}%<br/>
-                <span className="text-gray-500 font-normal">vs last FY</span>
-              </p>
-            )}
-          </div>
-          <p className="text-[10px] text-gray-500 mt-1">1 April to date</p>
-        </div>
+        <RedeemedCard tone="red" title="Total Incentive Redeemed — This Week"
+          value={kpi1.weeklyRedeemed} change={kpi1.weeklyChange} compareLabel="vs last week"
+          note="Monday to date" loading={loading} />
+        <RedeemedCard title="Total Incentive Redeemed — This Month"
+          value={kpi1.monthlyRedeemed} change={kpi1.monthlyChange} compareLabel="vs last month"
+          note="Same point last month" loading={loading} />
+        <RedeemedCard title={<>Total Incentive Redeemed — This Year{kpi1.fyLabel && <span className="text-gray-500 font-normal"> ({kpi1.fyLabel})</span>}</>}
+          value={kpi1.yearlyRedeemed} change={kpi1.yearlyChange} compareLabel="vs last FY"
+          note="1 April to date" loading={loading} />
       </div>
 
       {/* KPI Row 2 */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
         {kpi2Items.map((item, idx) => (
-          <div key={idx} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm flex items-center gap-5">
+          <div key={idx} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm flex items-center gap-5 min-w-0">
             <div className="w-14 h-14 bg-[#2B3B8A] rounded-full flex items-center justify-center shrink-0">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-white">
                 {item.icon}
               </svg>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-[13px] text-gray-600 mb-0.5">{item.title}</p>
               <h3 className="text-[22px] font-bold text-black">{item.value}</h3>
             </div>

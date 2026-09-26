@@ -36,6 +36,7 @@ const auditLogSchema = new mongoose.Schema(
       enum: [
         // Party record
         'party.created', 'party.updated', 'party.blocked', 'party.unblocked', 'party.deleted',
+        'party.merged', 'party.codeCleaned',
         // Money in
         'incentive.credited', 'incentive.topup', 'incentive.replaced', 'reconciliation.adjusted',
         // Money out

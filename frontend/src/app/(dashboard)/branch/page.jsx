@@ -2,6 +2,8 @@
 
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import Link from 'next/link';
+import WalletBreakdown from '@/components/WalletBreakdown';
+import { groupLedgerByInvoice } from '@/components/ledgerGrouping';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -28,6 +30,8 @@ export default function BranchDashboard() {
 
   // Wallet history
   const [walletHistory, setWalletHistory] = useState([]);
+  // One row per invoice, with every wallet it drew from
+  const groupedWalletHistory = useMemo(() => groupLedgerByInvoice(walletHistory), [walletHistory]);
 
   // Monthly sub-wallets
   const [monthlyWallets, setMonthlyWallets] = useState([]);
@@ -1100,66 +1104,72 @@ export default function BranchDashboard() {
                   <table className="w-full text-left text-sm whitespace-nowrap">
                     <thead>
                       <tr className="border-b-2 border-gray-200">
-                        <th className="pb-4 font-bold text-black">#</th>
-                        <th className="pb-4 font-bold text-black">Date</th>
-                        <th className="pb-4 font-bold text-black">Invoice No</th>
-                        <th className="pb-4 font-bold text-black">Reference No</th>
-                        <th className="pb-4 font-bold text-black">Invoice Amount</th>
-                        <th className="pb-4 font-bold text-black">Amount Redeemed</th>
-                        <th className="pb-4 font-bold text-black">Credited</th>
-                        <th className="pb-4 font-bold text-black">Wallet Month</th>
-                        <th className="pb-4 font-bold text-black">Balance After</th>
-                        <th className="pb-4 font-bold text-black">Location</th>
+                        <th className="pb-4 pr-4 font-bold text-black">#</th>
+                        <th className="pb-4 pr-4 font-bold text-black">Date</th>
+                        <th className="pb-4 pr-4 font-bold text-black">Invoice No</th>
+                        <th className="pb-4 pr-4 font-bold text-black">Reference No</th>
+                        <th className="pb-4 pr-4 font-bold text-black">Invoice Amount</th>
+                        <th className="pb-4 pr-4 font-bold text-black">Amount Redeemed</th>
+                        <th className="pb-4 pr-4 font-bold text-black">Credited</th>
+                        <th className="pb-4 pr-4 font-bold text-black">Wallets Used / Credited To</th>
+                        <th className="pb-4 pr-4 font-bold text-black">Balance After</th>
+                        <th className="pb-4 pr-4 font-bold text-black">Location</th>
                         <th className="pb-4 font-bold text-black">Remark</th>
                       </tr>
                     </thead>
                     <tbody className="text-gray-700 font-medium">
-                      {walletHistory.length > 0 ? walletHistory.map((row, i) => (
-                        <tr key={row._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
-                          <td className="py-4">{i + 1}</td>
-                          <td className="py-4">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
-                          <td className="py-4 font-semibold text-[#2B3B8A]">{row.invoice?.invoiceNumber || '—'}</td>
-                          <td className="py-4 font-mono font-medium text-gray-800">{row.invoice?.referenceNo || '—'}</td>
-                          <td className="py-4">
+                      {groupedWalletHistory.length > 0 ? groupedWalletHistory.map((row, i) => {
+                        const isRedemption = row.kind === 'redemption';
+                        const isCredit = row.kind === 'credit';
+                        return (
+                        <tr key={row._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50 align-top">
+                          <td className="py-4 pr-4">{i + 1}</td>
+                          <td className="py-4 pr-4">{new Date(row.createdAt).toLocaleDateString('en-IN')}</td>
+                          <td className="py-4 pr-4 font-semibold text-[#2B3B8A]">{row.invoice?.invoiceNumber || '—'}</td>
+                          <td className="py-4 pr-4 font-mono font-medium text-gray-800">{row.invoice?.referenceNo || '—'}</td>
+                          <td className="py-4 pr-4">
                             {row.invoice?.invoiceAmount != null
-                              ? `₹${Number(row.invoice.invoiceAmount).toFixed(2)}`
+                              ? `₹${Number(row.invoice.invoiceAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                               : <span className="text-gray-400">—</span>}
                           </td>
-                          <td className="py-4 font-semibold text-[#E74C3C]">
-                            {row.type === 'debit' ? `-₹${Number(row.amount).toFixed(2)}` : <span className="text-gray-400">—</span>}
+                          <td className="py-4 pr-4 font-semibold text-[#E74C3C]">
+                            {isRedemption || row.kind === 'debit'
+                              ? `-₹${Number(row.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              : <span className="text-gray-400">—</span>}
                           </td>
-                          <td className="py-4 font-semibold text-[#2ECC71]">
-                            {row.type === 'credit' ? `+₹${Number(row.amount).toFixed(2)}` : <span className="text-gray-400">—</span>}
+                          <td className="py-4 pr-4 font-semibold text-[#2ECC71]">
+                            {isCredit ? `+₹${Number(row.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : <span className="text-gray-400">—</span>}
                           </td>
-                          <td className="py-4">
-                            {row.walletLabel ? (
-                              <span className="inline-flex items-center bg-[#EEF2FF] text-[#2B3B8A] text-[11px] font-semibold px-2 py-0.5 rounded-md border border-[#2B3B8A]/10 whitespace-nowrap">
-                                {row.walletLabel}
-                              </span>
-                            ) : <span className="text-gray-400">—</span>}
+                          <td className="py-4 pr-4">
+                            <WalletBreakdown wallets={row.wallets} compact />
+                            {row.reassigned && (
+                              <span className="block mt-1 text-[10px] font-semibold text-amber-700">Wallet changed by admin</span>
+                            )}
                           </td>
-                          <td className="py-4 font-semibold">₹{Number(row.balanceAfter).toFixed(2)}</td>
-                          <td className="py-4">{row.invoice?.location || '—'}</td>
+                          <td className="py-4 pr-4 font-semibold">₹{Number(row.balanceAfter).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td className="py-4 pr-4">{row.invoice?.location || '—'}</td>
                           <td className="py-4 max-w-[160px] truncate text-gray-500">{row.invoice?.remark || <span className="text-gray-300">—</span>}</td>
                         </tr>
-                      )) : (
+                        );
+                      }) : (
                         <tr>
                           <td colSpan="11" className="py-8 text-center text-gray-400">No transactions yet</td>
                         </tr>
                       )}
                     </tbody>
-                    {/* Totals footer */}
-                    {walletHistory.length > 0 && (() => {
-                      const totalInvoice = walletHistory.reduce((s, r) => s + (r.invoice?.invoiceAmount || 0), 0);
-                      const totalRedeemed = walletHistory.filter(r => r.type === 'debit').reduce((s, r) => s + (r.amount || 0), 0);
-                      const totalCredited = walletHistory.filter(r => r.type === 'credit').reduce((s, r) => s + (r.amount || 0), 0);
+                    {/* Totals footer — each invoice counted once */}
+                    {groupedWalletHistory.length > 0 && (() => {
+                      const f = (n) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                      const totalInvoice = groupedWalletHistory.filter(r => r.kind === 'redemption').reduce((s, r) => s + (r.invoice?.invoiceAmount || 0), 0);
+                      const totalRedeemed = groupedWalletHistory.filter(r => r.kind === 'redemption' || r.kind === 'debit').reduce((s, r) => s + (r.amount || 0), 0);
+                      const totalCredited = groupedWalletHistory.filter(r => r.kind === 'credit').reduce((s, r) => s + (r.amount || 0), 0);
                       return (
                         <tfoot className="border-t-2 border-gray-200 bg-gray-50 font-bold text-[13px]">
                           <tr>
-                            <td colSpan="4" className="py-3 text-gray-600">Total ({walletHistory.length} entries)</td>
-                            <td className="py-3">₹{totalInvoice.toFixed(2)}</td>
-                            <td className="py-3 text-[#E74C3C]">-₹{totalRedeemed.toFixed(2)}</td>
-                            <td className="py-3 text-[#2ECC71]">+₹{totalCredited.toFixed(2)}</td>
+                            <td colSpan="4" className="py-3 text-gray-600">Total ({groupedWalletHistory.length} entries)</td>
+                            <td className="py-3">₹{f(totalInvoice)}</td>
+                            <td className="py-3 text-[#E74C3C]">-₹{f(totalRedeemed)}</td>
+                            <td className="py-3 text-[#2ECC71]">+₹{f(totalCredited)}</td>
                             <td className="py-3" />
                             <td className="py-3" />
                             <td className="py-3" />
