@@ -10,6 +10,7 @@ const SystemSetting = require('../models/SystemSetting');
 const { audit } = require('../services/audit');
 const Division = require('../models/Division');
 const { protect, authorize } = require('../middleware/auth');
+const { getInvoiceWalletBreakdown, invoiceIdsForWallet } = require('../services/invoiceWallets');
 const { sendSmsOtp, sendRedemptionConfirmation } = require('../config/sms');
 
 const router = express.Router();
@@ -1164,8 +1165,10 @@ router.get('/overrides', protect, authorize('admin'), async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/all', protect, authorize('admin'), async (req, res) => {
   try {
-    const { q, location, startDate, endDate, page = 1, limit = 10 } = req.query;
+    const { q, location, startDate, endDate, page = 1, limit = 10, walletId } = req.query;
     const filter = {};
+    const sortField = 'createdAt';
+    const sortDir = -1;
 
     if (location) filter.location = { $regex: location, $options: 'i' };
     if (startDate && endDate) {
@@ -1179,33 +1182,9 @@ router.get('/all', protect, authorize('admin'), async (req, res) => {
       ];
     }
 
-    // ── Filter by wallet ────────────────────────────────────────────────────
-    // The invoice itself does not record which wallet was drawn from — that
-    // link lives on WalletTransaction. So work backwards: find the debits
-    // against this wallet, then restrict to the invoices they belong to.
     if (walletId) {
-      const wallet = await Wallet.findById(walletId).select('name').lean();
-
-      const monthlyWalletIds = (
-        await MonthlyWallet.find({
-          $or: [{ wallet: walletId }, ...(wallet ? [{ label: wallet.name }] : [])],
-        })
-          .select('_id')
-          .lean()
-      ).map((mw) => mw._id);
-
-      const invoiceIds = (
-        await WalletTransaction.find({
-          type: 'debit',
-          monthlyWallet: { $in: monthlyWalletIds },
-          invoice: { $ne: null },
-        })
-          .select('invoice')
-          .lean()
-      ).map((wt) => wt.invoice);
-
-      // No matches means no invoices — not "ignore the filter"
-      filter._id = { $in: invoiceIds };
+      const ids = await invoiceIdsForWallet(walletId);
+      filter._id = { $in: ids };
     }
 
     const total = await Invoice.countDocuments(filter);
@@ -1265,6 +1244,13 @@ router.get('/', protect, async (req, res) => {
     // Admin can filter by specific division
     if (req.user.role === 'admin' && divisionId) filter.division = divisionId;
 
+    // Wallet filter — the invoice does not store its wallet; that link lives on
+    // the wallet transactions, so find the invoices that drew from it.
+    if (walletId) {
+      const ids = await invoiceIdsForWallet(walletId);
+      filter._id = { $in: ids };
+    }
+
     if (location) filter.location = { $regex: location, $options: 'i' };
     if (startDate && endDate) filter.invoiceDate = { $gte: new Date(startDate), $lte: new Date(endDate + 'T23:59:59.999Z') };
     if (q) {
@@ -1299,7 +1285,20 @@ router.get('/', protect, async (req, res) => {
       },
     ]);
     const totalInvoiced = totalsAgg[0]?.totalInvoiced || 0;
-    const totalRedeemed = totalsAgg[0]?.totalRedeemed || 0;
+
+    // Redeemed total from the ledger (net of reassignment reversals) rather than
+    // the invoice field, which older invoices recorded as 0.
+    const matchingIds = await Invoice.find(filter).distinct('_id');
+    const redeemAgg = await WalletTransaction.aggregate([
+      { $match: { invoice: { $in: matchingIds } } },
+      {
+        $group: {
+          _id: null,
+          net: { $sum: { $cond: [{ $eq: ['$type', 'debit'] }, '$amount', { $multiply: ['$amount', -1] }] } },
+        },
+      },
+    ]);
+    const totalRedeemed = redeemAgg[0]?.net ?? totalsAgg[0]?.totalRedeemed ?? 0;
     const totalAmount = totalInvoiced; // kept so nothing else breaks
 
     // Point 11 — join first, then sort, so party and branch columns can be
@@ -1347,23 +1346,17 @@ router.get('/', protect, async (req, res) => {
       { $project: { vendorDoc: 0, divisionDoc: 0 } },
     ]).collation({ locale: 'en', strength: 2 });
 
-    // Attach redemption amount (sum of debit wallet transactions per invoice)
-    const invoiceIds = invoices.map(inv => inv._id);
-    const redemptions = await WalletTransaction.find({
-      invoice: { $in: invoiceIds },
-      type: 'debit',
-    }).select('invoice amount').lean();
-
-    const redemptionMap = {};
-    redemptions.forEach(r => {
-      const key = String(r.invoice);
-      redemptionMap[key] = (redemptionMap[key] || 0) + (r.amount || 0);
+    // Attach what was redeemed and from which wallets. Net of reassignment
+    // reversals, so a moved redemption is not counted twice.
+    const breakdown = await getInvoiceWalletBreakdown(invoices.map((inv) => inv._id));
+    const invoicesWithRedeem = invoices.map((inv) => {
+      const b = breakdown.get(String(inv._id));
+      return {
+        ...inv,
+        redeemAmount: b ? b.total : parseFloat((inv.redeemedAmount || 0).toFixed(2)),
+        walletBreakdown: b ? b.wallets : [],
+      };
     });
-
-    const invoicesWithRedeem = invoices.map(inv => ({
-      ...inv,
-      redeemAmount: parseFloat((redemptionMap[String(inv._id)] || 0).toFixed(2)),
-    }));
 
     res.status(200).json({
       success: true,
@@ -1477,37 +1470,145 @@ router.patch('/:id', protect, authorize('admin'), async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // @route   DELETE /api/invoices/:id
-// @desc    Delete invoice
+// @body    { refund: true | false, reason }
+// @desc    Delete an invoice. The admin chooses whether the incentive redeemed
+//          against it goes back to the party.
+//
+//   refund: true  → each wallet it was drawn from is credited back (month
+//                   wallet + party balance) with a "Refund" entry per wallet.
+//   refund: false → nothing is returned; the redemption stays spent.
+//
+// Either way the original redemption entries are KEPT (unlinked from the
+// deleted invoice and marked "invoice deleted"), so the party statement and
+// balance always agree. Previously the entries were erased without returning
+// the money, which left the statement and the balance out of step.
 // @access  Admin only
 // ─────────────────────────────────────────────────────────────────────────────
 router.delete('/:id', protect, authorize('admin'), async (req, res) => {
-  try {
-    const invoice = await Invoice.findById(req.params.id);
+  const refund = req.body?.refund;
+  const reason = req.body?.reason ? String(req.body.reason).trim() : null;
 
-    if (!invoice) {
-      return res.status(404).json({
-        success: false,
-        message: 'Invoice not found',
-      });
-    }
-
-    // delete related wallet transactions
-    await WalletTransaction.deleteMany({
-      invoice: invoice._id,
-    });
-
-    await invoice.deleteOne();
-
-    res.status(200).json({
-      success: true,
-      message: 'Invoice deleted successfully',
-    });
-  } catch (error) {
-    res.status(500).json({
+  if (refund !== true && refund !== false) {
+    return res.status(400).json({
       success: false,
-      message: error.message,
+      message: 'Please choose whether to return the redeemed amount to the party',
     });
   }
+
+  const session = await mongoose.startSession();
+  let result;
+  try {
+    await session.withTransaction(async () => {
+      const invoice = await Invoice.findById(req.params.id).session(session);
+      if (!invoice) {
+        const err = new Error('Invoice not found');
+        err.status = 404;
+        throw err;
+      }
+
+      const txns = await WalletTransaction.find({ invoice: invoice._id })
+        .sort({ createdAt: 1 })
+        .session(session);
+
+      // Net amount per wallet (debits minus reassignment reversals)
+      const perWallet = new Map();
+      for (const t of txns) {
+        const key = t.monthlyWallet ? `mw:${t.monthlyWallet}` : `label:${t.walletLabel || ''}`;
+        if (!perWallet.has(key)) {
+          perWallet.set(key, { monthlyWallet: t.monthlyWallet || null, label: t.walletLabel || null, amount: 0 });
+        }
+        perWallet.get(key).amount += t.type === 'debit' ? t.amount || 0 : -(t.amount || 0);
+      }
+      const buckets = [...perWallet.values()]
+        .map((b) => ({ ...b, amount: parseFloat(b.amount.toFixed(2)) }))
+        .filter((b) => b.amount > 0.005);
+      const totalRedeemed = parseFloat(buckets.reduce((a, b) => a + b.amount, 0).toFixed(2));
+
+      const vendor = await Vendor.findById(invoice.vendor).session(session);
+      const refunds = [];
+
+      if (refund && totalRedeemed > 0 && vendor) {
+        let running = parseFloat((vendor.walletBalance || 0).toFixed(2));
+        for (const b of buckets) {
+          // Find the month wallet to put it back into
+          let mw = b.monthlyWallet ? await MonthlyWallet.findById(b.monthlyWallet).session(session) : null;
+          if (!mw && b.label) {
+            mw = await MonthlyWallet.findOne({ vendor: vendor._id, label: b.label }).session(session);
+          }
+          if (mw) {
+            await MonthlyWallet.updateOne({ _id: mw._id }, { $inc: { balance: b.amount } }, { session });
+          }
+          running = parseFloat((running + b.amount).toFixed(2));
+          const label = mw?.label || b.label || 'Unassigned';
+          refunds.push({ label, amount: b.amount, monthWalletFound: !!mw });
+
+          await WalletTransaction.create([{
+            vendor: vendor._id,
+            invoice: null,
+            type: 'credit',
+            amount: b.amount,
+            balanceAfter: running,
+            description: `Refund ₹${b.amount.toFixed(2)} to ${label} — invoice ${invoice.invoiceNumber} deleted`,
+            processedBy: req.user._id,
+            monthlyWallet: mw?._id || null,
+            walletLabel: label,
+          }], { session });
+        }
+        await Vendor.updateOne({ _id: vendor._id }, { $set: { walletBalance: running } }, { session });
+        vendor.walletBalance = running;
+      }
+
+      // Keep the original entries, unlinked from the deleted invoice
+      for (const t of txns) {
+        const description = `${t.description || (t.type === 'debit' ? 'Redemption' : 'Entry')} — invoice ${invoice.invoiceNumber} deleted` +
+          (refund ? ' (refunded)' : ' (not refunded)');
+        await WalletTransaction.updateOne(
+          { _id: t._id }, { $set: { description, invoice: null } }, { session }
+        );
+      }
+
+      await Invoice.deleteOne({ _id: invoice._id }, { session });
+
+      result = {
+        invoiceNumber: invoice.invoiceNumber,
+        referenceNo: invoice.referenceNo,
+        vendor,
+        totalRedeemed,
+        refunded: refund ? totalRedeemed : 0,
+        refunds,
+        balanceAfter: vendor ? parseFloat((vendor.walletBalance || 0).toFixed(2)) : null,
+      };
+    });
+  } catch (error) {
+    await session.endSession();
+    return res.status(error.status || 500).json({ success: false, message: error.message });
+  }
+  await session.endSession();
+
+  audit({
+    vendor: result.vendor || { _id: null },
+    eventType: 'invoice.deleted', actor: req.user, source: 'admin',
+    amount: result.totalRedeemed, balanceAfter: result.balanceAfter,
+    invoiceNumber: result.invoiceNumber, referenceNo: result.referenceNo, reason,
+    walletLabel: result.refunds.map((r) => r.label).join(', ') || null,
+    summary: refund
+      ? `Invoice ${result.invoiceNumber} deleted — ₹${result.refunded.toFixed(2)} returned to the party`
+      : `Invoice ${result.invoiceNumber} deleted — ₹${result.totalRedeemed.toFixed(2)} NOT returned`,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: refund && result.refunded > 0
+      ? `Invoice deleted. ₹${result.refunded.toFixed(2)} returned to the party.`
+      : 'Invoice deleted. Redeemed amount was not returned.',
+    data: {
+      invoiceNumber: result.invoiceNumber,
+      totalRedeemed: result.totalRedeemed,
+      refunded: result.refunded,
+      refunds: result.refunds,
+      balanceAfter: result.balanceAfter,
+    },
+  });
 });
 
 module.exports = router;

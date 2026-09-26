@@ -189,7 +189,7 @@ export default function CreateVendorPage() {
                   value={form.accountNumber}
                   onChange={(v) => set('accountNumber', v)}
                   error={fieldErrors.accountNumber}
-                  hint="Location code will be auto-prefixed (e.g. JDH-7792811100)"
+                  hint="Saved exactly as entered — the branch is not added to the code"
                   required
                 />
                 <InputField
@@ -248,9 +248,9 @@ export default function CreateVendorPage() {
                 </svg>
                 <div className="text-[12px] text-gray-600 leading-relaxed">
                   <span className="font-bold text-gray-900 block mb-1">Account Number Format</span>
-                  The account number you enter will be automatically prefixed with your division's location code.
+                  The party code is saved exactly as entered. The branch is stored separately and is not added to the code.
                   <br />
-                  <span className="font-mono text-[#2B3B8A] font-semibold">{selectedDivision ? selectedDivision.locationCode : 'XXX'}-{form.accountNumber || 'XXXXXXXXXX'}</span>
+                  <span className="font-mono text-[#2B3B8A] font-semibold">{form.accountNumber || 'XXXXXXXXXX'}</span>
                 </div>
               </div>
             </div>

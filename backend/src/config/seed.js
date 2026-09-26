@@ -43,7 +43,7 @@ const seed = async () => {
       location: b.location,
       locationCode: b.locationCode,
     });
-    divisionMap[b.locationCode] = div._id;
+    divisionMap[b.name] = div._id;
     console.log(`Division created: ${b.name} (${b.locationCode})`);
   }
 
@@ -79,7 +79,7 @@ const seed = async () => {
     await Vendor.create({
       companyName: v.companyName,
       personName: v.personName,
-      accountNumber: `${v.loc}-${v.code}`,  // AJM-TRJ028
+      accountNumber: v.code,  // party codes are stored without the branch
       mobileNumber: v.mobile,
       address: '',
       division: divId,
@@ -87,7 +87,7 @@ const seed = async () => {
       walletBalance: 0,
       createdBy: null,
     });
-    console.log(`Vendor created: ${v.loc}-${v.code}`);
+    console.log(`Vendor created: ${v.code} (${v.loc})`);
   }
 
   console.log('\n--- Seed Complete ---');
