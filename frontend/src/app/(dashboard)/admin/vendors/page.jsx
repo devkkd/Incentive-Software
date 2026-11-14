@@ -189,7 +189,6 @@ export default function AdminVendorsPage() {
   // Edit
   const openEditModal = (vendor) => {
     setVendorToEdit(vendor);
-    // Keep full accountNumber — backend handles prefix reconstruction
     const rawAccount = vendor.accountNumber || '';
     setEditForm({
       companyName: vendor.companyName,
@@ -199,7 +198,7 @@ export default function AdminVendorsPage() {
       address: vendor.address || '',
       salesPerson: vendor.salesPerson || '',
       status: vendor.status,
-      accountNumber: rawAccount,          // full code e.g. "AJM-WRJ0230348"
+      accountNumber: rawAccount,
       divisionId: vendor.division?._id
                     ? String(vendor.division._id)
                     : typeof vendor.division === 'string'
@@ -217,9 +216,6 @@ export default function AdminVendorsPage() {
     if (!editForm.divisionId) { setEditError('Please select a location / branch'); return; }
     setEditLoading(true); setEditError('');
     try {
-      // Extract suffix from full accountNumber (backend prepends division prefix)
-      const fullAcc = editForm.accountNumber || '';
-      const accSuffix = fullAcc.includes('-') ? fullAcc.substring(fullAcc.indexOf('-') + 1) : fullAcc;
       const res = await fetch(`${API}/api/vendors/${vendorToEdit._id}`, {
         method: 'PUT', headers: authHeaders(), credentials: 'include',
         body: JSON.stringify({
@@ -230,7 +226,7 @@ export default function AdminVendorsPage() {
           address:       editForm.address,
           salesPerson:   editForm.salesPerson,
           status:        editForm.status,
-          accountNumber: accSuffix,
+          accountNumber: (editForm.accountNumber || '').trim(),
           divisionId:    editForm.divisionId,
           partyCity:     editForm.partyCity,
           partyType:     editForm.partyType,
@@ -238,7 +234,8 @@ export default function AdminVendorsPage() {
       });
       const data = await res.json();
       if (!res.ok) { setEditError(data.message || 'Update failed'); return; }
-      setVendors(prev => prev.map(v => v._id === vendorToEdit._id ? data.data : v));
+      const div = divisions.find(d => d._id === String(data.data?.division)) || data.data?.division;
+      setVendors(prev => prev.map(v => v._id === vendorToEdit._id ? { ...data.data, division: div } : v));
       setIsEditModalOpen(false); setVendorToEdit(null);
     } catch { setEditError('Server error'); }
     finally { setEditLoading(false); }
@@ -352,21 +349,8 @@ export default function AdminVendorsPage() {
               <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Location / Branch <span className="text-red-400">*</span></label>
                 <select
-                  value={editForm.divisionId || <span className='text-gray-300'>—</span>}
-                  onChange={(e) => {
-                    const selDiv = divisions.find(d => d._id === e.target.value);
-                    // Extract just the suffix from current full account number
-                    const acc = editForm.accountNumber || '';
-                    const currentPrefix = vendorToEdit?.division?.name || '';
-                    const suffix = acc.includes('-')
-                      ? acc.substring(acc.indexOf('-') + 1)
-                      : acc;
-                    setEditForm(p => ({
-                      ...p,
-                      divisionId: e.target.value,
-                      accountNumber: selDiv ? `${selDiv.name}-${suffix}` : suffix,
-                    }));
-                  }}
+                  value={editForm.divisionId ?? ''}
+                  onChange={(e) => setEditForm(p => ({ ...p, divisionId: e.target.value }))}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A] bg-white">
                   <option value="">Select Location</option>
                   {divisions.map(d => (
@@ -375,78 +359,61 @@ export default function AdminVendorsPage() {
                 </select>
               </div>
 
-              {/* Party Code — editable suffix, prefix auto from division */}
+              {/* Party Code — saved exactly as entered; the branch is not part of it */}
               <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Party Code</label>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-1">
-                    <span className="px-3 py-2.5 bg-gray-100 rounded-xl border border-gray-200 text-sm font-mono font-bold text-gray-700 shrink-0">
-                      {divisions.find(d => d._id === editForm.divisionId)?.name || vendorToEdit?.division?.name || '—'}-
-                    </span>
-                    <input
-                      type="text"
-                      value={
-                        (() => {
-                          const acc = editForm.accountNumber || '';
-                          return acc.includes('-') ? acc.substring(acc.indexOf('-') + 1) : acc;
-                        })()
-                      }
-                      onChange={(e) => {
-                        const selDiv = divisions.find(d => d._id === editForm.divisionId);
-                        const prefix = selDiv?.name || vendorToEdit?.division?.name || '';
-                        const suffix = e.target.value.toUpperCase();
-                        setEditForm(p => ({ ...p, accountNumber: prefix ? `${prefix}-${suffix}` : suffix }));
-                      }}
-                      placeholder="XXXXX"
-                      className="flex-1 px-3 py-2.5 rounded-xl border border-gray-200 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]"
-                    />
-                  </div>
-                  <p className="text-[11px] text-gray-400">Full code: <span className="font-mono font-semibold text-gray-600">{editForm.accountNumber || '—'}</span></p>
-                </div>
+                <input
+                  type="text"
+                  value={editForm.accountNumber ?? ''}
+                  onChange={(e) => setEditForm(p => ({ ...p, accountNumber: e.target.value.toUpperCase() }))}
+                  placeholder="e.g. TRJ028"
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]"
+                />
+                <p className="text-[11px] text-gray-400">The branch is stored separately and is not added to the code.</p>
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Party Name <span className="text-red-400">*</span></label>
-                <input type="text" value={editForm.companyName || <span className='text-gray-300'>—</span>} onChange={(e) => setEditForm(p => ({ ...p, companyName: e.target.value }))}
+                <input type="text" value={editForm.companyName ?? ''} onChange={(e) => setEditForm(p => ({ ...p, companyName: e.target.value }))}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Party City / Location</label>
-                <input type="text" value={editForm.partyCity || <span className='text-gray-300'>—</span>} onChange={(e) => setEditForm(p => ({ ...p, partyCity: e.target.value }))}
+                <input type="text" value={editForm.partyCity ?? ''} onChange={(e) => setEditForm(p => ({ ...p, partyCity: e.target.value }))}
                   placeholder="e.g. Jodhpur"
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Mobile Number</label>
-                <input type="text" value={editForm.mobileNumber || <span className='text-gray-300'>—</span>} onChange={(e) => setEditForm(p => ({ ...p, mobileNumber: e.target.value }))}
+                <input type="text" value={editForm.mobileNumber ?? ''} onChange={(e) => setEditForm(p => ({ ...p, mobileNumber: e.target.value }))}
                   maxLength={10}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Party Type</label>
-                <input type="text" value={editForm.partyType || <span className='text-gray-300'>—</span>} onChange={(e) => setEditForm(p => ({ ...p, partyType: e.target.value }))}
+                <input type="text" value={editForm.partyType ?? ''} onChange={(e) => setEditForm(p => ({ ...p, partyType: e.target.value }))}
                   placeholder="CO-DEALER, DEALER..."
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
 
               <div className="space-y-1.5 col-span-2">
                 <label className="text-[13px] font-medium text-gray-800">Address</label>
-                <input type="text" value={editForm.address || <span className='text-gray-300'>—</span>} onChange={(e) => setEditForm(p => ({ ...p, address: e.target.value }))}
+                <input type="text" value={editForm.address ?? ''} onChange={(e) => setEditForm(p => ({ ...p, address: e.target.value }))}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Sales Person</label>
-                <input type="text" value={editForm.salesPerson || <span className='text-gray-300'>—</span>} onChange={(e) => setEditForm(p => ({ ...p, salesPerson: e.target.value }))}
+                <input type="text" value={editForm.salesPerson ?? ''} onChange={(e) => setEditForm(p => ({ ...p, salesPerson: e.target.value }))}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A]" />
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[13px] font-medium text-gray-800">Status</label>
-                <select value={editForm.status || <span className='text-gray-300'>—</span>} onChange={(e) => setEditForm(p => ({ ...p, status: e.target.value }))}
+                <select value={editForm.status ?? ''} onChange={(e) => setEditForm(p => ({ ...p, status: e.target.value }))}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-1 focus:ring-[#2B3B8A] bg-white">
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
@@ -645,7 +612,7 @@ export default function AdminVendorsPage() {
                     <td className="py-4 px-3">{String((pagination.page - 1) * 10 + i + 1).padStart(2, '0')}</td>
                     <td className="py-4 px-3 font-semibold text-[#2B3B8A] font-mono text-[12px] sticky left-0 z-10 bg-white">{vendor.accountNumber}</td>
                     <td className="py-4 px-3 font-mono text-[12px] text-gray-600">{vendor.division?.name || '—'}</td>
-                    <td className="py-4 px-3 font-semibold max-w-[220px] truncate" title={vendor.companyName || <span className='text-gray-300'>—</span>}>{vendor.companyName}</td>
+                    <td className="py-4 px-3 font-semibold max-w-[220px] truncate" title={vendor.companyName || ''}>{vendor.companyName}</td>
                     <td className="py-4 px-3">
                       {vendor.partyType ? (
                         <span className="text-[11px] font-semibold bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{vendor.partyType}</span>

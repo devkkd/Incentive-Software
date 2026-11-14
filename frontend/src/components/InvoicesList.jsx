@@ -896,7 +896,7 @@ export default function InvoicesList({ isAdmin = true }) {
                   <td className="py-4 px-3 align-middle">
                     <WalletBreakdown wallets={row.walletBreakdown} />
                   </td>
-                  <td className="py-4 px-3 text-gray-500 max-w-[160px] truncate" title={row.location || <span className='text-gray-300'>—</span>}>{row.location || '—'}</td>
+                  <td className="py-4 px-3 text-gray-500 max-w-[160px] truncate" title={row.location || ''}>{row.location || '—'}</td>
                   <td className="py-4 px-3">
                     <span className="px-2.5 py-1 bg-[#EEF2FF] text-[#2B3B8A] text-[11px] font-semibold rounded-lg">
                       {row.division?.name || '—'}

@@ -148,6 +148,38 @@ export default function AdminRedeemPage() {
   );
   const input = 'w-full px-3 py-2 border border-gray-200 rounded-xl text-[14px] focus:outline-none focus:border-[#2B3B8A]';
 
+  // ── Invoice number ↔ branch stay in step ──────────────────────────────
+  // The number before "/" is the branch's code (22/… = WSG). Typing it picks
+  // the branch; picking a branch puts its code at the front.
+  const onInvoiceNumberChange = (raw) => {
+    const value = raw.toUpperCase();
+    const next = { ...form, invoiceNumber: value };
+    const m = value.match(/^(\d+)\//);
+    if (m) {
+      const d = divisions.find((x) => String(x.locationCode) === m[1]);
+      if (d) next.divisionId = d._id;
+    }
+    setForm(next);
+  };
+
+  const onBranchChange = (divisionId) => {
+    const d = divisions.find((x) => x._id === divisionId);
+    let invoiceNumber = form.invoiceNumber;
+    if (d) {
+      const rest = invoiceNumber.includes('/') ? invoiceNumber.slice(invoiceNumber.indexOf('/') + 1) : '';
+      invoiceNumber = `${d.locationCode}/${rest}`;
+    }
+    setForm({ ...form, divisionId, invoiceNumber });
+  };
+
+  const invoicePrefixWarning = (() => {
+    const m = form.invoiceNumber.match(/^(\d+)\//);
+    if (!m) return '';
+    const owner = divisions.find((x) => String(x.locationCode) === m[1]);
+    if (!owner) return `No branch uses the prefix ${m[1]}/`;
+    return '';
+  })();
+
   return (
     <div className="p-4 sm:p-6 md:p-10 max-w-[1000px] mx-auto">
       <div className="mb-6">
@@ -242,8 +274,11 @@ export default function AdminRedeemPage() {
             <div>
               <Label>Invoice Number</Label>
               <input value={form.invoiceNumber}
-                onChange={(e) => setForm({ ...form, invoiceNumber: e.target.value })}
-                placeholder="1/RS/40012287" className={input} />
+                onChange={(e) => onInvoiceNumberChange(e.target.value)}
+                placeholder="1/RS/40012287" className={input + ' font-mono'} />
+              {invoicePrefixWarning && (
+                <p className="text-[11px] text-amber-700 mt-1">{invoicePrefixWarning}</p>
+              )}
             </div>
             <div>
               <Label>Invoice Date</Label>
@@ -269,11 +304,11 @@ export default function AdminRedeemPage() {
               {/* The admin chooses the branch — this is the point of the screen */}
               <Label>Book under branch</Label>
               <select value={form.divisionId}
-                onChange={(e) => setForm({ ...form, divisionId: e.target.value })}
+                onChange={(e) => onBranchChange(e.target.value)}
                 className={input + ' cursor-pointer'}>
                 <option value="">Select a branch…</option>
                 {divisions.map((d) => (
-                  <option key={d._id} value={d._id}>{d.name}</option>
+                  <option key={d._id} value={d._id}>{d.name} ({d.locationCode}/)</option>
                 ))}
               </select>
             </div>

@@ -43,6 +43,7 @@ const auditLogSchema = new mongoose.Schema(
         'redemption', 'redemption.adminOverride', 'redemption.reassigned', 'invoice.deleted',
         // Wallet state
         'wallet.held', 'wallet.released', 'wallet.renamed', 'scheme.held', 'scheme.released',
+        'wallet.hidden', 'wallet.unhidden', 'wallet.transferred', 'wallet.deleted', 'wallet.writeOff',
         // Approval
         'otp.sent', 'otp.failed', 'otp.verified', 'otp.rejected',
       ],

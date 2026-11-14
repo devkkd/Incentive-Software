@@ -12,7 +12,7 @@ const authHeaders = () => {
 };
 
 const downloadTemplate = () => {
-  const csvContent = ['party_code,amount,remark', 'JDH-7792811100,5000,March incentive'].join('\n');
+  const csvContent = ['party_code,amount,remark', '7792811100,5000,March incentive'].join('\n');
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -22,152 +22,201 @@ const downloadTemplate = () => {
   URL.revokeObjectURL(url);
 };
 
-const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+// ── Manual entry: type rows, or paste straight from Excel ───────────────────
+const EMPTY_ROW = () => ({ code: '', amount: '', remark: '' });
+const parseAmount = (v) => parseFloat(String(v ?? '').replace(/[₹,\s]/g, ''));
+const MANUAL_COLS = ['code', 'amount', 'remark'];
 
-// ── Fix Missing Wallets Panel — reads existing uploads, creates MonthlyWallet docs only ──
-function FixMissingWalletsPanel({ API, authHeaders }) {
-  const [loading, setLoading] = useState(false);
-  const [uploads, setUploads] = useState(null);
-  const [fixing, setFixing] = useState(null); // uploadId being fixed
-  const [fixResults, setFixResults] = useState({}); // { [uploadId]: result }
-  const [error, setError] = useState('');
+const manualRowProblem = (r) => {
+  const blank = !r.code.trim() && !String(r.amount).trim() && !r.remark.trim();
+  if (blank) return null;
+  if (!r.code.trim()) return 'Party code missing';
+  const a = parseAmount(r.amount);
+  if (!String(r.amount).trim()) return 'Amount missing';
+  if (isNaN(a) || a <= 0) return 'Amount must be a number above 0';
+  return null;
+};
 
-  // Sync state
-  const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState(null);
+function ManualEntryGrid({ rows, setRows, disabled }) {
+  const update = (i, field, value) =>
+    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, [field]: value } : r)));
 
-  const loadUploads = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const res = await fetch(`${API}/api/incentives/uploads-without-wallets`, {
-        headers: authHeaders(), credentials: 'include',
-      });
-      const data = await res.json();
-      if (!res.ok) { setError(data.message || 'Failed to load'); return; }
-      setUploads(data.data);
-    } catch (err) {
-      setError('Server error: ' + err.message);
-    } finally {
-      setLoading(false);
+  // Pasting several cells (copied from Excel) fills rows and columns from here
+  const onPaste = (e, i, field) => {
+    const text = e.clipboardData.getData('text');
+    if (!text || (!text.includes('\t') && !text.includes('\n'))) return; // ordinary paste
+    e.preventDefault();
+    let lines = text.replace(/\r/g, '').split('\n').filter((l) => l.trim() !== '');
+    // Skip a copied header row ("party_code  amount  remark")
+    if (lines.length && /code|party/i.test(lines[0]) && isNaN(parseAmount(lines[0].split('\t')[1]))) {
+      lines = lines.slice(1);
     }
+    const startCol = MANUAL_COLS.indexOf(field);
+    setRows((prev) => {
+      const next = [...prev];
+      lines.forEach((line, k) => {
+        const cells = line.split('\t');
+        const rowIdx = i + k;
+        while (next.length <= rowIdx) next.push(EMPTY_ROW());
+        const row = { ...next[rowIdx] };
+        cells.forEach((cell, c) => {
+          const col = MANUAL_COLS[startCol + c];
+          if (col) row[col] = cell.trim();
+        });
+        next[rowIdx] = row;
+      });
+      if (next[next.length - 1].code || next[next.length - 1].amount) next.push(EMPTY_ROW());
+      return next;
+    });
   };
 
-  const handleFix = async (uploadId, month, year) => {
-    setFixing(uploadId);
-    try {
-      const res = await fetch(`${API}/api/incentives/create-wallets-from-upload/${uploadId}`, {
-        method: 'POST',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ month, year }),
-      });
-      const data = await res.json();
-      setFixResults(prev => ({ ...prev, [uploadId]: data }));
-      // Refresh list
-      loadUploads();
-    } catch (err) {
-      setFixResults(prev => ({ ...prev, [uploadId]: { success: false, message: err.message } }));
-    } finally {
-      setFixing(null);
-    }
-  };
+  const filled = rows.filter((r) => r.code.trim() || String(r.amount).trim() || r.remark.trim());
+  const problems = rows.filter((r) => manualRowProblem(r)).length;
+  const total = filled.reduce((a, r) => a + (parseAmount(r.amount) || 0), 0);
+  const cell = 'w-full px-2.5 py-2 text-[13px] bg-transparent focus:outline-none focus:bg-[#F8FAFF]';
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-orange-100 p-6 md:p-8">
-      <div className="flex items-start justify-between gap-4 mb-4">
-        <div>
-          <h2 className="text-[16px] font-bold text-gray-900 flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-orange-500">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0zm-9 3.75h.008v.008H12v-.008z" />
-            </svg>
-            Fix Missing Monthly Wallets
-          </h2>
-          <p className="text-[13px] text-gray-500 mt-1">
-            Agar kisi purane upload ka monthly wallet nahi bana — yahan se directly fix karo. Koi vendor balance ya transaction change nahi hoga.
-          </p>
+    <div className="space-y-2">
+      <p className="text-[12px] text-gray-500">
+        Type rows, or copy rows from Excel (Party Code, Amount, Remark) and paste into any cell.
+      </p>
+      <div className="border border-gray-200 rounded-xl overflow-hidden">
+        <div className="max-h-[300px] overflow-y-auto">
+          <table className="w-full text-left">
+            <thead className="bg-gray-50 sticky top-0 z-10">
+              <tr className="text-[11px] uppercase tracking-wide text-gray-500">
+                <th className="px-2 py-2 w-8">#</th>
+                <th className="px-2.5 py-2">Party Code</th>
+                <th className="px-2.5 py-2 w-[120px]">Amount (₹)</th>
+                <th className="px-2.5 py-2">Remark</th>
+                <th className="w-8" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => {
+                const problem = manualRowProblem(r);
+                return (
+                  <tr key={i} className={`border-t border-gray-100 ${problem ? 'bg-red-50' : ''}`} title={problem || ''}>
+                    <td className="px-2 text-[11px] text-gray-400">{i + 1}</td>
+                    {MANUAL_COLS.map((f) => (
+                      <td key={f} className="border-l border-gray-100">
+                        <input
+                          value={r[f]}
+                          disabled={disabled}
+                          onChange={(e) => update(i, f, f === 'code' ? e.target.value.toUpperCase() : e.target.value)}
+                          onPaste={(e) => onPaste(e, i, f)}
+                          inputMode={f === 'amount' ? 'decimal' : 'text'}
+                          placeholder={f === 'code' ? 'TRJ028' : f === 'amount' ? '0.00' : 'optional'}
+                          className={`${cell} ${f === 'amount' ? 'text-right tabular-nums' : ''} ${f === 'code' ? 'font-mono' : ''}`}
+                        />
+                      </td>
+                    ))}
+                    <td className="text-center">
+                      <button type="button" disabled={disabled}
+                        onClick={() => setRows((prev) => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : [EMPTY_ROW()]))}
+                        className="text-gray-300 hover:text-red-500 text-[16px] leading-none px-1" title="Remove row">×</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-        <button
-          onClick={loadUploads}
-          disabled={loading}
-          className="shrink-0 flex items-center gap-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white font-semibold px-4 py-2.5 rounded-xl text-[13px] transition-colors"
-        >
-          {loading ? (
-            <>
-              <svg className="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-              </svg>
-              Loading...
-            </>
-          ) : 'Check Uploads →'}
-        </button>
       </div>
-
-      {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-[13px] text-red-600 mb-4">{error}</div>}
-
-      {uploads && (
-        <div className="space-y-3">
-          {uploads.length === 0 && (
-            <div className="p-4 bg-[#E4F8ED] border border-green-200 rounded-xl text-[13px] text-green-800 font-medium">
-              ✓ Sab uploads ke monthly wallets already exist hain — kuch fix karne ki zaroorat nahi
-            </div>
-          )}
-          {uploads.map((u) => {
-            const fixResult = fixResults[u._id];
-            const allFixed = u.walletsMissing === 0;
-            return (
-              <div key={u._id} className={`p-4 rounded-xl border text-[13px] ${allFixed ? 'bg-[#F0FDF4] border-green-200' : 'bg-orange-50 border-orange-200'}`}>
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-gray-900 truncate">{u.fileName}</span>
-                      <span className="inline-flex items-center bg-[#EEF2FF] text-[#2B3B8A] text-[11px] font-bold px-2 py-0.5 rounded-lg">
-                        {u.label}
-                      </span>
-                      <span className="text-gray-400 text-[11px]">{new Date(u.createdAt).toLocaleDateString('en-IN')}</span>
-                    </div>
-                    <div className="flex items-center gap-4 mt-1">
-                      <span className="text-gray-500">Total: <b className="text-gray-800">{u.totalVendors} parties</b></span>
-                      {allFixed ? (
-                        <span className="text-[#16a34a] font-semibold">✓ All {u.walletsExist} wallets exist</span>
-                      ) : (
-                        <span className="text-orange-700 font-semibold">{u.walletsMissing} wallets missing</span>
-                      )}
-                    </div>
-                  </div>
-                  {!allFixed && (
-                    <button
-                      onClick={() => handleFix(u._id, u.month, u.year)}
-                      disabled={fixing === u._id}
-                      className="shrink-0 flex items-center gap-1.5 bg-[#2B3B8A] hover:bg-[#1a2d6b] disabled:opacity-50 text-white font-semibold px-4 py-2 rounded-xl text-[12px] transition-colors whitespace-nowrap"
-                    >
-                      {fixing === u._id ? (
-                        <>
-                          <svg className="animate-spin w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                          </svg>
-                          Fixing...
-                        </>
-                      ) : `Create ${u.walletsMissing} Wallets →`}
-                    </button>
-                  )}
-                </div>
-                {/* Fix result */}
-                {fixResult && (
-                  <div className={`mt-3 p-3 rounded-lg text-[12px] font-medium ${fixResult.success ? 'bg-[#E4F8ED] text-green-800' : 'bg-red-50 text-red-700'}`}>
-                    {fixResult.message}
-                    {fixResult.success && fixResult.data && (
-                      <span className="ml-2 text-gray-600">({fixResult.data.created} created, {fixResult.data.skipped} already existed)</span>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[12px]">
+        <div className="flex gap-2">
+          <button type="button" disabled={disabled} onClick={() => setRows((p) => [...p, EMPTY_ROW()])}
+            className="px-3 py-1.5 border border-gray-200 rounded-lg font-semibold text-gray-700 hover:border-[#2B3B8A]">+ Add row</button>
+          <button type="button" disabled={disabled} onClick={() => setRows([EMPTY_ROW(), EMPTY_ROW(), EMPTY_ROW()])}
+            className="px-3 py-1.5 border border-gray-200 rounded-lg font-semibold text-gray-500 hover:border-red-300 hover:text-red-600">Clear</button>
         </div>
-      )}
+        <span className="text-gray-600">
+          <strong>{filled.length.toLocaleString('en-IN')}</strong> rows · Total{' '}
+          <strong>₹{total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+          {problems > 0 && <span className="text-red-600 font-semibold"> · {problems} with problems</span>}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// Builds an Excel file from the typed rows — it then goes through exactly the
+// same upload, OTP and duplicate checks as a chosen file.
+const buildManualFile = async (rows) => {
+  const XLSX = await import('xlsx');
+  const data = rows
+    .filter((r) => r.code.trim() || String(r.amount).trim())
+    .map((r) => [r.code.trim(), parseAmount(r.amount), r.remark.trim()]);
+  const ws = XLSX.utils.aoa_to_sheet([['party_code', 'amount', 'remark'], ...data]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Incentives');
+  const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const stamp = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '');
+  return new File([buf], `manual-entry_${stamp}.xlsx`, {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+};
+
+// ── View an uploaded file in the browser ───────────────────────────────────
+function UploadFileViewer({ upload, onClose, onDownload }) {
+  const [state, setState] = useState({ loading: true, error: '', data: null });
+  useEffect(() => {
+    let alive = true;
+    fetch(`${API}/api/incentives/uploads/${upload._id}/preview`, { headers: authHeaders(), credentials: 'include' })
+      .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+      .then(({ ok, d }) => { if (alive) setState({ loading: false, error: ok ? '' : d.message || 'Could not open the file', data: ok ? d.data : null }); })
+      .catch(() => alive && setState({ loading: false, error: 'Could not reach the server', data: null }));
+    return () => { alive = false; };
+  }, [upload._id]);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="p-5 border-b border-gray-100 flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-[17px] font-bold text-gray-900 break-all">{upload.fileName}</h3>
+            <p className="text-[12px] text-gray-500 mt-0.5">
+              Uploaded {new Date(upload.createdAt).toLocaleString('en-IN')} · {upload.walletLabel || '—'}
+              {state.data && ` · ${state.data.totalRows.toLocaleString('en-IN')} rows`}
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button onClick={onDownload} className="px-3 py-1.5 bg-[#2B3B8A] text-white text-[12px] font-semibold rounded-lg">Download</button>
+            <button onClick={onClose} className="px-3 py-1.5 text-[12px] font-semibold text-gray-600 hover:bg-gray-100 rounded-lg">Close</button>
+          </div>
+        </div>
+        <div className="overflow-auto flex-1">
+          {state.loading ? (
+            <p className="p-10 text-center text-gray-400 text-[14px]">Opening file…</p>
+          ) : state.error ? (
+            <p className="p-10 text-center text-red-600 text-[14px]">{state.error}</p>
+          ) : (
+            <table className="w-full text-[12px] whitespace-nowrap">
+              <thead className="bg-gray-50 sticky top-0">
+                <tr>
+                  <th className="px-3 py-2 text-left text-gray-400">#</th>
+                  {state.data.header.map((h, i) => (
+                    <th key={i} className="px-3 py-2 text-left font-semibold text-gray-700">{String(h)}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {state.data.rows.map((r, i) => (
+                  <tr key={i} className="border-t border-gray-100">
+                    <td className="px-3 py-1.5 text-gray-400">{i + 1}</td>
+                    {state.data.header.map((_, c) => (
+                      <td key={c} className="px-3 py-1.5 text-gray-800">{String(r[c] ?? '')}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {state.data?.truncated && (
+            <p className="p-3 text-center text-[12px] text-gray-500">Showing the first 2,000 rows — download the file to see all.</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -181,11 +230,12 @@ export default function AdminIncentivesPage() {
   const [otpEmail, setOtpEmail] = useState('');
   const [sendingOtp, setSendingOtp] = useState(false);
 
-  // Month / Year for incentive upload
-  const currentDate = new Date();
-  const [uploadMonth, setUploadMonth] = useState(String(currentDate.getMonth() + 1)); // 1-12
-  const [uploadYear, setUploadYear] = useState(String(currentDate.getFullYear()));
-  const [monthYearError, setMonthYearError] = useState('');
+  // File upload or manual entry
+  const [inputMode, setInputMode] = useState('file'); // file | manual
+  const [manualRows, setManualRows] = useState([EMPTY_ROW(), EMPTY_ROW(), EMPTY_ROW()]);
+  const [fileToSend, setFileToSend] = useState(null);  // the file actually submitted
+  const [formError, setFormError] = useState('');
+  const [viewUpload, setViewUpload] = useState(null);  // history row being viewed
 
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [otpError, setOtpError] = useState('');
@@ -248,13 +298,20 @@ export default function AdminIncentivesPage() {
 
   // Step 1: Send OTP to EMAIL_USER
   const handleUploadClick = async () => {
-    if (!selectedFile) { alert('Please select a file first'); return; }
-    // Validate month/year
-    const m = parseInt(uploadMonth);
-    const y = parseInt(uploadYear);
-    if (!m || m < 1 || m > 12) { setMonthYearError('Please select a valid month'); return; }
-    if (!y || y < 2020 || y > 2100) { setMonthYearError('Please enter a valid year'); return; }
-    setMonthYearError('');
+    setFormError('');
+    if (!selectedWalletId) { setFormError('Select the wallet to credit'); return; }
+    let file = null;
+    if (inputMode === 'file') {
+      if (!selectedFile) { setFormError('Choose a file first'); return; }
+      file = selectedFile;
+    } else {
+      const filled = manualRows.filter((r) => r.code.trim() || String(r.amount).trim() || r.remark.trim());
+      if (filled.length === 0) { setFormError('Enter at least one row'); return; }
+      const bad = manualRows.findIndex((r) => manualRowProblem(r));
+      if (bad !== -1) { setFormError(`Row ${bad + 1}: ${manualRowProblem(manualRows[bad])}`); return; }
+      file = await buildManualFile(manualRows);
+    }
+    setFileToSend(file);
     setSendingOtp(true);
     setOtpError('');
     try {
@@ -289,12 +346,10 @@ export default function AdminIncentivesPage() {
 
   const buildForm = () => {
     const formData = new FormData();
-    formData.append('file', selectedFile);
+    formData.append('file', fileToSend);
     formData.append('otp', otp.join(''));
     formData.append('frequency', 'monthly');
-    formData.append('month', uploadMonth);
-    formData.append('year', uploadYear);
-    if (selectedWalletId) formData.append('walletId', selectedWalletId);
+    formData.append('walletId', selectedWalletId);
     return formData;
   };
 
@@ -337,9 +392,29 @@ export default function AdminIncentivesPage() {
       setUploadResult(data.data);
       setUploadState('success');
       setSelectedFile(null);
+      setFileToSend(null);
+      if (inputMode === 'manual') setManualRows([EMPTY_ROW(), EMPTY_ROW(), EMPTY_ROW()]);
       fetchHistory();
     } catch { setUploadError('Server error. Is backend running?'); setUploadState('error'); }
     finally { setIsVerifying(false); setIsUploading(false); setDupBusy(false); }
+  };
+
+  // Download the original file of a past upload
+  const downloadUploadFile = async (row) => {
+    try {
+      const res = await fetch(`${API}/api/incentives/uploads/${row._id}/file`, { headers: authHeaders(), credentials: 'include' });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        alert(d.message || 'Could not download the file');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = row.fileName || 'upload';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { alert('Could not reach the server'); }
   };
 
   const downloadPDF = async () => {
@@ -350,7 +425,7 @@ export default function AdminIncentivesPage() {
     doc.setFontSize(10); doc.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 26);
     autoTable(doc, {
       startY: 32,
-      head: [['#', 'Upload Date', 'File Name', 'Incentive Month', 'Total Amount', 'Frequency', 'Status']],
+      head: [['#', 'Upload Date', 'File Name', 'Wallet', 'Total Amount', 'Frequency', 'Status']],
       body: history.map((row, i) => [String(i+1).padStart(2,'0'), new Date(row.createdAt).toLocaleDateString('en-IN'), row.fileName, row.walletLabel || '—', `Rs. ${row.totalAmount?.toFixed(2)}`, row.frequency, row.status]),
       styles: { fontSize: 9 }, headStyles: { fillColor: [43, 59, 138] },
     });
@@ -360,7 +435,7 @@ export default function AdminIncentivesPage() {
   const downloadExcel = async () => {
     const XLSX = await import('xlsx');
     const ws = XLSX.utils.aoa_to_sheet([
-      ['#', 'Upload Date', 'File Name', 'Incentive Month', 'Total Amount (Rs.)', 'Frequency', 'Status'],
+      ['#', 'Upload Date', 'File Name', 'Wallet', 'Total Amount (Rs.)', 'Frequency', 'Status'],
       ...history.map((row, i) => [i+1, new Date(row.createdAt).toLocaleDateString('en-IN'), row.fileName, row.walletLabel || '—', row.totalAmount?.toFixed(2), row.frequency, row.status]),
     ]);
     const wb = XLSX.utils.book_new();
@@ -483,6 +558,10 @@ export default function AdminIncentivesPage() {
         </div>
       )}
 
+      {viewUpload && (
+        <UploadFileViewer upload={viewUpload} onClose={() => setViewUpload(null)} onDownload={() => downloadUploadFile(viewUpload)} />
+      )}
+
       <div>
         <h2 className="text-[14px] text-gray-700 mb-1">Welcome to Friends Trading Corporation - Incentive Management</h2>
         <h1 className="text-[28px] font-bold text-black tracking-tight">Admin Portal</h1>
@@ -496,69 +575,56 @@ export default function AdminIncentivesPage() {
           <h2 className="text-[22px] font-bold text-gray-900 mb-6 tracking-tight">Upload Incentives</h2>
 
           <div className="space-y-4">
-            <label className="block text-[15px] text-gray-800">Upload Party Incentives Amount (Excel/CSV)</label>
-
-            {/* Month / Year selector */}
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="flex-1 space-y-1">
-                <label className="text-[13px] font-medium text-gray-700">Incentive Month</label>
-                <select
-                  value={uploadMonth}
-                  onChange={(e) => { setUploadMonth(e.target.value); setMonthYearError(''); }}
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] bg-white"
-                >
-                  {MONTH_NAMES.map((name, idx) => (
-                    <option key={idx + 1} value={String(idx + 1)}>{name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="w-full sm:w-[130px] space-y-1">
-                <label className="text-[13px] font-medium text-gray-700">Year</label>
-                <input
-                  type="number"
-                  value={uploadYear}
-                  onChange={(e) => { setUploadYear(e.target.value); setMonthYearError(''); }}
-                  placeholder="2025"
-                  min="2020"
-                  max="2100"
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A]"
-                />
-              </div>
-            </div>
-
-            {/* Destination Wallet Selector */}
+            {/* Destination Wallet — required; wallets are created on the Wallet page */}
             <div className="space-y-1">
-              <label className="text-[13px] font-medium text-gray-700">Destination Wallet</label>
+              <label className="text-[13px] font-medium text-gray-700">Wallet to credit <span className="text-red-400">*</span></label>
               <select
                 value={selectedWalletId}
-                onChange={(e) => setSelectedWalletId(e.target.value)}
+                onChange={(e) => { setSelectedWalletId(e.target.value); setFormError(''); }}
                 className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#2B3B8A] bg-white font-medium"
               >
-                <option value="">Auto-create / Auto-select for Month ({MONTH_NAMES[parseInt(uploadMonth) - 1]} {uploadYear})</option>
+                <option value="">Select a wallet…</option>
                 {wallets.map((w) => (
                   <option key={w._id} value={w._id}>
-                    {w.name} {w.isHold ? '(ON HOLD)' : ''} — Bal: ₹{w.totalBalance.toLocaleString('en-IN')}
+                    {w.name}{w.isHidden ? ' (hidden)' : ''}{w.isHold ? ' (ON HOLD)' : ''} — Bal: ₹{Number(w.totalBalance || 0).toLocaleString('en-IN')}
                   </option>
                 ))}
               </select>
+              <p className="text-[11px] text-gray-400">
+                Wallet not listed? Create it first in Wallet Management → Create Wallet.
+              </p>
             </div>
 
-            {monthYearError && (
-              <p className="text-red-500 text-[12px] -mt-1">{monthYearError}</p>
+            {/* File or manual entry */}
+            <div className="inline-flex p-1 bg-gray-100 rounded-xl">
+              {[['file', 'Upload File'], ['manual', 'Enter Manually']].map(([k, label]) => (
+                <button key={k} type="button"
+                  onClick={() => { setInputMode(k); setFormError(''); setUploadState((s) => (s === 'otp' ? s : 'idle')); }}
+                  disabled={uploadState === 'otp'}
+                  className={`px-4 py-1.5 rounded-lg text-[13px] font-semibold transition-colors ${
+                    inputMode === k ? 'bg-white text-[#2B3B8A] shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}>{label}</button>
+              ))}
+            </div>
+
+            {inputMode === 'manual' && (
+              <>
+                <ManualEntryGrid rows={manualRows} setRows={setManualRows} disabled={uploadState === 'otp' || isUploading} />
+                <button onClick={handleUploadClick}
+                  disabled={!selectedWalletId || uploadState === 'otp' || isUploading || sendingOtp}
+                  className={`w-full font-semibold px-8 py-3 rounded-xl transition-all ${
+                    selectedWalletId && uploadState !== 'otp' && !isUploading && !sendingOtp
+                      ? 'bg-[#2B3B8A] text-white hover:bg-[#1a2d6b] shadow-md'
+                      : 'bg-[#CBD5E1] text-[#64748B] cursor-not-allowed'
+                  }`}>
+                  {sendingOtp ? 'Sending OTP...' : 'Credit Incentives →'}
+                </button>
+              </>
             )}
 
-            {/* Selected month preview pill */}
-            {uploadMonth && uploadYear && !monthYearError && (
-              <div className="inline-flex items-center gap-2 bg-[#EEF2FF] border border-[#2B3B8A]/20 rounded-lg px-3 py-1.5">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5 text-[#2B3B8A]">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-                </svg>
-                <span className="text-[12px] font-semibold text-[#2B3B8A]">
-                  Crediting incentives for: {MONTH_NAMES[parseInt(uploadMonth) - 1]} {uploadYear}
-                </span>
-              </div>
-            )}
+            {formError && <p className="text-red-500 text-[12px]">{formError}</p>}
 
+            {inputMode === 'file' && (<>
             <div className="flex flex-col sm:flex-row gap-4">
               <div className="flex-1 px-4 py-3 rounded-xl border border-gray-200 flex items-center gap-3 cursor-pointer hover:bg-gray-50 transition-colors"
                 onClick={() => fileInputRef.current?.click()}>
@@ -571,9 +637,9 @@ export default function AdminIncentivesPage() {
               </div>
               <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv,.xlsx,.xls" className="hidden" />
               <button onClick={handleUploadClick}
-                disabled={!selectedFile || uploadState === 'otp' || isUploading || sendingOtp}
+                disabled={!selectedFile || !selectedWalletId || uploadState === 'otp' || isUploading || sendingOtp}
                 className={`font-semibold px-8 py-3 rounded-xl transition-all flex items-center justify-center gap-2 whitespace-nowrap ${
-                  selectedFile && uploadState !== 'otp' && !isUploading && !sendingOtp
+                  selectedFile && selectedWalletId && uploadState !== 'otp' && !isUploading && !sendingOtp
                     ? 'bg-[#2B3B8A] text-white hover:bg-[#1a2d6b] shadow-md'
                     : 'bg-[#CBD5E1] text-[#64748B] cursor-not-allowed'
                 }`}>
@@ -599,6 +665,7 @@ export default function AdminIncentivesPage() {
                 </button>
               </div>
             </div>
+            </>)}
           </div>
         </div>
 
@@ -719,10 +786,11 @@ export default function AdminIncentivesPage() {
                 <th className="pb-4 pt-2 px-3 font-bold sticky left-0 bg-white z-10">#</th>
                 <SortableTh field="createdAt" sort={sort} setSort={setSort} className="pb-4 pt-2 px-3 font-bold">Upload Date</SortableTh>
                 <SortableTh field="fileName" sort={sort} setSort={setSort} className="pb-4 pt-2 px-3 font-bold">File Name</SortableTh>
-                <SortableTh field="walletLabel" sort={sort} setSort={setSort} className="pb-4 pt-2 px-3 font-bold">Incentive Month</SortableTh>
+                <SortableTh field="walletLabel" sort={sort} setSort={setSort} className="pb-4 pt-2 px-3 font-bold">Wallet</SortableTh>
                 <SortableTh field="totalAmount" sort={sort} setSort={setSort} align="right" className="pb-4 pt-2 px-3 font-bold">Incentives Total Amount</SortableTh>
                 <SortableTh field="frequency" sort={sort} setSort={setSort} className="pb-4 pt-2 px-3 font-bold">Upload Frequency</SortableTh>
                 <SortableTh field="status" sort={sort} setSort={setSort} className="pb-4 pt-2 px-3 font-bold">Status</SortableTh>
+                <th className="pb-4 pt-2 px-3 font-bold">File</th>
               </tr>
             </thead>
             <tbody className="text-gray-700 font-medium">
@@ -747,10 +815,22 @@ export default function AdminIncentivesPage() {
                       row.status === 'processed' ? 'text-[#2ECC71] bg-[#E4F8ED] border-[#2ECC71]/20' : 'text-[#E74C3C] bg-[#FDEDEC] border-[#E74C3C]/20'
                     }`}>{row.status}</span>
                   </td>
+                  <td className="py-4 px-3">
+                    {row.hasFile ? (
+                      <div className="flex gap-1.5">
+                        <button onClick={() => setViewUpload(row)}
+                          className="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-[#2B3B8A]/20 text-[#2B3B8A] bg-[#EEF2FF] hover:bg-[#2B3B8A] hover:text-white transition-colors">View</button>
+                        <button onClick={() => downloadUploadFile(row)}
+                          className="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-gray-200 text-gray-700 hover:border-[#2B3B8A] transition-colors">Download</button>
+                      </div>
+                    ) : (
+                      <span className="text-[11px] text-gray-400" title="Files were not kept for uploads made before this feature">Not kept</span>
+                    )}
+                  </td>
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan="7" className="py-12 text-center">
+                  <td colSpan="8" className="py-12 text-center">
                     <div className="flex flex-col items-center gap-2 text-gray-400">
                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-10 h-10 opacity-40">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
@@ -766,8 +846,6 @@ export default function AdminIncentivesPage() {
         </div>
       </div>
 
-      {/* ── Fix Missing Wallets Panel ─────────────────────────────── */}
-      <FixMissingWalletsPanel API={API} authHeaders={authHeaders} />
 
     </div>
   );

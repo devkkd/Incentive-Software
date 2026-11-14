@@ -8,6 +8,7 @@ const Division = require('../models/Division');
 const Invoice = require('../models/Invoice');
 const { protect, authorize } = require('../middleware/auth');
 const { normalizePartyCode, findCodeConflict, findPartyByCode } = require('../services/partyCode');
+const { normalizeMobile } = require('../services/mobile');
 
 const router = express.Router();
 
@@ -24,7 +25,13 @@ const upload = multer({
 // @access  Admin only
 router.post('/', protect, authorize('admin'), async (req, res) => {
   try {
-    const { companyName, personName, accountNumber, mobileNumber, email, address, salesPerson, partyCity, partyType } = req.body;
+    const { companyName, personName, accountNumber, email, address, salesPerson, partyCity, partyType } = req.body;
+    // Stored as a clean 10-digit number so WhatsApp OTPs can be delivered
+    const mob = normalizeMobile(req.body.mobileNumber);
+    if (req.body.mobileNumber && !mob.ok) {
+      return res.status(400).json({ success: false, message: mob.reason });
+    }
+    const mobileNumber = mob.ok ? mob.mobile : req.body.mobileNumber;
 
     if (!companyName || !accountNumber || !mobileNumber) {
       return res.status(400).json({ success: false, message: 'Party Name, Party Code and Mobile Number are required' });
@@ -120,7 +127,8 @@ router.post('/bulk-import', protect, authorize('admin'), upload.single('file'), 
       const consPartyName = String(row['party name'] || row['cons party name'] || row['cons_party_name'] || '').trim();
       const city = String(row['party city'] || row['cons party city desc'] || row['cons_party_city_desc'] || row['city'] || '').trim();
       const partyType = String(row['party type'] || row['party_type'] || '').trim();
-      const mobileNumber = String(row['mobile no'] || row['mobile_no'] || row['mobile'] || '').trim();
+      const mobRaw = String(row['mobile no'] || row['mobile_no'] || row['mobile'] || '').trim();
+      const mobileNumber = normalizeMobile(mobRaw).mobile || mobRaw;
       const salesPerson = String(row['sales person name'] || row['sales person'] || row['sales_person'] || '').trim();
       const email = String(row['email address'] || row['email'] || '').trim();
       const address = String(row['address'] || '').trim();
@@ -368,7 +376,13 @@ router.get('/:id', protect, async (req, res) => {
 // @access  Admin only
 router.put('/:id', protect, authorize('admin'), async (req, res) => {
   try {
-    const { companyName, personName, mobileNumber, email, address, status, salesPerson, partyCity, partyType, accountNumber, divisionId } = req.body;
+    const { companyName, personName, email, address, status, salesPerson, partyCity, partyType, accountNumber, divisionId } = req.body;
+    let mobileNumber = req.body.mobileNumber;
+    if (mobileNumber !== undefined && mobileNumber !== null && String(mobileNumber).trim() !== '') {
+      const mob = normalizeMobile(mobileNumber);
+      if (!mob.ok) return res.status(400).json({ success: false, message: mob.reason });
+      mobileNumber = mob.mobile;
+    }
 
     const vendor = await Vendor.findById(req.params.id);
     if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });

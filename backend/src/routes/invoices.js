@@ -141,25 +141,32 @@ router.post('/redeem/send-otp', protect, authorize('branch'), async (req, res) =
       expiresAt,
     });
 
-    let smsSent = false;
-    let devOtp = null;
+    // Send it. If the provider refuses, the branch is told WHY — and the code
+    // is withdrawn so it neither works nor counts towards the 3-per-30-minutes
+    // limit. The OTP is never returned to the browser on the live site.
+    let sendResult;
     try {
-      const result = await sendSmsOtp(vendor.mobileNumber, otp, vendor.companyName);
-      smsSent = true;
-      if (result.dev) devOtp = otp;
+      sendResult = await sendSmsOtp(vendor.mobileNumber, otp, vendor.companyName, {
+        vendor, user: req.user, reference: invoiceAmount ? `Invoice ₹${invoiceAmount}` : null,
+      });
     } catch (smsErr) {
-      console.log(`[SMS FALLBACK] OTP for ${vendor.mobileNumber}: ${otp}`);
-      devOtp = otp; // always expose on failure
+      await OtpToken.deleteOne({ user: req.user._id, otpCode: otp, purpose: 'redemption', used: false });
+      return res.status(502).json({
+        success: false,
+        otpFailed: true,
+        message: `OTP could not be sent to the party: ${smsErr.message}`,
+      });
     }
 
-    // Always expose OTP in non-production for testing
-    const exposeOtp = process.env.SHOW_OTP === 'true' || !smsSent || (smsSent && devOtp);
+    // Dev mode (no provider configured) or SHOW_OTP=true for testing
+    const isProd = process.env.NODE_ENV === 'production';
+    const exposeOtp = sendResult.dev || (!isProd && process.env.SHOW_OTP === 'true');
 
-    const maskedMobile = vendor.mobileNumber.replace(/(\d{2})\d{6}(\d{2})/, '$1XXXXXX$2');
+    const maskedMobile = String(sendResult.mobile || vendor.mobileNumber).replace(/(\d{2})\d{6}(\d{2})/, '$1XXXXXX$2');
 
     res.status(200).json({
       success: true,
-      message: smsSent && !devOtp ? `OTP sent to ${maskedMobile}` : `OTP generated`,
+      message: sendResult.dev ? 'OTP generated (dev mode — not sent)' : `OTP sent to ${maskedMobile}`,
       maskedMobile,
       otpCount: recentOtpCount + 1, // how many OTPs used now (including this one)
       ...(exposeOtp ? { devOtp: otp } : {}),
@@ -502,7 +509,8 @@ router.post('/', protect, authorize('branch'), async (req, res) => {
       redeemAmt,
       prefixedInvoiceNumber,
       vendor.walletBalance,
-      referenceNo
+      referenceNo,
+      { vendor, user: req.user }
     ).then(r => console.log('[REDEMPTION MSG RESULT]', JSON.stringify(r)))
      .catch(e => console.error('[REDEMPTION MSG ERROR]', e.message));
 
@@ -903,7 +911,23 @@ router.post('/admin-redeem', protect, authorize('admin'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Select the branch this invoice belongs to' });
     }
 
-    const prefixedInvoiceNumber = invoiceNumber.trim();
+    const prefixedInvoiceNumber = invoiceNumber.trim().toUpperCase();
+    // Same format rule as the branch counter
+    if (!/^\d+\/(?:RS|CSI)\/\d{8}$/i.test(prefixedInvoiceNumber)) {
+      return res.status(400).json({ success: false, message: 'Invoice number must be in format 1/RS/26001200 or 5/CSI/15001623' });
+    }
+    // The number before "/" decides the branch — it must match the one chosen,
+    // or the invoice would show up in the wrong branch's All Invoices.
+    const prefix = prefixedInvoiceNumber.split('/')[0];
+    if (String(division.locationCode) !== prefix) {
+      const owner = await Division.findOne({ locationCode: prefix }).select('name').lean();
+      return res.status(400).json({
+        success: false,
+        message: owner
+          ? `Invoice prefix ${prefix}/ belongs to ${owner.name}, but the branch selected is ${division.name}`
+          : `No branch uses the invoice prefix ${prefix}/`,
+      });
+    }
     const existing = await Invoice.findOne({ invoiceNumber: prefixedInvoiceNumber });
     if (existing) {
       return res.status(400).json({ success: false, message: 'This invoice number already exists' });
@@ -1069,15 +1093,15 @@ router.post('/admin-redeem', protect, authorize('admin'), async (req, res) => {
     // even though they were not asked to approve it.
     let notified = false;
     if (vendor.mobileNumber) {
-      try {
-        await sendRedemptionConfirmation(
-          vendor.mobileNumber, vendor.companyName, redeemAmt, newBalance, referenceNo
-        );
-        notified = true;
-        await Invoice.findByIdAndUpdate(invoice._id, { partyNotified: true });
-      } catch (err) {
-        console.error(`[ADMIN OVERRIDE] party not notified: ${err.message}`);
-      }
+      // Arguments were previously in the wrong order (balance sent as the
+      // invoice number), and a failed send was still marked as notified.
+      const r = await sendRedemptionConfirmation(
+        vendor.mobileNumber, vendor.companyName, redeemAmt, prefixedInvoiceNumber,
+        newBalance, referenceNo, { vendor, user: req.user }
+      );
+      notified = !!r.success;
+      if (notified) await Invoice.findByIdAndUpdate(invoice._id, { partyNotified: true });
+      else console.error(`[ADMIN OVERRIDE] party not notified: ${r.error}`);
     }
 
     res.status(201).json({

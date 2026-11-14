@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import SortableTh from '@/components/SortableTh';
 import useClientSort from '@/components/useClientSort';
+import { PartyWalletSearch, DeleteWalletModal } from '@/components/WalletTools';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -41,6 +42,12 @@ export default function WalletManagementPage() {
   // Action Loading states
   const [holdingWalletId, setHoldingWalletId] = useState(null);
   const [holdingMwId, setHoldingMwId] = useState(null);
+
+  // Hide / delete
+  const [hidingWalletId, setHidingWalletId] = useState(null);
+  const [showHidden, setShowHidden] = useState(false);
+  const [deleteWallet, setDeleteWallet] = useState(null);
+  const [pageNotice, setPageNotice] = useState('');
 
   // True system balance from Vendor.walletBalance (authoritative)
   const [trueSystemBalance, setTrueSystemBalance] = useState(0);
@@ -435,9 +442,33 @@ export default function WalletManagementPage() {
   };
 
   // Filtered wallets
-  const filteredWalletsUnsorted = wallets.filter((w) => {
-    const matchesSearch = w.name.toLowerCase().includes(search.toLowerCase()) ||
+  const matchesWalletSearch = (w) => w.name.toLowerCase().includes(search.toLowerCase()) ||
       (w.description && w.description.toLowerCase().includes(search.toLowerCase()));
+  // Hidden wallets live in their own collapsed section below
+  const hiddenWallets = wallets.filter((w) => w.isHidden && matchesWalletSearch(w));
+
+  const toggleHideWallet = async (w) => {
+    setHidingWalletId(w._id);
+    try {
+      const res = await fetch(`${API}/api/wallets/${w._id}/hide`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ hidden: !w.isHidden }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Could not update the wallet');
+      setWallets((prev) => prev.map((x) => (x._id === w._id ? { ...x, isHidden: !w.isHidden } : x)));
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setHidingWalletId(null);
+    }
+  };
+
+  const filteredWalletsUnsorted = wallets.filter((w) => {
+    if (w.isHidden) return false;
+    const matchesSearch = matchesWalletSearch(w);
     if (statusFilter === 'active') return matchesSearch && !w.isHold;
     if (statusFilter === 'hold') return matchesSearch && w.isHold;
     return matchesSearch;
@@ -1240,6 +1271,16 @@ export default function WalletManagementPage() {
         );
       })()}
 
+      {pageNotice && (
+        <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-[13px] text-green-800 flex justify-between gap-4">
+          <span>{pageNotice}</span>
+          <button onClick={() => setPageNotice('')} className="font-semibold">Dismiss</button>
+        </div>
+      )}
+
+      {/* Find a party's wallets (+ transfer between wallets) */}
+      <PartyWalletSearch wallets={wallets} onChanged={fetchWallets} />
+
       {/* Main Content Area */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         {/* Controls Header */}
@@ -1420,6 +1461,21 @@ export default function WalletManagementPage() {
                         >
                           {holdingWalletId === w._id ? 'Updating...' : w.isHold ? 'Unhold Wallet' : 'Hold Wallet'}
                         </button>
+                        <button
+                          onClick={() => toggleHideWallet(w)}
+                          disabled={hidingWalletId === w._id}
+                          title="Move to the Hidden Wallets section. Redemption is not affected."
+                          className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold text-xs rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          {hidingWalletId === w._id ? '…' : 'Hide'}
+                        </button>
+                        <button
+                          onClick={() => setDeleteWallet(w)}
+                          title="Delete this wallet — remaining balances are written off"
+                          className="px-3 py-1.5 bg-red-50 hover:bg-red-600 text-red-600 hover:text-white border border-red-200 font-semibold text-xs rounded-lg transition-colors"
+                        >
+                          Delete
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -1496,6 +1552,95 @@ export default function WalletManagementPage() {
           </div>
         )}
       </div>
+
+      {/* Hidden wallets — collapsed by default */}
+      {wallets.some((w) => w.isHidden) && (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowHidden((v) => !v)}
+            className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 transition-colors"
+          >
+            <span className="font-semibold text-gray-800">
+              Hidden Wallets
+              <span className="ml-2 text-xs font-normal text-gray-500">
+                ({wallets.filter((w) => w.isHidden).length}) — still redeemable; use Hold to stop redemption
+              </span>
+            </span>
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"
+              className={`w-4 h-4 text-gray-400 transition-transform ${showHidden ? 'rotate-180' : ''}`}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+            </svg>
+          </button>
+          {showHidden && (
+            <div className="overflow-x-auto border-t border-gray-100">
+              {hiddenWallets.length === 0 ? (
+                <p className="p-6 text-center text-sm text-gray-400">No hidden wallet matches your search.</p>
+              ) : (
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-gray-50 text-gray-500 font-semibold text-xs uppercase tracking-wider">
+                    <tr>
+                      <th className="px-6 py-3">Wallet Name</th>
+                      <th className="px-6 py-3 text-right">Credited Amount</th>
+                      <th className="px-6 py-3 text-right">Current Balance</th>
+                      <th className="px-6 py-3">Parties</th>
+                      <th className="px-6 py-3">Status</th>
+                      <th className="px-6 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 text-gray-600">
+                    {hiddenWallets.map((w) => (
+                      <tr key={w._id} className="hover:bg-gray-50/80">
+                        <td className="px-6 py-3">
+                          <div className="font-semibold text-gray-700">{w.name}</div>
+                          {w.description && <div className="text-xs text-gray-400 mt-0.5">{w.description}</div>}
+                        </td>
+                        <td className="px-6 py-3 text-right tabular-nums whitespace-nowrap">
+                          ₹{(w.totalCredited || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-6 py-3 text-right tabular-nums whitespace-nowrap font-semibold text-gray-800">
+                          ₹{(w.totalBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-6 py-3 text-xs">{w.totalParties} parties</td>
+                        <td className="px-6 py-3 text-xs">{w.isHold ? 'On Hold' : 'Active'}</td>
+                        <td className="px-6 py-3 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button onClick={() => openWalletParties(w)}
+                              className="px-3 py-1.5 bg-[#2B3B8A]/10 hover:bg-[#2B3B8A] text-[#2B3B8A] hover:text-white font-semibold text-xs rounded-lg transition-colors">
+                              View Parties
+                            </button>
+                            <button onClick={() => toggleHideWallet(w)} disabled={hidingWalletId === w._id}
+                              className="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-600 text-emerald-800 hover:text-white font-semibold text-xs rounded-lg transition-colors disabled:opacity-50">
+                              {hidingWalletId === w._id ? '…' : 'Unhide'}
+                            </button>
+                            <button onClick={() => setDeleteWallet(w)}
+                              className="px-3 py-1.5 bg-red-50 hover:bg-red-600 text-red-600 hover:text-white border border-red-200 font-semibold text-xs rounded-lg transition-colors">
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {deleteWallet && (
+        <DeleteWalletModal
+          wallet={deleteWallet}
+          onClose={() => setDeleteWallet(null)}
+          onDone={(data) => {
+            setDeleteWallet(null);
+            setPageNotice(data.message);
+            if (selectedWallet?._id === deleteWallet._id) setSelectedWallet(null);
+            fetchWallets();
+          }}
+        />
+      )}
 
       {/* Modal: Create Wallet */}
       {showCreateModal && (

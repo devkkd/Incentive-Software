@@ -118,7 +118,11 @@ export function buildStatementRows({ invoices = [], transactions = [], vendor = 
     return {
       _id: g._id,
       date: new Date(g.createdAt),
-      type: isCredit
+      type: g.isTransfer
+        ? (isCredit ? 'Wallet Transfer (In)' : 'Wallet Transfer (Out)')
+        : g.isWriteOff
+        ? 'Write-off (Wallet Deleted)'
+        : isCredit
         ? (/^Refund /.test(g.description || '') ? 'Refund (Invoice Deleted)' : 'Incentive Credited')
         : 'Wallet Redemption',
       particulars: sanitize(g.description || (isCredit ? 'Incentive Credited' : 'Wallet Redeemed')),
