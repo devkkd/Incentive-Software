@@ -6,6 +6,7 @@ const WalletTransaction = require('../models/WalletTransaction');
 const MonthlyWallet = require('../models/MonthlyWallet');
 const Wallet = require('../models/Wallet');
 const IncentiveUpload = require('../models/IncentiveUpload');
+const IncentiveUploadFile = require('../models/IncentiveUploadFile');
 const OtpToken = require('../models/OtpToken');
 const { protect, authorize } = require('../middleware/auth');
 const { findPartyByCode } = require('../services/partyCode');
@@ -73,42 +74,36 @@ router.post('/send-otp', protect, authorize('branch', 'admin'), async (req, res)
 // Body fields: otp, frequency, month (1-12), year (e.g. 2025)
 router.post('/upload', protect, authorize('branch', 'admin'), upload.single('file'), async (req, res) => {
   try {
-    const { otp, frequency, month, year, walletId } = req.body;
+    const { otp, frequency, walletId } = req.body;
 
     if (!req.file) return res.status(400).json({ success: false, message: 'File is required' });
     if (!otp)      return res.status(400).json({ success: false, message: 'OTP is required' });
 
-    // month/year required
-    const uploadMonth = parseInt(month);
-    const uploadYear  = parseInt(year);
-    if (!uploadMonth || uploadMonth < 1 || uploadMonth > 12) {
-      return res.status(400).json({ success: false, message: 'Valid month (1-12) is required' });
+    // A wallet must be chosen — wallets are no longer created automatically.
+    // Create one first from Wallet Management → Create Wallet.
+    if (!walletId) {
+      return res.status(400).json({ success: false, message: 'Select the wallet to credit' });
     }
-    if (!uploadYear || uploadYear < 2020 || uploadYear > 2100) {
-      return res.status(400).json({ success: false, message: 'Valid year is required' });
+    const masterWallet = await Wallet.findById(walletId);
+    if (!masterWallet) {
+      return res.status(400).json({ success: false, message: 'The selected wallet no longer exists' });
     }
+    const walletLabel = masterWallet.name;
 
-    let masterWallet = null;
-    if (walletId) {
-      masterWallet = await Wallet.findById(walletId);
-    }
+    // Each party's balance in a wallet is keyed by month/year internally.
+    // Taken from the wallet itself (or the month it was created) — the admin
+    // no longer has to pick one.
+    const walletCreated = new Date(masterWallet.createdAt || Date.now());
+    const uploadMonth = masterWallet.month || walletCreated.getMonth() + 1;
+    const uploadYear  = masterWallet.year  || walletCreated.getFullYear();
 
-    let walletLabel = `${MONTH_NAMES[uploadMonth - 1]} ${uploadYear}`;
-    if (masterWallet) {
-      walletLabel = masterWallet.name;
-    } else {
-      // Find or create master Wallet for label
-      masterWallet = await Wallet.findOne({ name: walletLabel });
-      if (!masterWallet) {
-        masterWallet = await Wallet.create({
-          name: walletLabel,
-          month: uploadMonth,
-          year: uploadYear,
-          description: 'Auto-created during incentive upload',
-          createdBy: req.user._id,
-        });
-      }
-    }
+    const findPartyWallet = (vendorId, lean = false) => {
+      const q = MonthlyWallet.findOne({
+        vendor: vendorId,
+        $or: [{ wallet: masterWallet._id }, { wallet: null, label: masterWallet.name }],
+      }).sort({ createdAt: 1 });
+      return lean ? q.lean() : q;
+    };
 
     // Verify OTP
     const otpRecord = await OtpToken.findOne({
@@ -181,12 +176,7 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
       });
       if (!vendor || vendor.status === 'blocked') continue;
 
-      const existing = await MonthlyWallet.findOne({
-        vendor: vendor._id,
-        month: uploadMonth,
-        year: uploadYear,
-        ...(masterWallet ? { wallet: masterWallet._id } : {}),
-      }).lean();
+      const existing = await findPartyWallet(vendor._id, true);
 
       if (existing && (existing.creditedAmount > 0 || existing.balance !== 0)) {
         duplicates.push({
@@ -285,13 +275,12 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
 
       // Pass masterWallet._id so two different schemes uploaded in the same
       // month each get their OWN MonthlyWallet document.
-      const monthlyWallet = await MonthlyWallet.getOrCreate(
-        vendor._id,
-        uploadMonth,
-        uploadYear,
-        masterWallet ? masterWallet._id : null,
-        walletLabel
-      );
+      // One balance per party per wallet: reuse the party's existing entry
+      // in this wallet (whatever month it was first created under), else
+      // create it.
+      const monthlyWallet =
+        (await findPartyWallet(vendor._id)) ||
+        (await MonthlyWallet.getOrCreate(vendor._id, uploadMonth, uploadYear, masterWallet._id, walletLabel));
 
       let newMonthBalance;
       let creditDelta;   // what actually changes on the master balance
@@ -363,7 +352,8 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
           vendor.mobileNumber,
           vendor.companyName,
           amount,
-          remark || `Incentive — ${walletLabel}`
+          remark || `Incentive — ${walletLabel}`,
+          { vendor, user: req.user }
         ).catch((err) => console.error(`[CREDIT NOTIFY FAILED] ${vendor.mobileNumber}: ${err.message}`));
       }
 
@@ -392,7 +382,7 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
 
     // Save upload history
     const divisionId = req.user.division?._id || req.user.division || null;
-    await IncentiveUpload.create({
+    const uploadDoc = await IncentiveUpload.create({
       division: divisionId,
       uploadedBy: req.user._id,
       fileName: req.file.originalname,
@@ -405,6 +395,20 @@ router.post('/upload', protect, authorize('branch', 'admin'), upload.single('fil
       status: 'processed',
       items: results.success.map((r) => ({ vendor: r.vendorId, amount: r.amount })),
     });
+
+    // Keep the original file so it can be viewed / downloaded from history
+    try {
+      await IncentiveUploadFile.create({
+        upload: uploadDoc._id,
+        fileName: req.file.originalname,
+        mimeType: req.file.mimetype || 'application/octet-stream',
+        size: req.file.size || req.file.buffer.length,
+        data: req.file.buffer,
+      });
+    } catch (fileErr) {
+      // The credits are already done — losing the copy must not fail the upload
+      console.error('[upload] could not store the original file:', fileErr.message);
+    }
 
     res.status(200).json({
       success: true,
@@ -436,9 +440,74 @@ router.get('/history', protect, async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(50)
       .populate('uploadedBy', 'name')
-      .populate('division', 'name');
+      .populate('division', 'name')
+      .lean();
 
-    res.status(200).json({ success: true, data: history });
+    // Which uploads still have their original file (uploads before this
+    // feature were never stored)
+    const withFile = new Set(
+      (await IncentiveUploadFile.find({ upload: { $in: history.map((h) => h._id) } }).select('upload').lean())
+        .map((f) => String(f.upload))
+    );
+    const data = history.map((h) => ({ ...h, hasFile: withFile.has(String(h._id)) }));
+
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Branch users may only open files for their own branch's uploads
+const canOpenUpload = (req, upload) => {
+  if (req.user.role === 'admin') return true;
+  const div = String(req.user.division?._id || req.user.division || '');
+  return !upload.division || String(upload.division) === div;
+};
+
+// @route   GET /api/incentives/uploads/:id/file
+// @desc    Download the original uploaded file
+// @access  Admin, Branch (own uploads)
+router.get('/uploads/:id/file', protect, async (req, res) => {
+  try {
+    const upload = await IncentiveUpload.findById(req.params.id).select('division').lean();
+    if (!upload || !canOpenUpload(req, upload)) return res.status(404).json({ success: false, message: 'Upload not found' });
+    const file = await IncentiveUploadFile.findOne({ upload: req.params.id });
+    if (!file) return res.status(404).json({ success: false, message: 'The original file was not kept for this upload' });
+
+    res.set('Content-Type', file.mimeType || 'application/octet-stream');
+    res.set('Content-Disposition', `attachment; filename="${encodeURIComponent(file.fileName)}"; filename*=UTF-8''${encodeURIComponent(file.fileName)}`);
+    res.send(file.data);
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   GET /api/incentives/uploads/:id/preview
+// @desc    The uploaded file's first sheet as rows, for viewing in the browser
+// @access  Admin, Branch (own uploads)
+router.get('/uploads/:id/preview', protect, async (req, res) => {
+  try {
+    const upload = await IncentiveUpload.findById(req.params.id).select('division fileName').lean();
+    if (!upload || !canOpenUpload(req, upload)) return res.status(404).json({ success: false, message: 'Upload not found' });
+    const file = await IncentiveUploadFile.findOne({ upload: req.params.id });
+    if (!file) return res.status(404).json({ success: false, message: 'The original file was not kept for this upload' });
+
+    const wb = XLSX.read(file.data, { type: 'buffer' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+    const MAX = 2000;
+    res.json({
+      success: true,
+      data: {
+        fileName: file.fileName,
+        size: file.size,
+        sheetName: wb.SheetNames[0],
+        header: rows[0] || [],
+        rows: rows.slice(1, MAX + 1),
+        totalRows: Math.max(0, rows.length - 1),
+        truncated: rows.length - 1 > MAX,
+      },
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -462,63 +531,7 @@ router.get('/monthly-wallets/:vendorId', protect, async (req, res) => {
       return res.status(200).json({ success: true, data: [] });
     }
 
-    // 1. Fetch all existing MonthlyWallet docs for this vendor
-    const existingWallets = await MonthlyWallet.find({ vendor: vendorId })
-      .sort({ year: -1, month: -1 })
-      .lean();
-
-    // Build a set of month+year combos already covered
-    const covered = new Set(existingWallets.map(w => `${w.year}-${w.month}`));
-
-    // 2. Find all IncentiveUpload records that contain this vendor in items
-    const uploads = await IncentiveUpload.find({ 'items.vendor': vendorId }).lean();
-
-    const newlyCreated = [];
-
-    for (const upload of uploads) {
-      // Derive month/year from upload fields, fallback to createdAt
-      const month = upload.month || (new Date(upload.createdAt).getMonth() + 1);
-      const year  = upload.year  || new Date(upload.createdAt).getFullYear();
-      const key   = `${year}-${month}`;
-
-      if (covered.has(key)) continue; // wallet already exists for this month
-
-      // Find this vendor's amount in the upload items
-      const item = upload.items.find(i => String(i.vendor) === String(vendorId));
-      if (!item || !item.amount) continue;
-
-      const label = upload.walletLabel || `${MONTH_NAMES[month - 1]} ${year}`;
-
-      // Fetch current vendor balance to set correct sub-wallet balance
-      // For old uploads: the vendor's walletBalance IS the remaining balance
-      // creditedAmount = what was originally uploaded, balance = what's left now
-      const vendor = await Vendor.findById(vendorId).select('walletBalance').lean();
-      const currentVendorBalance = vendor ? parseFloat((vendor.walletBalance || 0).toFixed(2)) : 0;
-
-      // Auto-create MonthlyWallet — no vendor balance change, no transaction
-      // Only create if the credited amount would result in a positive balance
-      if (currentVendorBalance <= 0) {
-        covered.add(key); // mark as handled — don't show a zero-balance wallet
-        continue;
-      }
-
-      const created = await MonthlyWallet.create({
-        vendor: vendorId,
-        month,
-        year,
-        label,
-        creditedAmount: item.amount,
-        balance: Math.min(item.amount, currentVendorBalance), // cap at vendor's remaining balance
-      });
-
-      // Also patch the IncentiveUpload with month/year/label if missing
-      if (!upload.month || !upload.year) {
-        await IncentiveUpload.findByIdAndUpdate(upload._id, { month, year, walletLabel: label });
-      }
-
-      covered.add(key);
-      newlyCreated.push(created.toObject());
-    }
+    // (Wallets are no longer created automatically from old uploads here.)
 
     // 3. Re-fetch all wallets (including newly created ones)
     //    Only return wallets with balance > 0 — zero balance wallets are hidden.
@@ -576,131 +589,6 @@ router.get('/monthly-wallets/:vendorId', protect, async (req, res) => {
     allWallets.sort((a, b) => b.year !== a.year ? b.year - a.year : b.month - a.month);
 
     res.status(200).json({ success: true, data: allWallets });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// @route   GET /api/incentives/uploads-without-wallets
-// @desc    Returns all IncentiveUpload records that have items but no
-//          corresponding MonthlyWallet documents — read-only, no data change
-// @access  Admin only
-// ─────────────────────────────────────────────────────────────────────────────
-router.get('/uploads-without-wallets', protect, authorize('admin'), async (req, res) => {
-  try {
-    // All uploads that have items
-    const uploads = await IncentiveUpload.find({ 'items.0': { $exists: true } })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    const result = [];
-
-    for (const upload of uploads) {
-      // For each upload, check if any vendor in items is missing a MonthlyWallet
-      // Use upload.month/year if set, otherwise use createdAt month/year
-      const month = upload.month || (new Date(upload.createdAt).getMonth() + 1);
-      const year  = upload.year  || new Date(upload.createdAt).getFullYear();
-      const label = upload.walletLabel || `${MONTH_NAMES[month - 1]} ${year}`;
-
-      const vendorIds = upload.items.map(i => i.vendor);
-      const existingWallets = await MonthlyWallet.find({
-        vendor: { $in: vendorIds },
-        month,
-        year,
-      }).select('vendor').lean();
-
-      const existingVendorIds = new Set(existingWallets.map(w => String(w.vendor)));
-      const missingCount = vendorIds.filter(id => !existingVendorIds.has(String(id))).length;
-
-      result.push({
-        _id: upload._id,
-        fileName: upload.fileName,
-        createdAt: upload.createdAt,
-        month,
-        year,
-        label,
-        totalVendors: vendorIds.length,
-        walletsExist: existingWallets.length,
-        walletsMissing: missingCount,
-        totalAmount: upload.totalAmount,
-        walletLabelStored: upload.walletLabel || null,
-      });
-    }
-
-    res.status(200).json({ success: true, data: result });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// @route   POST /api/incentives/create-wallets-from-upload/:uploadId
-// @desc    Takes an existing IncentiveUpload record and creates MonthlyWallet
-//          documents for each item that doesn't already have one.
-//          Does NOT touch vendor.walletBalance or WalletTransaction records.
-//          Body: { month, year }  — override month/year if upload has null
-// @access  Admin only
-// ─────────────────────────────────────────────────────────────────────────────
-router.post('/create-wallets-from-upload/:uploadId', protect, authorize('admin'), async (req, res) => {
-  try {
-    const uploadRecord = await IncentiveUpload.findById(req.params.uploadId).lean();
-    if (!uploadRecord) {
-      return res.status(404).json({ success: false, message: 'Upload record not found' });
-    }
-
-    // Determine month/year — from body override, then from upload, then from createdAt
-    const month = parseInt(req.body.month) || uploadRecord.month || (new Date(uploadRecord.createdAt).getMonth() + 1);
-    const year  = parseInt(req.body.year)  || uploadRecord.year  || new Date(uploadRecord.createdAt).getFullYear();
-
-    if (!month || month < 1 || month > 12) {
-      return res.status(400).json({ success: false, message: 'Valid month required (1-12)' });
-    }
-    if (!year || year < 2020 || year > 2100) {
-      return res.status(400).json({ success: false, message: 'Valid year required' });
-    }
-
-    const walletLabel = `${MONTH_NAMES[month - 1]} ${year}`;
-    let created = 0;
-    let skipped = 0;
-    const details = [];
-
-    for (const item of uploadRecord.items) {
-      const vendorId = item.vendor;
-      const amount   = item.amount;
-
-      // Check if wallet already exists — skip if yes
-      const existing = await MonthlyWallet.findOne({ vendor: vendorId, month, year });
-      if (existing) {
-        skipped++;
-        details.push({ vendorId, status: 'skipped', reason: `${walletLabel} wallet already exists (balance: ₹${existing.balance})` });
-        continue;
-      }
-
-      // Create MonthlyWallet ONLY — no vendor balance, no transaction
-      await MonthlyWallet.create({
-        vendor: vendorId,
-        month,
-        year,
-        label: walletLabel,
-        creditedAmount: amount,
-        balance: amount,
-      });
-
-      created++;
-      details.push({ vendorId, status: 'created', amount, walletLabel });
-    }
-
-    // Also patch the upload record's month/year/label if they were null
-    if (!uploadRecord.month || !uploadRecord.year) {
-      await IncentiveUpload.findByIdAndUpdate(uploadRecord._id, { month, year, walletLabel });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: `${created} wallets created, ${skipped} already existed`,
-      data: { walletLabel, created, skipped, total: uploadRecord.items.length, details },
-    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

@@ -58,6 +58,7 @@ const translations = {
     reportsSidebar: 'All Reports',
     exceptionsSidebar: 'Exception Report',
     adminRedeemSidebar: 'Admin Redemption',
+    whatsappLogsSidebar: 'WhatsApp Logs',
     settingsSidebar: 'Account Settings',
 
     // Dashboard
@@ -208,6 +209,7 @@ const translations = {
     reportsSidebar: 'सभी रिपोर्ट',
     exceptionsSidebar: 'अपवाद रिपोर्ट',
     adminRedeemSidebar: 'एडमिन रिडेम्पशन',
+    whatsappLogsSidebar: 'व्हाट्सएप लॉग',
     settingsSidebar: 'खाता सेटिंग',
 
     // Dashboard

@@ -53,8 +53,8 @@ async function syncLegacyWallets() {
 // @access  Branch, Admin
 router.get('/', protect, async (req, res) => {
   try {
-    // Run legacy sync in background — don't await, don't block response
-    syncLegacyWallets().catch(err => console.error('[syncLegacyWallets]', err.message));
+    // (The background "sync legacy wallets" step was removed: it created
+    // wallets automatically and would bring back wallets that were deleted.)
 
     const wallets = await Wallet.find().sort({ createdAt: -1 }).lean();
 
@@ -902,6 +902,352 @@ router.get('/diagnostics', protect, authorize('admin'), async (req, res) => {
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
+});
+
+const round2 = (n) => parseFloat((Number(n) || 0).toFixed(2));
+const escRe = (v) => String(v).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// Every party balance that belongs to a wallet (incl. old entries linked by name)
+const walletMwFilter = (wallet) => ({ $or: [{ wallet: wallet._id }, { wallet: null, label: wallet.name }] });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @route   PATCH /api/wallets/:id/hide   { hidden: true|false }
+// @desc    Hide / unhide a wallet on the Wallet page. Visual only — does not
+//          stop redemption (use Hold for that).
+// @access  Admin
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/:id/hide', protect, authorize('admin'), async (req, res) => {
+  try {
+    const hidden = req.body?.hidden === true;
+    const wallet = await Wallet.findByIdAndUpdate(
+      req.params.id,
+      { $set: { isHidden: hidden, hiddenAt: hidden ? new Date() : null, hiddenBy: hidden ? req.user._id : null } },
+      { new: true }
+    );
+    if (!wallet) return res.status(404).json({ success: false, message: 'Wallet not found' });
+
+    audit({
+      vendorId: null, eventType: hidden ? 'wallet.hidden' : 'wallet.unhidden',
+      actor: req.user, source: 'admin', walletLabel: wallet.name,
+      summary: `Wallet "${wallet.name}" ${hidden ? 'hidden' : 'unhidden'}`,
+    });
+    res.json({ success: true, data: wallet });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @route   GET /api/wallets/party-search?q=&all=1
+// @desc    Find parties by code / name / mobile and list their wallets with
+//          credited, redeemed and remaining balance. all=1 includes wallets
+//          already used up.
+// @access  Admin
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/party-search', protect, authorize('admin'), async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    const showAll = req.query.all === '1' || req.query.all === 'true';
+    if (q.length < 2) return res.status(400).json({ success: false, message: 'Type at least 2 characters' });
+
+    const r = { $regex: escRe(q), $options: 'i' };
+    const vendors = await Vendor.find({ $or: [{ accountNumber: r }, { companyName: r }, { mobileNumber: r }] })
+      .select('companyName accountNumber mobileNumber status walletBalance division')
+      .populate('division', 'name')
+      .sort({ companyName: 1 })
+      .limit(25)
+      .lean();
+
+    const mws = await MonthlyWallet.find({ vendor: { $in: vendors.map((v) => v._id) } }).lean();
+    const parents = await Wallet.find({
+      $or: [
+        { _id: { $in: mws.map((m) => m.wallet).filter(Boolean) } },
+        { name: { $in: mws.filter((m) => !m.wallet).map((m) => m.label).filter(Boolean) } },
+      ],
+    }).select('_id name isHold isHidden').lean();
+    const byId = new Map(parents.map((w) => [String(w._id), w]));
+    const byName = new Map(parents.map((w) => [w.name, w]));
+
+    const data = vendors.map((v) => {
+      const wallets = mws
+        .filter((m) => String(m.vendor) === String(v._id))
+        .map((m) => {
+          const parent = m.wallet ? byId.get(String(m.wallet)) : byName.get(m.label);
+          const credited = round2(m.creditedAmount);
+          const balance = round2(m.balance);
+          return {
+            monthlyWalletId: m._id,
+            walletId: parent?._id || null,
+            name: parent?.name || m.label || 'Unnamed wallet',
+            credited,
+            redeemed: round2(credited - balance),
+            balance,
+            isHold: !!(m.isHold || parent?.isHold),
+            isHidden: !!parent?.isHidden,
+            walletMissing: !parent,
+          };
+        })
+        .filter((w) => showAll || w.balance > 0.005)
+        .sort((a, b) => b.balance - a.balance || a.name.localeCompare(b.name));
+      return {
+        vendorId: v._id,
+        accountNumber: v.accountNumber,
+        companyName: v.companyName,
+        mobileNumber: v.mobileNumber,
+        branch: v.division?.name || '',
+        status: v.status,
+        walletBalance: round2(v.walletBalance),
+        wallets,
+        totals: {
+          credited: round2(wallets.reduce((a, w) => a + w.credited, 0)),
+          redeemed: round2(wallets.reduce((a, w) => a + w.redeemed, 0)),
+          balance: round2(wallets.reduce((a, w) => a + w.balance, 0)),
+        },
+      };
+    });
+
+    res.json({ success: true, data, truncated: vendors.length === 25 });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @route   POST /api/wallets/transfer
+// @body    { fromMonthlyWalletId, toWalletId, amount, reason }
+// @desc    Move part or all of a party's balance from one wallet to another.
+//          The party's total balance does not change. Recorded as a matching
+//          "transferred out" / "transferred in" pair on the statement.
+// @access  Admin
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/transfer', protect, authorize('admin'), async (req, res) => {
+  const { fromMonthlyWalletId, toWalletId, reason } = req.body || {};
+  const amount = round2(req.body?.amount);
+
+  if (!fromMonthlyWalletId || !toWalletId) {
+    return res.status(400).json({ success: false, message: 'Choose the wallet to move from and the wallet to move to' });
+  }
+  if (!(amount > 0)) return res.status(400).json({ success: false, message: 'Enter an amount greater than zero' });
+  if (!reason || String(reason).trim().length < 5) {
+    return res.status(400).json({ success: false, message: 'Give a reason (at least 5 characters) — it is recorded' });
+  }
+
+  const session = await mongoose.startSession();
+  let out;
+  try {
+    await session.withTransaction(async () => {
+      const from = await MonthlyWallet.findById(fromMonthlyWalletId).session(session);
+      if (!from) throw Object.assign(new Error('Source wallet not found'), { status: 404 });
+      const toWallet = await Wallet.findById(toWalletId).session(session);
+      if (!toWallet) throw Object.assign(new Error('Target wallet not found'), { status: 404 });
+
+      const fromParent = from.wallet
+        ? await Wallet.findById(from.wallet).session(session)
+        : await Wallet.findOne({ name: from.label }).session(session);
+      if (fromParent && String(fromParent._id) === String(toWallet._id)) {
+        throw Object.assign(new Error('Choose a different wallet to move to'), { status: 400 });
+      }
+      if (amount > round2(from.balance) + 0.001) {
+        throw Object.assign(new Error(`Only ₹${round2(from.balance).toFixed(2)} is available in this wallet`), { status: 400 });
+      }
+
+      const vendor = await Vendor.findById(from.vendor).session(session);
+      if (!vendor) throw Object.assign(new Error('Party not found'), { status: 404 });
+
+      // The party's entry in the target wallet — created if they have none yet
+      let target = await MonthlyWallet.findOne({ vendor: vendor._id, ...walletMwFilter(toWallet) })
+        .sort({ createdAt: 1 }).session(session);
+      if (!target) {
+        const created = new Date(toWallet.createdAt || Date.now());
+        const [doc] = await MonthlyWallet.create([{
+          vendor: vendor._id,
+          month: toWallet.month || created.getMonth() + 1,
+          year: toWallet.year || created.getFullYear(),
+          label: toWallet.name,
+          wallet: toWallet._id,
+          creditedAmount: 0,
+          balance: 0,
+        }], { session });
+        target = doc;
+      }
+
+      const fromName = fromParent?.name || from.label || 'wallet';
+      const moved = await MonthlyWallet.findOneAndUpdate(
+        { _id: from._id, balance: { $gte: amount - 0.001 } },
+        { $inc: { balance: -amount }, $set: { creditedAmount: Math.max(0, round2((from.creditedAmount || 0) - amount)) } },
+        { new: true, session }
+      );
+      if (!moved) throw Object.assign(new Error('The balance changed while transferring — please try again'), { status: 409 });
+      await MonthlyWallet.updateOne({ _id: target._id }, { $inc: { balance: amount, creditedAmount: amount } }, { session });
+
+      const bal = round2(vendor.walletBalance);
+      const note = String(reason).trim();
+      await WalletTransaction.create([
+        {
+          vendor: vendor._id, type: 'debit', amount, balanceAfter: round2(bal - amount),
+          description: `Transferred ₹${amount.toFixed(2)} to ${toWallet.name} — ${note}`,
+          processedBy: req.user._id, monthlyWallet: from._id, walletLabel: fromName, isTransfer: true,
+        },
+        {
+          vendor: vendor._id, type: 'credit', amount, balanceAfter: bal,
+          description: `Transferred ₹${amount.toFixed(2)} in from ${fromName} — ${note}`,
+          processedBy: req.user._id, monthlyWallet: target._id, walletLabel: toWallet.name, isTransfer: true,
+        },
+      ], { session, ordered: true });
+
+      out = { vendor, fromName, toName: toWallet.name, amount, note, balance: bal };
+    });
+  } catch (error) {
+    await session.endSession();
+    return res.status(error.status || 500).json({ success: false, message: error.message });
+  }
+  await session.endSession();
+
+  audit({
+    vendor: out.vendor, eventType: 'wallet.transferred', actor: req.user, source: 'admin',
+    amount: out.amount, balanceAfter: out.balance, walletLabel: `${out.fromName} → ${out.toName}`,
+    reason: out.note,
+    summary: `Moved ₹${out.amount.toFixed(2)} from ${out.fromName} to ${out.toName}`,
+  });
+
+  res.json({
+    success: true,
+    message: `₹${out.amount.toFixed(2)} moved from ${out.fromName} to ${out.toName}`,
+    data: { amount: out.amount, from: out.fromName, to: out.toName },
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @route   GET /api/wallets/:id/delete-preview
+// @desc    What deleting this wallet would write off
+// @access  Admin
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/:id/delete-preview', protect, authorize('admin'), async (req, res) => {
+  try {
+    const wallet = await Wallet.findById(req.params.id).lean();
+    if (!wallet) return res.status(404).json({ success: false, message: 'Wallet not found' });
+
+    const mws = await MonthlyWallet.find(walletMwFilter(wallet))
+      .populate({ path: 'vendor', select: 'companyName accountNumber division', populate: { path: 'division', select: 'name' } })
+      .lean();
+    const withBalance = mws.filter((m) => (m.balance || 0) > 0.005);
+
+    res.json({
+      success: true,
+      data: {
+        wallet: { _id: wallet._id, name: wallet.name },
+        entries: mws.length,
+        partyCount: withBalance.length,
+        totalWriteOff: round2(withBalance.reduce((a, m) => a + m.balance, 0)),
+        parties: withBalance
+          .map((m) => ({
+            accountNumber: m.vendor?.accountNumber || '(deleted party)',
+            companyName: m.vendor?.companyName || '(deleted party)',
+            branch: m.vendor?.division?.name || '',
+            credited: round2(m.creditedAmount),
+            balance: round2(m.balance),
+          }))
+          .sort((a, b) => b.balance - a.balance),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @route   DELETE /api/wallets/:id     { confirmName, reason }
+// @desc    Delete a wallet entirely. Any balance parties still hold in it is
+//          WRITTEN OFF: their total balance goes down and a "Write-off" line
+//          is added to their statement. Past invoices keep the wallet name.
+// @access  Admin
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete('/:id', protect, authorize('admin'), async (req, res) => {
+  const { confirmName, reason } = req.body || {};
+  const session = await mongoose.startSession();
+  let out;
+  try {
+    await session.withTransaction(async () => {
+      const wallet = await Wallet.findById(req.params.id).session(session);
+      if (!wallet) throw Object.assign(new Error('Wallet not found'), { status: 404 });
+      if (String(confirmName || '').trim() !== wallet.name) {
+        throw Object.assign(new Error(`Type the wallet name exactly ("${wallet.name}") to confirm`), { status: 400 });
+      }
+
+      const mws = await MonthlyWallet.find(walletMwFilter(wallet)).session(session);
+      const positive = mws.filter((m) => (m.balance || 0) > 0.005);
+
+      // Total to write off per party
+      const perVendor = new Map();
+      for (const m of positive) {
+        const k = String(m.vendor);
+        if (!perVendor.has(k)) perVendor.set(k, []);
+        perVendor.get(k).push(m);
+      }
+
+      const vendors = await Vendor.find({ _id: { $in: [...perVendor.keys()] } })
+        .select('_id companyName accountNumber walletBalance').session(session);
+      const vendorById = new Map(vendors.map((v) => [String(v._id), v]));
+
+      const txns = [];
+      const vendorOps = [];
+      const writeOffs = [];
+      const stamp = new Date().toLocaleDateString('en-IN');
+      for (const [vid, list] of perVendor) {
+        const v = vendorById.get(vid);
+        if (!v) continue; // party already deleted — nothing to adjust
+        let running = round2(v.walletBalance);
+        let total = 0;
+        for (const m of list) {
+          const amt = round2(m.balance);
+          running = round2(Math.max(0, running - amt));
+          total = round2(total + amt);
+          txns.push({
+            vendor: v._id, type: 'debit', amount: amt, balanceAfter: running,
+            description: `Write-off ₹${amt.toFixed(2)} — wallet "${wallet.name}" deleted on ${stamp}`,
+            processedBy: req.user._id, monthlyWallet: m._id, walletLabel: wallet.name, isWriteOff: true,
+          });
+        }
+        vendorOps.push({ updateOne: { filter: { _id: v._id }, update: { $set: { walletBalance: running } } } });
+        writeOffs.push({ vendor: v, amount: total, balanceAfter: running });
+      }
+
+      if (txns.length) await WalletTransaction.insertMany(txns, { session });
+      if (vendorOps.length) await Vendor.bulkWrite(vendorOps, { session });
+      await MonthlyWallet.deleteMany({ _id: { $in: mws.map((m) => m._id) } }, { session });
+      await Wallet.deleteOne({ _id: wallet._id }, { session });
+
+      out = {
+        name: wallet.name,
+        entries: mws.length,
+        writeOffs,
+        total: round2(writeOffs.reduce((a, w) => a + w.amount, 0)),
+      };
+    });
+  } catch (error) {
+    await session.endSession();
+    return res.status(error.status || 500).json({ success: false, message: error.message });
+  }
+  await session.endSession();
+
+  const why = reason ? String(reason).trim() : null;
+  audit({
+    vendorId: null, eventType: 'wallet.deleted', actor: req.user, source: 'admin',
+    walletLabel: out.name, amount: out.total, reason: why,
+    summary: `Wallet "${out.name}" deleted — ₹${out.total.toFixed(2)} written off across ${out.writeOffs.length} parties`,
+  });
+  for (const w of out.writeOffs) {
+    audit({
+      vendor: w.vendor, eventType: 'wallet.writeOff', actor: req.user, source: 'admin',
+      amount: w.amount, balanceAfter: w.balanceAfter, walletLabel: out.name, reason: why,
+      summary: `₹${w.amount.toFixed(2)} written off — wallet "${out.name}" deleted`,
+    });
+  }
+
+  res.json({
+    success: true,
+    message: `Wallet "${out.name}" deleted. ₹${out.total.toFixed(2)} written off across ${out.writeOffs.length} parties.`,
+    data: { name: out.name, partyCount: out.writeOffs.length, totalWrittenOff: out.total },
+  });
 });
 
 module.exports = router;

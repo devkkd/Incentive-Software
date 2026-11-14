@@ -5,6 +5,39 @@
 
 ---
 
+## 15 November 2026 — Wallet tools, upload changes, WhatsApp logs
+
+### Wallet Management
+- **Hide / Unhide**: each wallet has a Hide button; hidden wallets move to a collapsed "Hidden Wallets" section with Unhide. Visual only — redemption is not affected (use Hold for that). Hidden wallets still appear in the upload dropdown, marked "(hidden)".
+- **Find a party's wallets**: search by party code or name → every wallet with Credited / Redeemed / Balance Left, plus totals. Optional "include used-up wallets".
+- **Transfer**: move part or all of a party's balance from one wallet to another (reason required). Total balance unchanged; statement shows "Wallet Transfer (Out)" and "(In)". Audit: `wallet.transferred`.
+- **Delete wallet**: preview shows parties and total to be written off (downloadable), confirm by typing the wallet name. Remaining balances are written off ("Write-off (Wallet Deleted)" line per party, balance reduced). Audit: `wallet.deleted`, `wallet.writeOff`.
+- The background "sync legacy wallets" step (which created wallets automatically and would bring deleted ones back) was removed.
+
+### Incentive Upload
+- Month/Year selector and auto-create wallet removed. A wallet must be selected (create it first on the Wallet page). The internal month comes from the wallet.
+- A party's existing balance in the chosen wallet is reused, so one wallet = one balance per party.
+- New **Enter Manually** tab: type Party Code / Amount / Remark, or paste rows from Excel. Goes through the same OTP and duplicate checks as a file.
+- Uploaded files (and manual entries) are now stored; Upload History has **View** and **Download**. Older uploads show "Not kept".
+- "Fix Missing Monthly Wallets" panel and its two API routes removed; old uploads no longer create wallets when a party is opened.
+
+### Admin Redemption
+- Typing the invoice number (e.g. `22/CSI/26001234`) selects the branch; selecting a branch puts its prefix (`22/`) in front.
+- Server now checks the invoice format and that the prefix matches the chosen branch.
+- Fix: the party's confirmation message had its arguments in the wrong order (balance sent as invoice number), and a failed send was still marked "party notified".
+
+### Party List
+- Fix: edit popup showed "[object Object]" in every empty field. Old "WSG-" prefix display removed from the code field.
+- Mobile numbers are cleaned to 10 digits on create, edit and import (`+91`, spaces, leading 0); invalid numbers are refused.
+
+### OTP / WhatsApp
+- New **WhatsApp Logs** page (admin menu): every OTP, redemption confirmation and incentive notice with status, reason, provider reply; 7-day summary and top failure reasons; **Test OTP Service**; list of parties with invalid mobile numbers. Logs kept 180 days.
+- BhashSMS: replies like "Insufficient balance" or an empty/HTML reply are now treated as failures (previously counted as sent); 15-second timeout; party names with `&`, `#` or commas no longer break the message.
+- When an OTP cannot be sent the branch sees the reason, the code is withdrawn and does not count towards the 3-per-30-minutes limit. The OTP is no longer returned to the browser on the live site.
+- Note: "Accepted" = BhashSMS took the message. WhatsApp delivery status is not available without BhashSMS delivery-report access.
+
+---
+
 ## 26 September 2026 — Party codes, merge, wallet breakdown
 
 ### Party codes (no branch prefix)

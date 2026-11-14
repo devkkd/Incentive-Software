@@ -31,6 +31,12 @@ const walletSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // Hidden = tidied away on the admin Wallet page only. Does NOT block
+    // redemption (that is what isHold is for) and still shows in the
+    // upload wallet dropdown, labelled "(hidden)".
+    isHidden: { type: Boolean, default: false, index: true },
+    hiddenAt: { type: Date, default: null },
+    hiddenBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     holdReason: {
       type: String,
       trim: true,

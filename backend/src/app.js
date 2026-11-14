@@ -18,6 +18,7 @@ const exceptionRoutes = require('./routes/exceptions');
 const analyticsRoutes = require('./routes/analytics');
 const walletRoutes = require('./routes/wallets');
 const partyMergeRoutes = require('./routes/partyMerge');
+const messageRoutes = require('./routes/messages');
 
 const app = express();
 
@@ -81,6 +82,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/exceptions', exceptionRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/party-merge', partyMergeRoutes);
+app.use('/api/messages', messageRoutes);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POINT 26 — nightly Excel backup at 11pm, after the day's trading.

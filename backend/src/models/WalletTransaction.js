@@ -48,6 +48,11 @@ const walletTransactionSchema = new mongoose.Schema(
       default: false,
     },
 
+    // Balance moved between two of the party's wallets (pair: debit + credit)
+    isTransfer: { type: Boolean, default: false },
+    // Balance written off because its wallet was deleted
+    isWriteOff: { type: Boolean, default: false },
+
     location: {
       type: String,
       trim: true,

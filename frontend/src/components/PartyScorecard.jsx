@@ -308,7 +308,7 @@ export default function PartyScorecard() {
                     </td>
                     <td className="px-4 py-2.5">
                       {w.isHold
-                        ? <span className="text-amber-700 text-[11px] font-medium" title={w.holdReason || <span className='text-gray-300'>—</span>}>
+                        ? <span className="text-amber-700 text-[11px] font-medium" title={w.holdReason || ''}>
                             On hold ({w.holdLevel})
                           </span>
                         : <span className="text-gray-400 text-[11px]">Available</span>}
