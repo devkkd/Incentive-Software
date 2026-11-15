@@ -88,6 +88,8 @@ export default function AdminRedeemPage() {
   const splitTotal = Object.values(splits).reduce((a, b) => a + (parseFloat(b) || 0), 0);
   const redeemAmt = parseFloat(form.redeemAmount) || 0;
   const splitMismatch = useSplit && Math.abs(splitTotal - redeemAmt) > 0.01;
+  // Still to be allocated to a wallet (negative = selected more than needed)
+  const pendingAmt = parseFloat(((redeemAmt || 0) - splitTotal).toFixed(2));
 
   const canProceed =
     vendor && form.invoiceNumber.trim() && form.invoiceDate &&
@@ -345,17 +347,68 @@ export default function AdminRedeemPage() {
                       <p className="text-[13px] font-semibold text-gray-900">{w.label}</p>
                       <p className="text-[11px] text-gray-500 tabular-nums">Available {fmt(w.balance)}</p>
                     </div>
-                    <input type="number" inputMode="decimal" placeholder="0"
-                      value={splits[w._id] || ''}
-                      onChange={(e) => setSplits({ ...splits, [w._id]: e.target.value })}
-                      max={w.balance}
-                      className="w-32 px-3 py-1.5 border border-gray-200 rounded-lg text-[13px] tabular-nums text-right focus:outline-none focus:border-[#2B3B8A]" />
+                    <div className="flex items-center gap-2">
+                      {/* Fill this wallet with whatever is still pending (up to its balance) */}
+                      {pendingAmt > 0.009 && (
+                        <button type="button"
+                          onClick={() => {
+                            const current = parseFloat(splits[w._id]) || 0;
+                            const fill = Math.min(w.balance, current + pendingAmt);
+                            setSplits({ ...splits, [w._id]: String(parseFloat(fill.toFixed(2))) });
+                          }}
+                          className="px-2 py-1 text-[11px] font-semibold text-[#2B3B8A] border border-[#2B3B8A]/20 rounded-lg hover:bg-[#EEF2FF]">
+                          Use rest
+                        </button>
+                      )}
+                      <div className="text-right">
+                        <input type="number" inputMode="decimal" placeholder="0"
+                          value={splits[w._id] || ''}
+                          onChange={(e) => setSplits({ ...splits, [w._id]: e.target.value })}
+                          max={w.balance}
+                          className={`w-32 px-3 py-1.5 border rounded-lg text-[13px] tabular-nums text-right focus:outline-none focus:border-[#2B3B8A] ${
+                            (parseFloat(splits[w._id]) || 0) > w.balance + 0.001 ? 'border-red-400 bg-red-50' : 'border-gray-200'
+                          }`} />
+                        {(parseFloat(splits[w._id]) || 0) > w.balance + 0.001 && (
+                          <p className="text-[10px] text-red-600 mt-0.5">More than available</p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 ))}
-                <p className={`text-[12px] tabular-nums ${splitMismatch ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
-                  Split total {fmt(splitTotal)} of {fmt(redeemAmt)}
-                  {splitMismatch && ' — these must match'}
-                </p>
+
+                {/* Running summary: how much is still left to allocate */}
+                <div className="grid grid-cols-3 gap-2 pt-2">
+                  <div className="rounded-xl bg-gray-50 border border-gray-100 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">To redeem</p>
+                    <p className="text-[15px] font-bold text-gray-900 tabular-nums">{fmt(redeemAmt)}</p>
+                  </div>
+                  <div className="rounded-xl bg-gray-50 border border-gray-100 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">Selected</p>
+                    <p className="text-[15px] font-bold text-gray-900 tabular-nums">{fmt(splitTotal)}</p>
+                  </div>
+                  <div className={`rounded-xl border px-3 py-2 ${
+                    pendingAmt > 0.009 ? 'bg-amber-50 border-amber-200'
+                    : pendingAmt < -0.009 ? 'bg-red-50 border-red-200'
+                    : 'bg-emerald-50 border-emerald-200'
+                  }`}>
+                    <p className={`text-[11px] uppercase tracking-wide font-semibold ${
+                      pendingAmt > 0.009 ? 'text-amber-700' : pendingAmt < -0.009 ? 'text-red-700' : 'text-emerald-700'
+                    }`}>
+                      {pendingAmt < -0.009 ? 'Over by' : 'Pending'}
+                    </p>
+                    <p className={`text-[15px] font-bold tabular-nums ${
+                      pendingAmt > 0.009 ? 'text-amber-700' : pendingAmt < -0.009 ? 'text-red-700' : 'text-emerald-700'
+                    }`}>
+                      {pendingAmt < -0.009 ? fmt(-pendingAmt) : fmt(Math.max(0, pendingAmt))}
+                      {Math.abs(pendingAmt) <= 0.009 && redeemAmt > 0 && ' ✓'}
+                    </p>
+                  </div>
+                </div>
+                {splitMismatch && (
+                  <p className="text-[12px] text-red-600 font-semibold">
+                    The wallets selected must add up exactly to the redemption amount.
+                  </p>
+                )}
               </div>
             )}
           </div>
